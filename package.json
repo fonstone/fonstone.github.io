@@ -35,15 +35,23 @@
   "dependencies": {
     "@vercel/analytics": "^1.5.0",
     "clsx": "^2.1.1",
+    "framer-motion": "^11.18.2",
+    "gray-matter": "^4.0.3",
     "lucide-react": "^0.542.0",
     "motion": "^12.23.12",
     "next": "15.5.2",
+    "next-mdx-remote": "^5.0.0",
+    "plaiceholder": "^3.0.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "rehype-pretty-code": "^0.14.1",
+    "shiki": "^3.3.0",
+    "sharp": "^0.33.5",
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@tailwindcss/typography": "^0.5.16",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

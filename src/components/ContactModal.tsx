@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "framer-motion";
 import { X, Mail, Phone, MapPin, Github, Linkedin, Twitter } from "lucide-react";
 import { modalVariants, backdropVariants, textVariants, iconVariants } from "@/lib/animation/variants";
 import { contactInfo } from "@/lib/constants/contact";

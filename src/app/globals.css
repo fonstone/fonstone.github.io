@@ -1,33 +1,110 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 :root {
-  --background: #0C0D0F;
-  --foreground: #E8CEC2;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --accent: #3b82f6;
   --font-gilroy: 'Gilroy', sans-serif;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-accent: #669C46;
-  --color-card: #242C2F;
+  --color-accent: var(--accent);
+  --color-card: var(--card);
   --font-sans: var(--font-gilroy);
   --font-mono: var(--font-gilroy);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0C0D0F;
-    --foreground: #E8CEC2;
+    --background: #0b1220;
+    --foreground: #e2e8f0;
+    --card: #0f172a;
+    --accent: #38bdf8;
   }
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
+  background-image:
+    radial-gradient(
+      900px circle at 20% 10%,
+      color-mix(in oklab, var(--color-accent) 18%, transparent),
+      transparent 55%
+    ),
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--foreground) 8%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--foreground) 8%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: auto, 64px 64px, 64px 64px;
+  background-attachment: fixed;
   color: var(--foreground);
   padding: 12px;
   font-family: var(--font-sans);
   max-width: 100svw;
+}
+
+.breathe {
+  animation: breathe 7s ease-in-out infinite;
+  will-change: transform, filter;
+}
+
+.breathe-glow {
+  animation: breatheGlow 8.5s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: translateY(0);
+    filter: saturate(1) contrast(1);
+  }
+  50% {
+    transform: translateY(-6px);
+    filter: saturate(1.05) contrast(1.02);
+  }
+}
+
+@keyframes breatheGlow {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateY(-10px) scale(1.04);
+    opacity: 0.75;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .breathe,
+  .breathe-glow {
+    animation: none;
+  }
+}
+
+.prose pre {
+  background: color-mix(in oklab, var(--color-card) 70%, black);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.prose :where(code):not(:where(pre code)) {
+  background: color-mix(in oklab, var(--color-card) 55%, black);
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.35rem;
 }
 
 @media (min-width: 768px) {

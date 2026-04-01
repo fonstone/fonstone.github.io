@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { ArrowUpRight } from "lucide-react";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 import { cardVariants, textVariants, iconVariants, contactCardVariants } from "@/lib/animation/variants";
 import ContactModal from "./ContactModal";
 import { aboutDescription } from "@/lib/constants/siteContent";
@@ -26,6 +26,7 @@ export default function AboutContactSection() {
         variants={cardVariants}
         initial="hidden"
         animate="visible"
+        custom={2}
         whileHover="hover"
       >
         <motion.div
@@ -35,7 +36,7 @@ export default function AboutContactSection() {
         >
           <Image
             src="/svgs/Vector.svg"
-            alt="Lavanya Yasmeen"
+            alt="StoneFon"
             width={150}
             height={150}
             className="w-8 md:w-auto"
@@ -55,6 +56,7 @@ export default function AboutContactSection() {
         variants={contactCardVariants}
         initial="hidden"
         animate="visible"
+        custom={3}
         whileHover="hover"
         whileTap="clicked"
         onClick={handleContactClick}

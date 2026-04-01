@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { navItems } from '@/lib/constants/navItems';
 import { mobileMenuVariants } from '@/lib/animation/variants';
 import React from 'react';

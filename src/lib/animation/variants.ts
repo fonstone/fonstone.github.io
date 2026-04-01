@@ -1,4 +1,4 @@
-import { Variants } from "motion/react";
+import type { Variants } from "framer-motion";
 
 export const mobileMenuVariants: Variants = {
   hidden: { opacity: 0, y: -20 },
@@ -12,8 +12,8 @@ export const containerVariants: Variants = {
   visible: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.2
+      staggerChildren: 0.06,
+      delayChildren: 0.12
     }
   }
 };
@@ -22,20 +22,19 @@ export const containerVariants: Variants = {
 export const cardVariants: Variants = {
   hidden: { 
     opacity: 0, 
-    y: 30,
-    scale: 0.95
+    y: 20
   },
-  visible: { 
+  visible: (i: number = 0) => ({
     opacity: 1, 
     y: 0,
-    scale: 1,
     transition: {
-      duration: 0.6,
+      delay: i * 0.08,
+      duration: 0.55,
       ease: [0.4, 0, 0.2, 1]
     }
-  },
+  }),
   hover: {
-    y: -5,
+    y: -4,
     transition: {
       duration: 0.3,
       ease: [0.4, 0, 0.6, 1]
@@ -183,20 +182,19 @@ export const modalVariants: Variants = {
 export const contactCardVariants: Variants = {
   hidden: { 
     opacity: 0, 
-    y: 30,
-    scale: 0.95
+    y: 20
   },
-  visible: { 
+  visible: (i: number = 0) => ({
     opacity: 1, 
     y: 0,
-    scale: 1,
     transition: {
-      duration: 0.6,
+      delay: i * 0.08,
+      duration: 0.55,
       ease: [0.4, 0, 0.2, 1]
     }
-  },
+  }),
   hover: {
-    y: -5,
+    y: -4,
     transition: {
       duration: 0.3,
       ease: [0.4, 0, 0.6, 1]

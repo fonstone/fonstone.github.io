@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { ArrowUpRight, Instagram, Twitter, Linkedin } from "lucide-react";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 import { cardVariants, projectsVariants, projectItemVariants, socialVariants, textVariants, iconVariants } from "@/lib/animation/variants";
 import { projects } from "@/lib/constants/projects";
 import { socials } from "@/lib/constants/socials";
@@ -16,6 +16,7 @@ export default function ProjectsSection() {
         variants={cardVariants}
         initial="hidden"
         animate="visible"
+        custom={4}
         whileHover="hover"
       >
         <div className="flex justify-between items-center mb-4">
@@ -79,6 +80,7 @@ export default function ProjectsSection() {
         variants={cardVariants}
         initial="hidden"
         animate="visible"
+        custom={5}
       >
         <motion.a 
           href={socials.instagram} 

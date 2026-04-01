@@ -32,7 +32,7 @@ const gilroy = localFont({
   display: 'swap',
 });
 export const metadata: Metadata = {
-  title: "Lavanya Yasmeen | Personal Portfolio",
+  title: "StoneFon | Personal Portfolio",
   description: "A modern and minimalist portfolio showcasing my work, skills, and experiences in web development and design.",
   keywords: ["portfolio", "web development", "design", "projects", "skills"],
   authors: [{ name: "Wafastarz (Muhammad Khoirul Wafa)" }],
@@ -44,13 +44,13 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: "website",
-    title: "Lavanya Yasmeen | Personal Portfolio",
+    title: "StoneFon | Personal Portfolio",
     description: "A modern and minimalist portfolio showcasing my work, skills, and experiences in web development and design.",
-    siteName: "Lavanya Yasmeen",
+    siteName: "StoneFon",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Lavanya Yasmeen | Personal Portfolio",
+    title: "StoneFon | Personal Portfolio",
     description: "A modern and minimalist portfolio showcasing my work, skills, and experiences in web development and design.",
   },
 };

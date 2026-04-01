@@ -29,6 +29,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
+    "build:pages": "next build",
     "start": "next start",
     "lint": "eslint"
   },

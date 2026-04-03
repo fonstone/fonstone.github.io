@@ -134,10 +134,4 @@ export const consoleUtil = {
   }
 };
 
-// Auto-initialize in browser environment
-if (typeof window !== 'undefined') {
-  // Delay to ensure page is loaded
-  setTimeout(() => {
-    consoleUtil.init();
-  }, 1000);
-}
+// Auto-initialization removed - use Console.tsx component instead

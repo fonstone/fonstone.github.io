@@ -115,7 +115,6 @@ body {
 
 @media (min-width: 1024px) {
   body {
-    max-height: 100svh;
-    overflow: hidden;
+    padding: 32px;
   }
 }

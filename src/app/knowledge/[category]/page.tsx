@@ -12,9 +12,9 @@ export async function generateStaticParams() {
 export default async function KnowledgeCategoryPage({
   params,
 }: {
-  params: { category: string };
+  params: Promise<{ category: string }>;
 }) {
-  const { category } = params;
+  const { category } = await params;
   const categories = await getKnowledgeCategories();
   const current = categories.find((c) => c.category === category);
   if (!current) notFound();

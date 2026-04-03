@@ -15,9 +15,10 @@ export async function generateStaticParams() {
 export default async function KnowledgePostPage({
   params,
 }: {
-  params: { category: string; slug: string };
+  params: Promise<{ category: string; slug: string }>;
 }) {
-  const data = await getKnowledgePost(params);
+  const resolvedParams = await params;
+  const data = await getKnowledgePost(resolvedParams);
   if (!data) notFound();
 
   const { post, mdxSource } = data;

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
+import { Suspense } from "react";
 import KnowledgeSidebar, {
   type KnowledgeSidebarData,
   type KnowledgeTagData,
@@ -50,7 +51,9 @@ export default async function KnowledgeLayout({
                   知识空间
                 </span>
               </div>
-              <KnowledgeSidebar data={sidebarData} tags={tagData} />
+              <Suspense fallback={<div className="h-40 animate-pulse rounded-lg bg-white/5" />}>
+                <KnowledgeSidebar data={sidebarData} tags={tagData} />
+              </Suspense>
             </div>
           </aside>
           <section className="p-4 md:p-8 overflow-y-auto">

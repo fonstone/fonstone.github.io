@@ -18,7 +18,6 @@ import {
 import type { LucideIcon } from "lucide-react";
 import BoltCard from "@/components/ui/BoltCard";
 import { contactInfo } from "@/lib/constants/contact";
-import { projects } from "@/lib/constants/projects";
 import { profile, aboutDescription, personImage } from "@/lib/constants/siteContent";
 import { socials } from "@/lib/constants/socials";
 import { getAllKnowledgePosts, getKnowledgeCategories } from "@/lib/knowledge/knowledge";
@@ -223,100 +222,56 @@ export default async function Home() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-6 md:auto-rows-[180px] md:grid-flow-dense">
-            <BoltCard className="h-full p-8 md:col-span-3 md:row-span-2">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">📚</span>
-                  <h3 className="text-xl font-bold">分类</h3>
-                </div>
-                <Link
-                  href="/knowledge"
-                  className="text-sm text-slate-500 hover:text-blue-500 transition-colors dark:text-slate-400"
-                >
-                  目录页
-                </Link>
+          <BoltCard className="p-8">
+            <div className="flex items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📚</span>
+                <h3 className="text-xl font-bold">分类</h3>
               </div>
+              <Link
+                href="/knowledge"
+                className="text-sm text-slate-500 hover:text-blue-500 transition-colors dark:text-slate-400"
+              >
+                目录页
+              </Link>
+            </div>
 
-              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {categories.slice(0, 6).map((c) => {
-                  const icon = getCategoryIcon(c.category);
-                  return (
-                    <Link
-                      key={c.category}
-                      href={`/knowledge/${encodeURIComponent(c.category)}`}
-                      className="group flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 hover:bg-slate-100 transition-colors dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900"
-                    >
-                      <div
-                        className={`w-12 h-12 ${icon.iconWrapClassName} rounded-2xl flex items-center justify-center`}
-                      >
-                        <icon.Icon className={`w-6 h-6 ${icon.iconClassName}`} />
-                      </div>
-                      <div className="flex flex-col">
-                        <div className="font-semibold">{c.category}</div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
-                          {c.posts.length} 篇
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-                {categories.length === 0 && (
-                  <div className="text-slate-500 dark:text-slate-400">
-                    未检测到分类。请在 content/ 下创建分类文件夹与 .mdx。
-                  </div>
-                )}
-              </div>
-
-              {categories.length > 6 && (
-                <div className="mt-5 text-sm text-slate-500 dark:text-slate-400">
-                  还有 {categories.length - 6} 个分类未展示。
-                </div>
-              )}
-            </BoltCard>
-
-            <BoltCard className="h-full p-8 md:col-span-3 md:row-span-2">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">🧩</span>
-                  <h3 className="text-xl font-bold">项目精选</h3>
-                </div>
-                <a
-                  href={socials.github}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-slate-500 hover:text-blue-500 transition-colors dark:text-slate-400"
-                >
-                  GitHub
-                </a>
-              </div>
-
-              <div className="mt-6 flex flex-col gap-3 max-h-[320px] overflow-y-auto pr-1">
-                {projects.map((p) => (
-                  <div
-                    key={p.name}
-                    className="flex items-center gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 justify-items-center">
+              {categories.slice(0, 6).map((c) => {
+                const icon = getCategoryIcon(c.category);
+                return (
+                  <Link
+                    key={c.category}
+                    href={`/knowledge/${encodeURIComponent(c.category)}`}
+                    className="group flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 hover:bg-slate-100 transition-colors dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900 w-full max-w-xs"
                   >
-                    <div className="h-14 w-14 rounded-2xl overflow-hidden bg-gradient-to-br from-blue-500 to-cyan-400">
-                      <Image
-                        src={p.imgSrc}
-                        alt={p.name}
-                        width={112}
-                        height={112}
-                        className="h-full w-full object-cover"
-                      />
+                    <div
+                      className={`w-12 h-12 ${icon.iconWrapClassName} rounded-2xl flex items-center justify-center`}
+                    >
+                      <icon.Icon className={`w-6 h-6 ${icon.iconClassName}`} />
                     </div>
                     <div className="flex flex-col">
-                      <div className="font-semibold">{p.name}</div>
+                      <div className="font-semibold">{c.category}</div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">
-                        来自配置文件渲染
+                        {c.posts.length} 篇
                       </div>
                     </div>
-                  </div>
-                ))}
+                  </Link>
+                );
+              })}
+              {categories.length === 0 && (
+                <div className="text-slate-500 dark:text-slate-400 col-span-full text-center">
+                  未检测到分类。请在 content/ 下创建分类文件夹与 .mdx。
+                </div>
+              )}
+            </div>
+
+            {categories.length > 6 && (
+              <div className="mt-5 text-sm text-slate-500 dark:text-slate-400 text-center">
+                还有 {categories.length - 6} 个分类未展示。
               </div>
-            </BoltCard>
-          </div>
+            )}
+          </BoltCard>
         </section>
 
         <section id="projects" className="max-w-7xl mx-auto mb-16">
@@ -328,20 +283,19 @@ export default async function Home() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {projects.map((p) => (
+            {[
+              { name: "OS", desc: "操作系统核心原理与实现", icon: "💻" },
+              { name: "QEMU", desc: "虚拟化与系统仿真工具", icon: "🔧" },
+              { name: "ARM/RISC-V64", desc: "主流指令集架构解析", icon: "⚙️" },
+              { name: "MCU", desc: "微控制器开发与应用", icon: "🔌" },
+            ].map((p) => (
               <BoltCard key={p.name} className="p-6">
-                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-2xl mb-4 overflow-hidden">
-                  <Image
-                    src={p.imgSrc}
-                    alt={p.name}
-                    width={320}
-                    height={240}
-                    className="w-full h-full object-cover"
-                  />
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-2xl mb-4 flex items-center justify-center text-3xl">
+                  {p.icon}
                 </div>
                 <h3 className="text-xl font-bold mb-2">{p.name}</h3>
                 <p className="text-slate-600 text-sm dark:text-slate-300">
-                  来自项目配置文件的便当盒卡片渲染。
+                  {p.desc}
                 </p>
               </BoltCard>
             ))}
@@ -358,7 +312,7 @@ export default async function Home() {
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
               <a
                 href={`mailto:${contactInfo.email}`}
                 className="bg-white/60 backdrop-blur rounded-2xl p-6 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900/60 dark:border-slate-800"
@@ -394,6 +348,22 @@ export default async function Home() {
                   </div>
                 </div>
               </a>
+
+              <div
+                className="bg-white/60 backdrop-blur rounded-2xl p-6 border border-white/40 dark:bg-slate-900/60 dark:border-slate-800"
+              >
+                <div className="flex gap-3 items-center">
+                  <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
+                    3
+                  </div>
+                  <div>
+                    <div className="font-semibold">WeChat</div>
+                    <div className="text-slate-600 dark:text-slate-300 text-sm">
+                      sf_xiang
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-6">

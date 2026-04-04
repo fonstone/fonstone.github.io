@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import KnowledgeSidebar, {
   type KnowledgeSidebarData,
@@ -28,6 +29,14 @@ export default async function KnowledgeLayout({
       <div className="h-[calc(100svh-24px)] md:h-[calc(100svh-48px)] overflow-hidden rounded-2xl border border-white/10 bg-white/0">
         <div className="grid h-full grid-cols-1 lg:grid-cols-[280px,1fr]">
           <aside className="h-full overflow-y-auto border-b border-white/10 p-4 lg:border-b-0 lg:border-r">
+            <div className="mb-3 flex items-center justify-between">
+              <Link
+                href="/"
+                className="text-sm font-medium text-white/80 hover:text-white transition-colors"
+              >
+                ← 返回主页
+              </Link>
+            </div>
             <div className="mb-3 text-sm font-semibold text-white/80">
               知识空间
             </div>

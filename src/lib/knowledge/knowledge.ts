@@ -10,6 +10,12 @@ export type KnowledgePostFrontmatter = {
   draft?: boolean;
 };
 
+export type KnowledgeHeading = {
+  id: string;
+  text: string;
+  level: number;
+};
+
 export type KnowledgePost = {
   category: string;
   slug: string;
@@ -184,6 +190,24 @@ export async function getKnowledgePost(params: {
   };
 
   return { post, mdxSource: parsed.content, frontmatter: fm };
+}
+
+export function extractHeadings(mdxContent: string): KnowledgeHeading[] {
+  const headingRegex = /^(#{1,3})\s+(.+)$/gm;
+  const headings: KnowledgeHeading[] = [];
+  let match;
+
+  while ((match = headingRegex.exec(mdxContent)) !== null) {
+    const level = match[1].length;
+    const text = match[2].trim();
+    const id = text
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, "-");
+    headings.push({ id, text, level });
+  }
+
+  return headings;
 }
 
 export async function getKnowledgeStaticParams(): Promise<

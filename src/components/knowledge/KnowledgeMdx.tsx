@@ -1,5 +1,7 @@
 import { MDXRemote } from "next-mdx-remote/rsc";
 import rehypePrettyCode from "rehype-pretty-code";
+import remarkGfm from "remark-gfm";
+import rehypeSlug from "rehype-slug";
 import MdxImage from "./MdxImage";
 
 type Props = {
@@ -16,6 +18,7 @@ export default function KnowledgeMdx({ source }: Props) {
       options={{
         mdxOptions: {
           rehypePlugins: [
+            rehypeSlug,
             [
               rehypePrettyCode,
               {
@@ -27,9 +30,9 @@ export default function KnowledgeMdx({ source }: Props) {
               },
             ],
           ],
+          remarkPlugins: [remarkGfm],
         },
       }}
     />
   );
 }
-

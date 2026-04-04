@@ -28,7 +28,7 @@ export default async function KnowledgeLayout({
 
   return (
     <div
-      className="mx-auto w-full max-w-7xl font-sans px-4 md:px-6"
+      className="mx-auto w-full max-w-7xl font-sans px-4 md:px-6 text-gray-900 md:text-white"
       style={
         {
           "--font-sans":
@@ -36,22 +36,22 @@ export default async function KnowledgeLayout({
         } as CSSProperties
       }
     >
-      <div className="min-h-screen md:min-h-[calc(100svh-48px)] rounded-none md:rounded-2xl border-0 md:border border-white/10 bg-white/0">
+      <div className="min-h-screen md:min-h-[calc(100svh-48px)] rounded-none md:rounded-2xl border-0 md:border border-gray-200 md:border-white/10 bg-white md:bg-white/0">
         <div className="flex flex-col md:grid md:grid-cols-[260px,1fr]">
-          <aside className="border-b border-white/10 md:border-b-0 md:border-r md:h-[calc(100svh-48px)] md:sticky md:top-0 overflow-y-auto">
+          <aside className="border-b border-gray-200 md:border-b-0 md:border-r md:h-[calc(100svh-48px)] md:sticky md:top-0 overflow-y-auto">
             <div className="p-4 md:p-5">
               <div className="mb-4 flex items-center justify-between">
                 <Link
                   href="/"
-                  className="text-sm font-medium text-white/80 hover:text-white transition-colors"
+                  className="text-sm font-medium text-gray-600 hover:text-gray-900 md:text-white/80 md:hover:text-white transition-colors"
                 >
                   ← 返回主页
                 </Link>
-                <span className="text-sm font-semibold text-white/80">
+                <span className="text-sm font-semibold text-gray-900 md:text-white/80">
                   知识空间
                 </span>
               </div>
-              <Suspense fallback={<div className="h-40 animate-pulse rounded-lg bg-white/5" />}>
+              <Suspense fallback={<div className="h-40 animate-pulse rounded-lg bg-gray-100 md:bg-white/5" />}>
                 <KnowledgeSidebar data={sidebarData} tags={tagData} />
               </Suspense>
             </div>

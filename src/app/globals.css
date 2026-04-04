@@ -107,6 +107,10 @@ body {
   border-radius: 0.35rem;
 }
 
+.prose :where(h2, h3, h4) {
+  scroll-margin-top: 48px;
+}
+
 @media (min-width: 768px) {
   body {
     padding: 24px;

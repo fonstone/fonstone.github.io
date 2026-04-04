@@ -263,19 +263,37 @@ export async function getKnowledgePost(params: {
 export function extractHeadings(mdxContent: string): KnowledgeHeading[] {
   const headingRegex = /^(#{1,3})\s+(.+)$/gm;
   const headings: KnowledgeHeading[] = [];
+  const slugCounter = new Map<string, number>();
   let match;
 
   while ((match = headingRegex.exec(mdxContent)) !== null) {
     const level = match[1].length;
     const text = match[2].trim();
-    const id = text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
-      .replace(/\s+/g, "-");
+    const id = generateSlug(text, slugCounter);
     headings.push({ id, text, level });
   }
 
   return headings;
+}
+
+function generateSlug(text: string, slugCounter: Map<string, number>): string {
+  let slug = text
+    .toLowerCase()
+    .replace(/[\u2000-\u206F]/g, "")
+    .replace(/[\s]+/g, "-")
+    .replace(/[^\w\u4e00-\u9fff-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  if (slugCounter.has(slug)) {
+    const count = slugCounter.get(slug)! + 1;
+    slugCounter.set(slug, count);
+    slug = `${slug}-${count}`;
+  } else {
+    slugCounter.set(slug, 0);
+  }
+
+  return slug;
 }
 
 export async function getKnowledgeStaticParams(): Promise<

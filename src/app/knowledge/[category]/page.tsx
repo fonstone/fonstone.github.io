@@ -22,7 +22,14 @@ export default async function KnowledgeCategoryPage({
 
   return (
     <article className="flex-1 min-w-0">
-      <header className="flex flex-col gap-2 mb-8">
+      <header className="flex flex-col gap-2 mb-8 pb-6 border-b border-white/5">
+        <nav className="flex items-center gap-2 text-xs text-white/30 mb-2">
+          <Link href="/knowledge" className="hover:text-white/60 transition-colors">
+            知识空间
+          </Link>
+          <span>/</span>
+          <span className="text-white/50">{category}</span>
+        </nav>
         <h1 className="text-2xl font-bold tracking-tight">{category}</h1>
         <p className="text-sm text-white/50">
           {current.posts.length} 篇文章
@@ -34,7 +41,7 @@ export default async function KnowledgeCategoryPage({
           <Link
             key={post.slug}
             href={`/knowledge/${slug}/${post.slug}`}
-            className="group flex flex-col gap-1 py-5 transition-colors hover:bg-white/5 -mx-2 px-2 rounded-lg"
+            className="group flex flex-col gap-2 py-5 transition-colors hover:bg-white/5 -mx-2 px-2 rounded-lg"
           >
             <div className="flex items-baseline justify-between gap-4">
               <h3 className="text-base font-medium text-white/90 group-hover:text-white transition-colors">
@@ -52,7 +59,7 @@ export default async function KnowledgeCategoryPage({
               </p>
             )}
             {post.tags.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5 mt-0.5">
                 {post.tags.map((tag) => (
                   <span
                     key={tag}

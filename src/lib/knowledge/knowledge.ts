@@ -169,9 +169,37 @@ export async function getKnowledgeCategories(): Promise<KnowledgeCategory[]> {
   return result.filter((c) => c.posts.length > 0);
 }
 
+export type KnowledgeTagInfo = {
+  tag: string;
+  count: number;
+  posts: KnowledgePost[];
+};
+
 export async function getAllKnowledgePosts(): Promise<KnowledgePost[]> {
   const categories = await getKnowledgeCategories();
   return categories.flatMap((c) => c.posts);
+}
+
+export async function getAllTags(): Promise<KnowledgeTagInfo[]> {
+  const posts = await getAllKnowledgePosts();
+  const tagMap = new Map<string, KnowledgePost[]>();
+
+  for (const post of posts) {
+    for (const tag of post.tags) {
+      if (!tagMap.has(tag)) {
+        tagMap.set(tag, []);
+      }
+      tagMap.get(tag)!.push(post);
+    }
+  }
+
+  return Array.from(tagMap.entries())
+    .map(([tag, tagPosts]) => ({
+      tag,
+      count: tagPosts.length,
+      posts: tagPosts,
+    }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
 export async function getKnowledgePost(params: {

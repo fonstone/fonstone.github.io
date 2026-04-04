@@ -2,8 +2,9 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import KnowledgeSidebar, {
   type KnowledgeSidebarData,
+  type KnowledgeTagData,
 } from "@/components/knowledge/KnowledgeSidebar";
-import { getKnowledgeCategories } from "@/lib/knowledge/knowledge";
+import { getKnowledgeCategories, getAllTags } from "@/lib/knowledge/knowledge";
 
 export default async function KnowledgeLayout({
   children,
@@ -11,10 +12,17 @@ export default async function KnowledgeLayout({
   children: ReactNode;
 }) {
   const categories = await getKnowledgeCategories();
+  const tags = await getAllTags();
+
   const sidebarData: KnowledgeSidebarData = categories.map((c) => ({
     category: c.category,
     slug: c.slug,
     posts: c.posts.map((p) => ({ slug: p.slug, title: p.title })),
+  }));
+
+  const tagData: KnowledgeTagData = tags.map((t) => ({
+    tag: t.tag,
+    count: t.count,
   }));
 
   return (
@@ -42,7 +50,7 @@ export default async function KnowledgeLayout({
                   知识空间
                 </span>
               </div>
-              <KnowledgeSidebar data={sidebarData} />
+              <KnowledgeSidebar data={sidebarData} tags={tagData} />
             </div>
           </aside>
           <section className="p-4 md:p-8 overflow-y-auto">

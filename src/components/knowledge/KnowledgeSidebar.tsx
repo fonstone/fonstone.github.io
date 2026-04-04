@@ -54,7 +54,7 @@ export default function KnowledgeSidebar({ data, tags }: Props) {
   return (
     <nav className="flex flex-col gap-6">
       <div>
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+        <h3 className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">
           分类
         </h3>
         <div className="flex flex-col gap-2">
@@ -78,8 +78,8 @@ export default function KnowledgeSidebar({ data, tags }: Props) {
                       });
                     }}
                     className={clsx(
-                      "h-9 w-9 shrink-0 rounded-lg text-sm text-gray-500 hover:bg-gray-100",
-                      isActiveCategory && "bg-gray-100"
+                      "h-9 w-9 shrink-0 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800",
+                      isActiveCategory && "bg-slate-100 dark:bg-slate-800"
                     )}
                     aria-label={isOpen ? "折叠分类" : "展开分类"}
                   >
@@ -88,12 +88,12 @@ export default function KnowledgeSidebar({ data, tags }: Props) {
                   <Link
                     href={categoryHref}
                     className={clsx(
-                      "flex-1 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100",
-                      isActiveCategory && "bg-gray-100 text-gray-900"
+                      "flex-1 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800",
+                      isActiveCategory && "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                     )}
                   >
                     {cat.category}
-                    <span className="ml-2 text-xs text-gray-400">
+                    <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
                       {cat.posts.length}
                     </span>
                   </Link>
@@ -109,8 +109,8 @@ export default function KnowledgeSidebar({ data, tags }: Props) {
                           key={post.slug}
                           href={href}
                           className={clsx(
-                            "rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-900",
-                            isActive && "bg-gray-100 text-gray-900"
+                            "rounded-lg px-3 py-2 text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100",
+                            isActive && "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                           )}
                         >
                           {post.title}
@@ -126,7 +126,7 @@ export default function KnowledgeSidebar({ data, tags }: Props) {
       </div>
 
       <div>
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+        <h3 className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">
           标签
         </h3>
         <div className="flex flex-wrap gap-2">
@@ -134,7 +134,7 @@ export default function KnowledgeSidebar({ data, tags }: Props) {
             <button
               type="button"
               onClick={clearTagFilter}
-              className="rounded-full border border-red-300 bg-red-50 px-3 py-1 text-xs text-red-600 hover:bg-red-100 transition-colors"
+              className="rounded-full border border-red-300 dark:border-red-400 bg-red-50 dark:bg-red-500/10 px-3 py-1 text-xs text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
             >
               ✕ 清除筛选
             </button>
@@ -149,8 +149,8 @@ export default function KnowledgeSidebar({ data, tags }: Props) {
                 className={clsx(
                   "rounded-full border px-3 py-1 text-xs transition-colors",
                   isActive
-                    ? "border-gray-300 bg-gray-100 text-gray-900"
-                    : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-900"
+                    ? "border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                    : "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 hover:text-slate-900 dark:hover:text-slate-100"
                 )}
               >
                 {tagInfo.tag}

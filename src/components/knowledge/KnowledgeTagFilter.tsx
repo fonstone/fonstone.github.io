@@ -49,10 +49,10 @@ function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
           {activeTag ? `标签：${activeTag}` : "文章"}
         </h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           {activeTag
             ? `共 ${filteredPosts.length} 篇文章包含标签「${activeTag}」`
             : `按分类沉淀笔记与思考，共 ${categories.length} 个分类、${allPosts.length} 篇文章。`}
@@ -61,7 +61,7 @@ function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
           <button
             type="button"
             onClick={clearTagFilter}
-            className="text-xs text-gray-500 hover:text-gray-900 transition-colors w-fit bg-transparent border-0 cursor-pointer"
+            className="text-xs text-slate-500 dark:text-slate-400 hover:text-blue-500 transition-colors w-fit bg-transparent border-0 cursor-pointer"
           >
             ← 查看全部文章
           </button>
@@ -79,8 +79,8 @@ function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
                 onClick={() => handleTagClick(tagInfo.tag)}
                 className={`rounded-full border px-3 py-1 text-xs transition-colors cursor-pointer ${
                   isActive
-                    ? "border-gray-300 bg-gray-100 text-gray-900"
-                    : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-900"
+                    ? "border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                    : "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 hover:text-slate-900 dark:hover:text-slate-100"
                 }`}
               >
                 {tagInfo.tag}
@@ -95,37 +95,37 @@ function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
         {filteredCategories.map((cat) => (
           <section key={cat.slug} className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-gray-800">
+              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
                 <Link
                   href={`/knowledge/${cat.slug}`}
-                  className="hover:text-gray-900 transition-colors"
+                  className="hover:text-blue-500 transition-colors"
                 >
                   {cat.category}
                 </Link>
               </h2>
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-slate-400 dark:text-slate-500">
                 {cat.posts.length} 篇
               </span>
             </div>
-            <div className="flex flex-col divide-y divide-gray-200">
+            <div className="flex flex-col divide-y divide-slate-200 dark:divide-slate-800">
               {cat.posts.map((post) => (
                 <Link
                   key={`${post.category}:${post.slug}`}
                   href={`/knowledge/${cat.slug}/${post.slug}`}
-                  className="group flex flex-col gap-1.5 py-4 transition-colors hover:bg-gray-50 -mx-2 px-2 rounded-lg"
+                  className="group flex flex-col gap-1.5 py-4 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/50 -mx-2 px-2 rounded-lg"
                 >
                   <div className="flex items-baseline justify-between gap-4">
-                    <h3 className="text-sm font-medium text-gray-800 group-hover:text-gray-900 transition-colors">
+                    <h3 className="text-sm font-medium text-slate-800 dark:text-slate-200 group-hover:text-blue-500 transition-colors">
                       {post.title}
                     </h3>
                     {post.date && (
-                      <time className="shrink-0 text-xs text-gray-400 tabular-nums">
+                      <time className="shrink-0 text-xs text-slate-400 dark:text-slate-500 tabular-nums">
                         {post.date}
                       </time>
                     )}
                   </div>
                   {post.description && (
-                    <p className="text-xs text-gray-500 line-clamp-2">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
                       {post.description}
                     </p>
                   )}
@@ -140,7 +140,7 @@ function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
                             e.stopPropagation();
                             handleTagClick(t);
                           }}
-                          className="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-colors cursor-pointer"
+                          className="rounded-full border border-slate-200 dark:border-slate-700 px-2 py-0.5 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 transition-colors cursor-pointer"
                         >
                           {t}
                         </button>
@@ -154,7 +154,7 @@ function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
         ))}
 
         {filteredPosts.length === 0 && (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             {activeTag
               ? `没有找到包含标签「${activeTag}」的文章`
               : "还没有文章内容，请在 /content 里添加 .mdx 文件。"}
@@ -167,7 +167,7 @@ function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
 
 export default function KnowledgeTagFilter(props: Props) {
   return (
-    <Suspense fallback={<div className="h-40 animate-pulse rounded-lg bg-white/5" />}>
+    <Suspense fallback={<div className="h-40 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />}>
       <KnowledgeTagFilterContent {...props} />
     </Suspense>
   );

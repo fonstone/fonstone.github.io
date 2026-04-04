@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import KnowledgeCards from "@/components/knowledge/KnowledgeCards";
+import Link from "next/link";
 import { getKnowledgeCategories } from "@/lib/knowledge/knowledge";
 
 export const dynamicParams = false;
@@ -20,13 +20,49 @@ export default async function KnowledgeCategoryPage({
   if (!current) notFound();
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-xl font-semibold">{category}</h1>
-        <p className="text-sm text-white/70">{current.posts.length} 篇</p>
+        <h1 className="text-2xl font-bold tracking-tight">{category}</h1>
+        <p className="text-sm text-white/50">{current.posts.length} 篇文章</p>
       </header>
 
-      <KnowledgeCards posts={current.posts} />
+      <div className="flex flex-col divide-y divide-white/5">
+        {current.posts.map((post) => (
+          <Link
+            key={post.slug}
+            href={`/knowledge/${encodeURIComponent(category)}/${encodeURIComponent(post.slug)}`}
+            className="group flex flex-col gap-1 py-5 transition-colors hover:bg-white/5 -mx-2 px-2 rounded-lg"
+          >
+            <div className="flex items-baseline justify-between gap-4">
+              <h3 className="text-base font-medium text-white/90 group-hover:text-white transition-colors">
+                {post.title}
+              </h3>
+              {post.date && (
+                <time className="shrink-0 text-sm text-white/30 tabular-nums">
+                  {post.date}
+                </time>
+              )}
+            </div>
+            {post.description && (
+              <p className="text-sm text-white/40 line-clamp-2">
+                {post.description}
+              </p>
+            )}
+            {post.tags.length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {post.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full border border-white/10 px-2 py-0.5 text-xs text-white/40"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }

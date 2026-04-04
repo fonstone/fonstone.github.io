@@ -1,0 +1,235 @@
+---
+title: "AI Skills 详解：从基础概念到实战应用"
+date: "2026-04-04"
+description: "全面介绍 AI Skills 的核心概念、架构设计、应用场景与最佳实践，帮助开发者理解并掌握 AI 技能系统的构建方法。"
+tags: ["AI", "Skills", "LLM", "Agent", "工具调用"]
+---
+
+## 什么是 AI Skills？
+
+AI Skills（AI 技能）是指为大型语言模型（LLM）定义的结构化能力模块，使模型能够执行特定任务、调用外部工具或访问专业知识。它是 AI Agent 系统的核心组成部分，将"模型能做什么"从单纯的文本生成扩展到与真实世界的交互。
+
+可以把 AI Skills 理解为给 AI 装上的"工具箱"——每个工具（Skill）都有明确的用途、输入参数和输出格式，模型根据用户意图自主选择并调用合适的工具。
+
+## 核心架构
+
+### 1. Skill 定义
+
+一个标准的 AI Skill 通常包含以下要素：
+
+```json
+{
+  "name": "search_knowledge_base",
+  "description": "在知识库中检索与查询相关的文档",
+  "parameters": {
+    "query": {
+      "type": "string",
+      "description": "搜索关键词或自然语言查询"
+    },
+    "top_k": {
+      "type": "integer",
+      "description": "返回结果数量",
+      "default": 5
+    }
+  },
+  "returns": "匹配文档列表，包含标题、摘要和相关度评分"
+}
+```
+
+### 2. 工具调用（Tool Calling）流程
+
+```
+用户输入 → LLM 理解意图 → 选择合适 Skill → 生成参数 → 执行工具 → 返回结果 → LLM 整合输出
+```
+
+整个过程是自动化的，模型根据上下文和 Skill 描述自主决策。
+
+### 3. Skill 注册与管理
+
+```python
+class SkillRegistry:
+    def __init__(self):
+        self.skills = {}
+
+    def register(self, skill):
+        self.skills[skill.name] = skill
+
+    def get_tool_definitions(self):
+        return [skill.to_openai_format() for skill in self.skills.values()]
+
+    def execute(self, name, arguments):
+        return self.skills[name].execute(**arguments)
+```
+
+## 主要类型
+
+### 信息检索类
+
+| Skill | 功能 | 典型场景 |
+|-------|------|----------|
+| Web Search | 实时网络搜索 | 获取最新资讯 |
+| Knowledge Base | 私有知识库检索 | 企业内部问答 |
+| Code Search | 代码库检索 | 开发者助手 |
+| Document QA | 文档问答 | 合同/论文分析 |
+
+### 计算分析类
+
+| Skill | 功能 | 典型场景 |
+|-------|------|----------|
+| Code Interpreter | 执行代码 | 数据分析、数学计算 |
+| Data Visualization | 生成图表 | 报告可视化 |
+| Statistical Analysis | 统计分析 | 数据科学工作流 |
+
+### 交互操作类
+
+| Skill | 功能 | 典型场景 |
+|-------|------|----------|
+| API Call | 调用 REST API | 天气查询、翻译 |
+| File Operation | 文件读写 | 文档处理 |
+| Database Query | 数据库查询 | 业务数据检索 |
+
+### 内容生成类
+
+| Skill | 功能 | 典型场景 |
+|-------|------|----------|
+| Image Generation | 文生图 | 设计辅助 |
+| Text Summarization | 文本摘要 | 长文精简 |
+| Code Generation | 代码生成 | 开发辅助 |
+
+## 实战：构建一个 AI Skill
+
+以下是一个完整的 Skill 实现示例：
+
+```python
+from typing import Any
+import requests
+
+class WeatherSkill:
+    name = "get_weather"
+    description = "获取指定城市的当前天气信息"
+
+    parameters = {
+        "type": "object",
+        "properties": {
+            "city": {
+                "type": "string",
+                "description": "城市名称，如 'Beijing' 或 '上海'"
+            },
+            "units": {
+                "type": "string",
+                "description": "温度单位",
+                "enum": ["celsius", "fahrenheit"],
+                "default": "celsius"
+            }
+        },
+        "required": ["city"]
+    }
+
+    def execute(self, city: str, units: str = "celsius") -> dict[str, Any]:
+        api_key = "your_api_key"
+        url = f"https://api.openweathermap.org/data/2.5/weather"
+        params = {
+            "q": city,
+            "appid": api_key,
+            "units": "metric" if units == "celsius" else "imperial",
+            "lang": "zh_cn"
+        }
+
+        response = requests.get(url, params=params)
+        data = response.json()
+
+        return {
+            "city": data["name"],
+            "temperature": data["main"]["temp"],
+            "description": data["weather"][0]["description"],
+            "humidity": data["main"]["humidity"],
+            "wind_speed": data["wind"]["speed"]
+        }
+```
+
+## 最佳实践
+
+### 1. Skill 命名规范
+
+- 使用动词 + 名词结构，如 `search_documents`、`generate_report`
+- 保持名称简洁，不超过 3-4 个单词
+- 避免歧义，确保名称能准确反映功能
+
+### 2. 描述质量
+
+Skill 的 `description` 是模型选择工具的关键依据。优秀的描述应该：
+
+- 明确说明 Skill 的功能和适用场景
+- 包含使用限制或前提条件
+- 提供典型示例
+
+```
+# 差
+description: "搜索文档"
+
+# 好
+description: "在企业知识库中检索与用户查询最相关的文档片段。适用于回答基于内部文档的问题，如公司政策、技术文档等。不支持实时信息检索。"
+```
+
+### 3. 参数设计
+
+- 必填参数用 `required` 明确标注
+- 提供合理的默认值
+- 使用 `enum` 约束可选值范围
+- 每个参数都要有清晰的描述
+
+### 4. 错误处理
+
+```python
+def execute(self, **kwargs):
+    try:
+        result = self._do_work(**kwargs)
+        return {"status": "success", "data": result}
+    except ConnectionError:
+        return {"status": "error", "message": "无法连接到服务，请稍后重试"}
+    except ValueError as e:
+        return {"status": "error", "message": f"参数错误: {str(e)}"}
+```
+
+### 5. Skill 组合（Chaining）
+
+复杂任务通常需要多个 Skill 协同：
+
+```
+用户: "分析上季度销售数据并生成可视化报告"
+
+流程:
+1. database_query("SELECT * FROM sales WHERE quarter = 'Q3'")
+2. statistical_analysis(data, metrics=["revenue", "growth"])
+3. generate_chart(data, type="bar")
+4. generate_report(analysis, chart, format="markdown")
+```
+
+## 主流框架对比
+
+| 框架 | Skill 定义方式 | 工具调用 | 多步编排 |
+|------|---------------|---------|---------|
+| OpenAI Functions | JSON Schema | 原生支持 | 需自行实现 |
+| LangChain Tools | Python 类 | LCEL 链 | 内置 Agent |
+| Anthropic Tool Use | XML/JSON | 原生支持 | Claude 自主编排 |
+| LlamaIndex | FunctionTool | 原生支持 | Query Engine |
+| AutoGen | 可注册函数 | 多 Agent 协作 | 内置工作流 |
+
+## 未来趋势
+
+1. **自适应 Skill**：模型能根据执行结果动态调整 Skill 参数和调用策略
+2. **Skill 市场**：标准化的 Skill 发布和共享平台
+3. **自动 Skill 生成**：从文档或示例代码中自动生成 Skill 定义
+4. **多模态 Skill**：支持图像、音频、视频等多模态输入输出
+5. **安全沙箱**：Skill 执行环境的安全隔离和权限控制
+
+## 总结
+
+AI Skills 是将 LLM 从"聊天机器人"升级为"智能助手"的关键技术。通过合理设计和组织 Skill，可以构建出功能强大、行为可控的 AI Agent 系统。核心要点：
+
+- **描述质量决定调用准确率**
+- **参数设计影响执行成功率**
+- **错误处理保障系统稳定性**
+- **Skill 组合释放更大潜力**
+
+掌握 AI Skills 的设计与实现，是构建下一代智能应用的必备技能。

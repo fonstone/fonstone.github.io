@@ -1,0 +1,388 @@
+---
+title: "Linux 设备树详解"
+description: "从基本概念到 K210 实例，系统讲解设备树的语法、架构与内核分析。"
+date: "2026-04-05"
+tags: ["Linux", "嵌入式", "设备树", "DTS"]
+---
+
+## 1. 设备树简介
+
+传统上，操作系统内核会直接编译进所有支持的硬件设备的驱动程序。但是，随着硬件设备的不断增多和变化，这种方法变得不够灵活。设备树的引入解决了这个问题。设备树将硬件的描述信息以一种结构化的方式存储在单独的文件中，然后在引导过程中由操作系统内核加载和解析。
+
+设备树文件使用一种称为 **Device Tree Source（DTS）** 的语言编写，它是一种人类可读的文本格式。该文件描述了硬件设备的层次结构、寄存器地址、中断线路、DMA 通道和其他相关属性。这些信息对于内核来说非常重要，因为它们允许内核正确地初始化和配置硬件设备。
+
+设备树文件经过 `DTC` 编译后会生成一种称为 **Device Tree Blob（DTB）** 的二进制格式。DTB 文件在引导过程中由引导加载程序（Bootloader）提供给内核。内核会解析 DTB 文件，根据其中的描述信息初始化硬件设备，并加载相应的驱动程序。
+
+设备树的作用在于用来描述一个具体的硬件平台的硬件资源。如果没有设备树，当有一个新的硬件平台时，在移植操作系统时需要去修改源码去适配这个具体的硬件平台。有了设备树之后，bootloader 就能直接从设备树中获取硬件信息，而不需要去修改源码，使得 Linux 内核的兼容性和可移植性大大增强。
+
+- **DTS**：Device Tree Source，`.dts` 格式的文件，是一种 ASCII 文本格式的设备树描述，也是我们要编写的设备树源码。一般一个 `.dts` 文件对应一个硬件平台，位于 Linux 源码的 `/arch/***/boot/dts/` 目录下。
+- **DTC**：Device Tree Compiler，是指编译设备树源码的工具。
+- **DTB**：是设备树源码编译生成的二进制文件，类似于 C 语言中 `.c` 文件编译生成 `.bin` 文件。
+
+![DTS/DTC/DTB 关系](/images/device-tree/dt-structure.png)
+
+## 2. 设备树基本语法架构分析
+
+### 2.1 dts 基本框架
+
+**头文件**：设备树可以像 C 语言那样使用 `#include` 引用 `.h` 头文件，也可以引用 `.dtsi` 后缀的设备树头文件。
+
+**设备树节点**：每一个 `{ }` 都是一个节点，`/ {…}` 表示"根节点"，在根节点内部的 `aliases {…}`、`chosen {…}`、`memory {…}` 等都是根节点的子节点。
+
+**设备树节点追加内容**：向已经存在的子节点追加数据，这些已经存在的节点可能定义在 `.dts` 文件里，也可能定义在 `.dtsi` 文件里，这些节点比根节点下的子节点多了一个 `&`。
+
+设备树由一个根节点和众多子节点组成，子节点也可以继续包含其他节点。
+
+#### 2.1.1 节点基本格式
+
+设备树中的每个节点都按照以下约定命名：
+
+```
+node-name@unit-address {
+    属性1 = …
+    属性2 = …
+    属性3 = …
+    子节点…
+}
+```
+
+`node-name` 用于指定节点的名称，长度为 1 至 31 个字符，只能由以下字符组成：`0-9`、`a-z`、`A-Z`、`,`、`.`、`_`、`+`、`-`。
+
+> 根节点没有节点名，它直接使用 `/` 指代。
+
+`@unit-address` 中的 `@` 是分割符，`unit-address` 用于指定"单元地址"，它的值要和节点 `reg` 属性的第一个地址一致。如果节点没有 `reg` 属性，可以直接省略 `@unit-address`。
+
+#### 2.1.2 节点标签
+
+```dts
+sysctl: sysctl@50440000 {
+    compatible = "kendryte,k210-sysctl", "simple-mfd";
+    reg = <0x50440000 0x1000>;
+    #clock-cells = <1>;
+};
+```
+
+`sysctl` 就代表了 `sysctl@50440000` 这个节点的标签，用 `:` 来指明。通常节点标签是节点名的简写，当其它位置需要引用时可以使用节点标签来向该节点中追加内容。
+
+#### 2.1.3 节点路径
+
+通过指定从根节点到所需节点的完整路径，可以唯一地标识设备树中的节点。**不同层次的设备树节点名字可以相同，同层次的设备树节点要唯一**。这类似于 Windows 上的文件路径。
+
+#### 2.1.4 节点属性
+
+**compatible 属性**：属性值类型为字符串，由一个或多个字符串组成，多个字符串使用 `,` 分隔。设备树中每一个代表设备的节点都要有 compatible 属性。它是系统用来决定绑定到设备的设备驱动的关键。
+
+```dts
+compatible = "kendryte,k210";
+```
+
+**model 属性**：用于指定设备的制造商和型号，推荐使用"制造商, 型号"的格式。
+
+```dts
+model = "Kendryte K210 generic";
+```
+
+**status 属性**：用于指示设备的"操作状态"，可以禁止或启用设备。默认情况下不设置 status 属性设备是使能的。
+
+```dts
+sound: sound {
+    status = "disabled";
+};
+```
+
+**reg 属性**：描述设备资源在其父总线定义的地址空间内的地址。通常用于表示一块内存的起始地址和长度。
+
+```dts
+reg = <0x80000000 0x400000>,
+      <0x80400000 0x200000>,
+      <0x80600000 0x200000>;
+```
+
+这里描述了三段内存：起始地址为 `0x80000000`，大小为 `0x400000`；起始地址为 `0x80400000`，大小为 `0x200000`；起始地址为 `0x80600000`，大小为 `0x200000`。
+
+**#address-cells 和 #size-cells**：
+
+- `#address-cells`：用于指定子节点 reg 属性"地址字段"所占的单元格数（每个 cell 为 32 位）。
+- `#size-cells`：用于指定子节点 reg 属性"大小字段"所占的单元格数。
+
+```dts
+soc {
+    #address-cells = <1>;
+    #size-cells = <1>;
+    ocrams: sram@900000 {
+        compatible = "fsl,lpm-sram";
+        reg = <0x900000 0x4000>;
+    };
+};
+```
+
+当 `#address-cells=2`，`#size-cells=1` 时，reg 内的数据含义为 `reg = <address address size address address size>`，这样就可以描述一个 64 位的地址。
+
+**device_type 属性**：很少用的属性，只用在 CPU 和内存的节点上。
+
+```dts
+cpus {
+    #address-cells = <1>;
+    #size-cells = <0>;
+
+    cpu0: cpu@0 {
+        compatible = "arm,cortex-a7";
+        device_type = "cpu";
+        reg = <0>;
+    }
+}
+```
+
+#### 2.1.5 特殊节点
+
+**aliases 子节点**：为其他节点起一个别名，方便快速查找。
+
+```dts
+aliases {
+    can0 = &flexcan1;
+    can1 = &flexcan2;
+    ethernet0 = &fec1;
+    ethernet1 = &fec2;
+    gpio0 = &gpio1;
+    /* ... 以下省略 ... */
+};
+```
+
+**chosen 子节点**：位于根节点下，不代表实际硬件，主要用于给内核传递参数。
+
+```dts
+chosen {
+    stdout-path = &uart1;
+};
+```
+
+`stdout-path = &uart1;` 表示系统标准输出 stdout 使用串口 uart1。这个节点还用作 uboot 向 Linux 内核传递配置参数的"通道"。
+
+## 3. Linux 内核中 K210 设备树分析
+
+从 Linux 5.7 开始，Linux 内核开始支持国产 RISC-V 芯片 K210。在 Linux 源码的 `/arch/riscv/boot/dts` 文件夹中可以找到 Kendryte 的 K210 设备树文件。
+
+![K210 设备树文件结构](/images/device-tree/k210-dtsi.png)
+
+### 3.1 k210.dts 分析
+
+```dts
+#include "k210.dtsi"
+
+/ {
+    // 设置节点基本属性
+    model = "Kendryte K210 generic";  // 指定为嘉楠的 K210
+    compatible = "kendryte,k210";     // 设置 compatible 属性
+
+    // 设置 chosen 特殊节点
+    chosen {
+        bootargs = "earlycon console=ttySIF0";
+        stdout-path = "serial0";
+    };
+};
+
+&uarths0 {
+    status = "okay";
+};
+```
+
+- 第一行：引用头文件，`k210.dts` 引用了 `k210.dtsi` 中的文件。
+- 根节点（3~12 行）：每一个设备树只有一个根节点。虽然 `k210.dts` 引用了 `k210.dtsi`，但不同文件的根节点最终会合并为一个。
+  - `bootargs = "earlycon console=ttySIF0"`：指定系统引导过程中传递给内核的启动参数，表示使用早期控制台并将其输出重定向到名为 `ttySIF0` 的串口设备。
+  - `stdout-path = "serial0"`：指定标准输出（stdout）的路径。
+- 13~15 行：向 `uarths0` 子节点追加内容，`status = "okay"` 表示该设备节点处于可用状态。
+
+### 3.2 k210.dtsi 分析
+
+#### 3.2.1 根节点
+
+`k210.dtsi` 的第一行包含了一个 C 语言头文件：
+
+```dts
+#include <dt-bindings/clock/k210-clk.h>
+```
+
+这个文件位于 `linux-5.10.99/include/dt-bindings/clock` 下，定义了一些时钟宏：
+
+```c
+#ifndef K210_CLK_H
+#define K210_CLK_H
+
+#define K210_CLK_PLL0   0
+#define K210_CLK_PLL1   0
+#define K210_CLK_ACLK   0
+#define K210_CLK_CPU    0
+
+#endif /* K210_CLK_H */
+```
+
+根节点中的关键属性：
+
+```dts
+#address-cells = <1>;
+#size-cells = <1>;
+compatible = "kendryte,k210";
+
+aliases {
+    serial0 = &uarths0;
+};
+```
+
+- `#address-cells = <1>`：地址单元数量为 1。
+- `#size-cells = <1>`：大小单元数量为 1。
+- `compatible = "kendryte,k210"`：表示设备树描述的硬件与 Kendryte K210 SoC 兼容。
+- `aliases`：定义了一个别名 `serial0`，它指向名为 `uarths0` 的设备。
+
+#### 3.2.2 cpu 节点
+
+```dts
+cpus {
+    #address-cells = <1>;         // 地址单元为 1
+    #size-cells = <0>;            // 大小单元为 0
+    timebase-frequency = <7800000>;  // CPU 时钟基准频率 7.8MHz
+
+    cpu0: cpu@0 {
+        device_type = "cpu";
+        reg = <0>;
+        compatible = "kendryte,k210", "sifive,rocket0", "riscv";
+        riscv,isa = "rv64imafdc";
+        mmu-type = "none";
+        i-cache-size = <0x8000>;
+        i-cache-block-size = <64>;
+        d-cache-size = <0x8000>;
+        d-cache-block-size = <64>;
+        clocks = <&sysctl K210_CLK_CPU>;
+        clock-frequency = <390000000>;
+        cpu0_intc: interrupt-controller {
+            #interrupt-cells = <1>;
+            interrupt-controller;
+            compatible = "riscv,cpu-intc";
+        };
+    };
+
+    cpu1: cpu@1 {
+        // 与 cpu0 配置类似
+        device_type = "cpu";
+        reg = <1>;
+        compatible = "kendryte,k210", "sifive,rocket0", "riscv";
+        riscv,isa = "rv64imafdc";
+        mmu-type = "none";
+        i-cache-size = <0x8000>;
+        i-cache-block-size = <64>;
+        d-cache-size = <0x8000>;
+        d-cache-block-size = <64>;
+        clocks = <&sysctl K210_CLK_CPU>;
+        clock-frequency = <390000000>;
+        cpu1_intc: interrupt-controller {
+            #interrupt-cells = <1>;
+            interrupt-controller;
+            compatible = "riscv,cpu-intc";
+        };
+    };
+};
+```
+
+cpu 单元定义了两个核心，分别以 cpu0 和 cpu1 为例：
+
+- `device_type = "cpu"`：表示此节点为 cpu。
+- `reg = <0>`：标明这是 0 号处理器。
+- `compatible = "kendryte,k210", "sifive,rocket0", "riscv"`：指定 cpu 的标识。
+- `riscv,isa = "rv64imafdc"`：表明该 cpu 为 rv64imafdc 架构。
+- `mmu-type = "none"`：cpu 不启用 mmu，未开启虚拟内存功能。
+- `i-cache-size = <0x8000>`：指令缓存大小为 32 KB。
+- `i-cache-block-size = <64>`：指令缓存块大小为 64 字节。
+- `d-cache-size = <0x8000>`：数据缓存大小为 32 KB。
+- `d-cache-block-size = <64>`：数据缓存块大小为 64 字节。
+- `clocks = <&sysctl K210_CLK_CPU>`：指向 `sysctl` 节点中的 0 号子时钟。
+- `clock-frequency = <390000000>`：指定时钟频率为 390 MHz。
+- `cpu0_intc`：中断控制器节点，用于处理与 CPU 0 相关的中断。
+
+#### 3.2.3 SRAM 节点
+
+```dts
+sram: memory@80000000 {
+    device_type = "memory";
+    reg = <0x80000000 0x400000>,
+          <0x80400000 0x200000>,
+          <0x80600000 0x200000>;
+    reg-names = "sram0", "sram1", "aisram";
+};
+```
+
+- `memory@80000000`：指定了 SRAM 的基地址为 `0x80000000`。
+- `device_type = "memory"`：指定设备类型为内存。
+- `reg`：指定了 SRAM 的物理地址范围，划分为三个连续的地址范围：
+  - `<0x80000000 0x400000>`：`sram0` 的地址范围，大小为 4 MB。
+  - `<0x80400000 0x200000>`：`sram1` 的地址范围，大小为 2 MB。
+  - `<0x80600000 0x200000>`：`aisram` 的地址范围，大小为 2 MB。
+- `reg-names`：指定了对应于每个地址范围的名称。
+
+#### 3.2.4 clocks 节点
+
+```dts
+clocks {
+    in0: oscillator {
+        compatible = "fixed-clock";
+        #clock-cells = <0>;
+        clock-frequency = <26000000>;
+    };
+};
+```
+
+该节点定义了一个名为 `in0` 的时钟：
+
+- `oscillator`：指定该时钟源为一个振荡器。
+- `compatible = "fixed-clock"`：指定时钟类型为固定频率时钟。
+- `#clock-cells = <0>`：表示该时钟节点不需要附加的时钟单元属性。
+- `clock-frequency = <26000000>`：指定时钟频率为 26 MHz。
+
+#### 3.2.5 soc 节点
+
+```dts
+soc {
+    #address-cells = <1>;
+    #size-cells = <1>;
+    compatible = "kendryte,k210-soc", "simple-bus";
+    ranges;  // 省略 ranges 属性，不存在地址映射
+    interrupt-parent = <&plic0>;
+
+    sysctl: sysctl@50440000 {
+        compatible = "kendryte,k210-sysctl", "simple-mfd";
+        reg = <0x50440000 0x1000>;
+        #clock-cells = <1>;
+    };
+
+    clint0: clint@2000000 {
+        #interrupt-cells = <1>;
+        compatible = "riscv,clint0";
+        reg = <0x2000000 0xC000>;
+        interrupts-extended = <&cpu0_intc 3 &cpu0_intc 7
+                               &cpu1_intc 3 &cpu1_intc 7>;
+        clocks = <&sysctl K210_CLK_ACLK>;
+    };
+
+    plic0: interrupt-controller@c000000 {
+        #interrupt-cells = <1>;
+        interrupt-controller;
+        compatible = "kendryte,k210-plic0", "riscv,plic0";
+        reg = <0xC000000 0x4000000>;
+        interrupts-extended = <&cpu0_intc 11>, <&cpu0_intc 0xffffffff>,
+                              <&cpu1_intc 11>, <&cpu1_intc 0xffffffff>;
+        riscv,ndev = <65>;
+        riscv,max-priority = <7>;
+    };
+
+    uarths0: serial@38000000 {
+        compatible = "kendryte,k210-uarths", "sifive,uart0";
+        reg = <0x38000000 0x1000>;
+        interrupts = <33>;
+        clocks = <&sysctl K210_CLK_CPU>;
+    };
+};
+```
+
+- `interrupt-parent = <&plic0>`：指定了中断控制器的父节点。
+- `sysctl`：系统控制器节点，描述了 Kendryte K210 SoC 的系统控制器，是一个多功能设备。
+- `clint0`：CLINT（Core Local Interruptor），核心本地中断控制器。
+- `plic0`：PLIC（Platform-Level Interrupt Controller），平台级中断控制器，支持 65 个设备，最大优先级为 7。
+- `uarths0`：串口设备节点，兼容 SiFive 的 UART0 设备，使用中断号 33。

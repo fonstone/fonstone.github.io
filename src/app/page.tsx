@@ -5,7 +5,6 @@ import {
   Book,
   Brain,
   Camera,
-  Code,
   Coffee,
   Github,
   Globe,
@@ -77,8 +76,11 @@ export default async function Home() {
             <a href="#home" className="hover:text-blue-500 transition-colors">
               首页
             </a>
-            <a href="#about" className="hover:text-blue-500 transition-colors">
-              关于我
+            <a
+              href="#recent-updates"
+              className="hover:text-blue-500 transition-colors"
+            >
+              近期更新
             </a>
             <a
               href="#knowledge"
@@ -175,35 +177,15 @@ export default async function Home() {
           </div>
         </section>
 
-        <section id="about" className="max-w-7xl mx-auto mb-16">
+        <section id="recent-updates" className="max-w-7xl mx-auto mb-16">
           <div className="flex items-center gap-3 mb-8 justify-center">
-            <span className="text-2xl">🪄</span>
+            <span className="text-2xl">✨</span>
             <h2 className="text-3xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
-              关于我
+              近期更新
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-            <BoltCard className="p-8">
-              <div className="w-14 h-14 bg-purple-100 dark:bg-purple-500/15 rounded-2xl flex items-center justify-center mb-4">
-                <Sparkles className="w-7 h-7 text-purple-500 dark:text-purple-300" />
-              </div>
-              <p className="text-lg">{profile.headline}</p>
-            </BoltCard>
-
-            <BoltCard className="p-8">
-              <div className="w-14 h-14 bg-blue-100 dark:bg-blue-500/15 rounded-2xl flex items-center justify-center mb-4">
-                <Code className="w-7 h-7 text-blue-500 dark:text-blue-300" />
-              </div>
-              <p className="text-lg">{aboutDescription}</p>
-            </BoltCard>
-          </div>
-
           <BoltCard className="p-8">
-            <div className="flex items-center gap-3 mb-6">
-              <span className="text-2xl">💫</span>
-              <h3 className="text-xl font-bold">近期更新</h3>
-            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {latestPosts.map((p) => (
                 <Link
@@ -234,116 +216,14 @@ export default async function Home() {
         </section>
 
         <section id="knowledge" className="max-w-7xl mx-auto mb-16">
-          <div className="flex items-center gap-3 mb-4 justify-center">
+          <div className="flex items-center gap-3 mb-8 justify-center">
             <span className="text-4xl">⛳</span>
             <h2 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-cyan-600 bg-clip-text text-transparent">
               知识空间
             </h2>
           </div>
 
-          <p className="text-center text-slate-600 dark:text-slate-300 mb-8">
-            以 bento-grid 的方式组织：分类、近期更新、项目精选。
-            <span className="mx-2 text-slate-300 dark:text-slate-700">·</span>
-            <Link className="underline hover:text-blue-500" href="/knowledge">
-              进入 /knowledge
-            </Link>
-          </p>
-
           <div className="grid grid-cols-1 gap-6 md:grid-cols-6 md:auto-rows-[180px] md:grid-flow-dense">
-            <BoltCard className="h-full p-8 md:col-span-2 md:row-span-2">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-white font-bold">
-                  {profile.brandInitial}
-                </div>
-                <div className="flex flex-col">
-                  <div className="text-sm text-slate-500 dark:text-slate-400">
-                    数字花园
-                  </div>
-                  <div className="text-lg font-bold">知识空间</div>
-                </div>
-              </div>
-              <p className="mt-5 text-slate-600 dark:text-slate-300 leading-relaxed">
-                所有内容来自 content/，自动生成分类与文章路由；支持 MDX、代码高亮与图片模糊占位。
-              </p>
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Link
-                  href="/knowledge"
-                  className="inline-flex items-center gap-2 rounded-xl bg-blue-500 px-5 py-3 text-white hover:bg-blue-600 transition-colors"
-                >
-                  浏览目录
-                </Link>
-                <Link
-                  href="/knowledge/AI"
-                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-white hover:bg-slate-800 transition-colors dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-                >
-                  示例分类
-                </Link>
-              </div>
-              <div className="mt-8 border-t border-slate-100 dark:border-slate-800 pt-6 text-sm text-slate-500 dark:text-slate-400">
-                <div className="flex items-center justify-between">
-                  <span>分类</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">
-                    {categories.length}
-                  </span>
-                </div>
-                <div className="mt-2 flex items-center justify-between">
-                  <span>文章</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">
-                    {allPosts.length}
-                  </span>
-                </div>
-              </div>
-            </BoltCard>
-
-            <BoltCard className="h-full p-8 md:col-span-4 md:row-span-2">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">✨</span>
-                  <h3 className="text-xl font-bold">近期更新</h3>
-                </div>
-                <Link
-                  href="/knowledge"
-                  className="text-sm text-slate-500 hover:text-blue-500 transition-colors dark:text-slate-400"
-                >
-                  查看全部
-                </Link>
-              </div>
-
-              <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {latestPosts.map((p) => (
-                  <Link
-                    key={`${p.category}:${p.slug}`}
-                    href={`/knowledge/${encodeURIComponent(
-                      p.category
-                    )}/${encodeURIComponent(p.slug)}`}
-                    className="rounded-2xl border border-slate-100 bg-slate-50 p-5 hover:bg-slate-100 transition-colors dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs text-slate-500 dark:text-slate-400">
-                        {p.category}
-                      </div>
-                      {p.date && (
-                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                          {p.date}
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-2 font-semibold">{p.title}</div>
-                    {p.description && (
-                      <div className="mt-2 text-sm text-slate-600 dark:text-slate-300 overflow-hidden">
-                        {p.description}
-                      </div>
-                    )}
-                  </Link>
-                ))}
-                {latestPosts.length === 0 && (
-                  <div className="text-slate-500 dark:text-slate-400">
-                    还没有文章内容，请在 /content 里添加 .mdx 文件。
-                  </div>
-                )}
-              </div>
-            </BoltCard>
-
             <BoltCard className="h-full p-8 md:col-span-3 md:row-span-2">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -411,8 +291,8 @@ export default async function Home() {
                 </a>
               </div>
 
-              <div className="mt-6 grid grid-cols-1 gap-3">
-                {projects.slice(0, 4).map((p) => (
+              <div className="mt-6 flex flex-col gap-3 max-h-[320px] overflow-y-auto pr-1">
+                {projects.map((p) => (
                   <div
                     key={p.name}
                     className="flex items-center gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"

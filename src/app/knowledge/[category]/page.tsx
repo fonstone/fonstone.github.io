@@ -20,15 +20,15 @@ export default async function KnowledgeCategoryPage({
   if (!current) notFound();
 
   return (
-    <div className="flex gap-8">
-      <aside className="hidden md:block w-48 shrink-0">
-        <nav className="sticky top-4 flex flex-col gap-1">
-          <h3 className="text-sm font-semibold text-white/80 mb-3">分类</h3>
+    <div className="flex flex-col md:flex-row gap-6">
+      <aside className="w-full md:w-48 md:shrink-0">
+        <nav className="flex md:flex-col gap-2 overflow-x-auto md:overflow-x-visible md:sticky md:top-4">
+          <h3 className="hidden md:block text-sm font-semibold text-white/80 mb-2">分类</h3>
           {categories.map((cat) => (
             <Link
               key={cat.category}
               href={`/knowledge/${encodeURIComponent(cat.category)}`}
-              className={`rounded-lg px-3 py-2 text-sm hover:bg-white/5 transition-colors ${
+              className={`rounded-lg px-3 py-2 text-sm hover:bg-white/5 transition-colors whitespace-nowrap shrink-0 md:shrink md:w-full ${
                 cat.category === category
                   ? "bg-white/10 text-white font-medium"
                   : "text-white/60"

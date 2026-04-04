@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getKnowledgeCategories } from "@/lib/knowledge/knowledge";
+import { getKnowledgeCategories, slugToCategory } from "@/lib/knowledge/knowledge";
 
 export const dynamicParams = false;
 
 export async function generateStaticParams() {
   const categories = await getKnowledgeCategories();
-  return categories.map((c) => ({ category: c.category }));
+  return categories.map((c) => ({ category: c.slug }));
 }
 
 export default async function KnowledgeCategoryPage({
@@ -14,9 +14,10 @@ export default async function KnowledgeCategoryPage({
 }: {
   params: Promise<{ category: string }>;
 }) {
-  const { category } = await params;
+  const { category: slug } = await params;
+  const category = slugToCategory(slug);
   const categories = await getKnowledgeCategories();
-  const current = categories.find((c) => c.category === category);
+  const current = categories.find((c) => c.slug === slug);
   if (!current) notFound();
 
   return (
@@ -26,10 +27,10 @@ export default async function KnowledgeCategoryPage({
           <h3 className="hidden md:block text-sm font-semibold text-white/80 mb-2">分类</h3>
           {categories.map((cat) => (
             <Link
-              key={cat.category}
-              href={`/knowledge/${encodeURIComponent(cat.category)}`}
+              key={cat.slug}
+              href={`/knowledge/${cat.slug}`}
               className={`rounded-lg px-3 py-2 text-sm hover:bg-white/5 transition-colors whitespace-nowrap shrink-0 md:shrink md:w-full ${
-                cat.category === category
+                cat.slug === slug
                   ? "bg-white/10 text-white font-medium"
                   : "text-white/60"
               }`}
@@ -55,7 +56,7 @@ export default async function KnowledgeCategoryPage({
           {current.posts.map((post) => (
             <Link
               key={post.slug}
-              href={`/knowledge/${encodeURIComponent(category)}/${encodeURIComponent(post.slug)}`}
+              href={`/knowledge/${slug}/${post.slug}`}
               className="group flex flex-col gap-1 py-5 transition-colors hover:bg-white/5 -mx-2 px-2 rounded-lg"
             >
               <div className="flex items-baseline justify-between gap-4">

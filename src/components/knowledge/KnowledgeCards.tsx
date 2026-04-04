@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { KnowledgePost } from "@/lib/knowledge/knowledge";
+import { categoryToSlug } from "@/lib/knowledge/knowledge";
 
 type Props = {
   posts: KnowledgePost[];
@@ -10,9 +11,7 @@ export default function KnowledgeCards({ posts, showCategory }: Props) {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       {posts.map((post) => {
-        const href = `/knowledge/${encodeURIComponent(
-          post.category
-        )}/${encodeURIComponent(post.slug)}`;
+        const href = `/knowledge/${categoryToSlug(post.category)}/${post.slug}`;
 
         return (
           <Link

@@ -6,6 +6,8 @@ import {
   getKnowledgePost,
   getKnowledgeStaticParams,
   extractHeadings,
+  slugToCategory,
+  categoryToSlug,
 } from "@/lib/knowledge/knowledge";
 
 export const dynamicParams = false;
@@ -20,18 +22,20 @@ export default async function KnowledgePostPage({
   params: Promise<{ category: string; slug: string }>;
 }) {
   const resolvedParams = await params;
-  const data = await getKnowledgePost(resolvedParams);
+  const category = slugToCategory(resolvedParams.category);
+  const data = await getKnowledgePost({ ...resolvedParams, category });
   if (!data) notFound();
 
   const { post, mdxSource } = data;
   const headings = extractHeadings(mdxSource);
+  const catSlug = categoryToSlug(post.category);
 
   return (
     <div className="flex gap-8">
       <article className="flex-1 min-w-0">
         <header className="flex flex-col gap-3 mb-8">
           <div className="flex items-center gap-3 text-sm text-white/60">
-            <Link href={`/knowledge/${encodeURIComponent(post.category)}`}>
+            <Link href={`/knowledge/${catSlug}`}>
               {post.category}
             </Link>
             <span className="text-white/30">/</span>

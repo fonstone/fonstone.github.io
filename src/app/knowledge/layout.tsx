@@ -13,12 +13,13 @@ export default async function KnowledgeLayout({
   const categories = await getKnowledgeCategories();
   const sidebarData: KnowledgeSidebarData = categories.map((c) => ({
     category: c.category,
+    slug: c.slug,
     posts: c.posts.map((p) => ({ slug: p.slug, title: p.title })),
   }));
 
   return (
     <div
-      className="mx-auto w-full max-w-6xl font-sans px-2 md:px-4"
+      className="mx-auto w-full max-w-7xl font-sans px-4 md:px-6"
       style={
         {
           "--font-sans":
@@ -26,11 +27,11 @@ export default async function KnowledgeLayout({
         } as CSSProperties
       }
     >
-      <div className="min-h-[calc(100svh-24px)] md:min-h-[calc(100svh-48px)] rounded-xl md:rounded-2xl border border-white/10 bg-white/0">
-        <div className="flex flex-col md:grid md:h-[calc(100svh-48px)] md:grid-cols-[280px,1fr]">
-          <aside className="border-b border-white/10 md:border-b-0 md:border-r">
-            <div className="p-3 md:p-4">
-              <div className="mb-3 flex items-center justify-between">
+      <div className="min-h-screen md:min-h-[calc(100svh-48px)] rounded-none md:rounded-2xl border-0 md:border border-white/10 bg-white/0">
+        <div className="flex flex-col md:grid md:grid-cols-[260px,1fr]">
+          <aside className="border-b border-white/10 md:border-b-0 md:border-r md:h-[calc(100svh-48px)] md:sticky md:top-0 overflow-y-auto">
+            <div className="p-4 md:p-5">
+              <div className="mb-4 flex items-center justify-between">
                 <Link
                   href="/"
                   className="text-sm font-medium text-white/80 hover:text-white transition-colors"
@@ -38,13 +39,13 @@ export default async function KnowledgeLayout({
                   ← 返回主页
                 </Link>
               </div>
-              <div className="mb-3 text-sm font-semibold text-white/80">
+              <div className="mb-4 text-sm font-semibold text-white/80">
                 知识空间
               </div>
               <KnowledgeSidebar data={sidebarData} />
             </div>
           </aside>
-          <section className="p-3 md:p-6 overflow-y-auto">
+          <section className="p-4 md:p-8 overflow-y-auto">
             {children}
           </section>
         </div>

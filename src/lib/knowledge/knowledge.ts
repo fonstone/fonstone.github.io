@@ -30,10 +30,30 @@ export type KnowledgePost = {
 
 export type KnowledgeCategory = {
   category: string;
+  slug: string;
   posts: KnowledgePost[];
 };
 
 const CONTENT_ROOT = path.join(process.cwd(), "content");
+
+const CATEGORY_SLUG_MAP: Record<string, string> = {
+  "自动驾驶": "autonomous-driving",
+  "生活": "life",
+  "AI": "ai",
+  "OS": "os",
+};
+
+const SLUG_TO_CATEGORY_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(CATEGORY_SLUG_MAP).map(([k, v]) => [v, k])
+);
+
+export function categoryToSlug(category: string): string {
+  return CATEGORY_SLUG_MAP[category] || category;
+}
+
+export function slugToCategory(slug: string): string {
+  return SLUG_TO_CATEGORY_MAP[slug] || slug;
+}
 
 async function pathExists(filePath: string) {
   try {
@@ -143,7 +163,7 @@ export async function getKnowledgeCategories(): Promise<KnowledgeCategory[]> {
       return b.updatedAtMs - a.updatedAtMs;
     });
 
-    result.push({ category, posts: posts.filter((p) => !p.draft) });
+    result.push({ category, slug: categoryToSlug(category), posts: posts.filter((p) => !p.draft) });
   }
 
   return result.filter((c) => c.posts.length > 0);
@@ -234,6 +254,6 @@ export async function getKnowledgeStaticParams(): Promise<
   Array<{ category: string; slug: string }>
 > {
   const posts = await getAllKnowledgePosts();
-  return posts.map((p) => ({ category: p.category, slug: p.slug }));
+  return posts.map((p) => ({ category: categoryToSlug(p.category), slug: p.slug }));
 }
 

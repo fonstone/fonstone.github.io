@@ -7,6 +7,7 @@ import clsx from "clsx";
 
 export type KnowledgeSidebarData = Array<{
   category: string;
+  slug: string;
   posts: Array<{
     slug: string;
     title: string;
@@ -41,21 +42,21 @@ export default function KnowledgeSidebar({ data }: Props) {
       </Link>
 
       {data.map((cat) => {
-        const isOpen = open.has(cat.category);
-        const categoryHref = `/knowledge/${encodeURIComponent(cat.category)}`;
+        const isOpen = open.has(cat.slug);
+        const categoryHref = `/knowledge/${cat.slug}`;
         const isActiveCategory =
           pathname === categoryHref || pathname.startsWith(`${categoryHref}/`);
 
         return (
-          <section key={cat.category} className="rounded-lg">
+          <section key={cat.slug} className="rounded-lg">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setOpen((prev) => {
                     const next = new Set(prev);
-                    if (next.has(cat.category)) next.delete(cat.category);
-                    else next.add(cat.category);
+                    if (next.has(cat.slug)) next.delete(cat.slug);
+                    else next.add(cat.slug);
                     return next;
                   });
                 }}
@@ -84,9 +85,7 @@ export default function KnowledgeSidebar({ data }: Props) {
             {isOpen && (
               <div className="mt-1 flex flex-col gap-1 pl-11">
                 {cat.posts.map((post) => {
-                  const href = `/knowledge/${encodeURIComponent(
-                    cat.category
-                  )}/${encodeURIComponent(post.slug)}`;
+                  const href = `/knowledge/${cat.slug}/${post.slug}`;
                   const isActive = pathname === href;
                   return (
                     <Link

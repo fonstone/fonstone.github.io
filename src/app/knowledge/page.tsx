@@ -20,8 +20,8 @@ export default async function KnowledgeIndexPage() {
             <h3 className="hidden md:block text-sm font-semibold text-white/80 mb-2">分类</h3>
             {categories.map((cat) => (
               <Link
-                key={cat.category}
-                href={`/knowledge/${encodeURIComponent(cat.category)}`}
+                key={cat.slug}
+                href={`/knowledge/${cat.slug}`}
                 className="rounded-lg px-3 py-2 text-sm text-white/60 hover:bg-white/5 hover:text-white transition-colors whitespace-nowrap shrink-0 md:shrink md:w-full"
               >
                 {cat.category}
@@ -35,11 +35,11 @@ export default async function KnowledgeIndexPage() {
 
         <div className="flex-1 min-w-0">
           {categories.map((cat) => (
-            <section key={cat.category} className="flex flex-col gap-1 mb-8">
+            <section key={cat.slug} className="flex flex-col gap-1 mb-8">
               <div className="mb-2 flex items-baseline justify-between">
                 <h2 className="text-lg font-semibold text-white/80">{cat.category}</h2>
                 <Link
-                  href={`/knowledge/${encodeURIComponent(cat.category)}`}
+                  href={`/knowledge/${cat.slug}`}
                   className="text-sm text-white/30 hover:text-white/60 transition-colors"
                 >
                   查看全部 →
@@ -49,7 +49,7 @@ export default async function KnowledgeIndexPage() {
                 {cat.posts.map((post) => (
                   <Link
                     key={`${post.category}:${post.slug}`}
-                    href={`/knowledge/${encodeURIComponent(post.category)}/${encodeURIComponent(post.slug)}`}
+                    href={`/knowledge/${cat.slug}/${post.slug}`}
                     className="group flex flex-col gap-1 py-4 transition-colors hover:bg-white/5 -mx-2 px-2 rounded-lg"
                   >
                     <div className="flex items-baseline justify-between gap-4">

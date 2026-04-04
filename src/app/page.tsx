@@ -137,10 +137,12 @@ export default async function Home() {
                 {aboutDescription}
               </p>
 
-              <div className="mt-6 flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                <MapPin className="w-5 h-5" />
-                <span>{profile.locationLine || contactInfo.location}</span>
-              </div>
+              {profile.locationLine && (
+                <div className="mt-6 flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                  <MapPin className="w-5 h-5" />
+                  <span>{profile.locationLine}</span>
+                </div>
+              )}
 
               <div className="mt-8 flex flex-wrap gap-3">
                 <a
@@ -432,31 +434,6 @@ export default async function Home() {
                     </div>
                   </div>
                 ))}
-              </div>
-            </BoltCard>
-
-            <BoltCard className="h-full p-8 md:col-span-6 md:row-span-1 bg-blue-50 border border-blue-100 dark:bg-blue-500/10 dark:border-blue-500/20">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex flex-col">
-                  <div className="font-bold">提示</div>
-                  <div className="text-slate-600 dark:text-slate-300">
-                    知识空间支持左侧目录折叠，点击分类旁按钮可展开文章列表。
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <Link
-                    href="/knowledge"
-                    className="rounded-xl bg-white px-5 py-3 text-slate-900 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900 dark:text-slate-100 dark:border-slate-800"
-                  >
-                    打开目录
-                  </Link>
-                  <a
-                    href={`mailto:${contactInfo.email}`}
-                    className="rounded-xl bg-blue-500 px-5 py-3 text-white hover:bg-blue-600 transition-colors"
-                  >
-                    写封邮件
-                  </a>
-                </div>
               </div>
             </BoltCard>
           </div>

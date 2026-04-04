@@ -14,71 +14,43 @@ export default async function KnowledgeIndexPage() {
         </p>
       </header>
 
-      <div className="flex flex-col md:flex-row gap-6">
-        <aside className="w-full md:w-48 md:shrink-0">
-          <nav className="flex md:flex-col gap-2 overflow-x-auto md:overflow-x-visible md:sticky md:top-4">
-            <h3 className="hidden md:block text-sm font-semibold text-white/80 mb-2">分类</h3>
-            {categories.map((cat) => (
-              <Link
-                key={cat.slug}
-                href={`/knowledge/${cat.slug}`}
-                className="rounded-lg px-3 py-2 text-sm text-white/60 hover:bg-white/5 hover:text-white transition-colors whitespace-nowrap shrink-0 md:shrink md:w-full"
-              >
-                {cat.category}
-                <span className="ml-2 text-xs text-white/40">
-                  {cat.posts.length}
-                </span>
-              </Link>
-            ))}
-          </nav>
-        </aside>
-
-        <div className="flex-1 min-w-0">
-          {categories.map((cat) => (
-            <section key={cat.slug} className="flex flex-col gap-1 mb-8">
-              <div className="mb-2 flex items-baseline justify-between">
-                <h2 className="text-lg font-semibold text-white/80">{cat.category}</h2>
+      <div className="flex flex-col gap-8">
+        {categories.map((cat) => (
+          <section key={cat.slug} className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-white/80 mb-2">{cat.category}</h2>
+            <div className="flex flex-col divide-y divide-white/5">
+              {cat.posts.map((post) => (
                 <Link
-                  href={`/knowledge/${cat.slug}`}
-                  className="text-sm text-white/30 hover:text-white/60 transition-colors"
+                  key={`${post.category}:${post.slug}`}
+                  href={`/knowledge/${cat.slug}/${post.slug}`}
+                  className="group flex flex-col gap-1 py-4 transition-colors hover:bg-white/5 -mx-2 px-2 rounded-lg"
                 >
-                  查看全部 →
-                </Link>
-              </div>
-              <div className="flex flex-col divide-y divide-white/5">
-                {cat.posts.map((post) => (
-                  <Link
-                    key={`${post.category}:${post.slug}`}
-                    href={`/knowledge/${cat.slug}/${post.slug}`}
-                    className="group flex flex-col gap-1 py-4 transition-colors hover:bg-white/5 -mx-2 px-2 rounded-lg"
-                  >
-                    <div className="flex items-baseline justify-between gap-4">
-                      <h3 className="text-sm font-medium text-white/80 group-hover:text-white transition-colors">
-                        {post.title}
-                      </h3>
-                      {post.date && (
-                        <time className="shrink-0 text-xs text-white/30 tabular-nums">
-                          {post.date}
-                        </time>
-                      )}
-                    </div>
-                    {post.description && (
-                      <p className="text-xs text-white/40 line-clamp-1">
-                        {post.description}
-                      </p>
+                  <div className="flex items-baseline justify-between gap-4">
+                    <h3 className="text-sm font-medium text-white/80 group-hover:text-white transition-colors">
+                      {post.title}
+                    </h3>
+                    {post.date && (
+                      <time className="shrink-0 text-xs text-white/30 tabular-nums">
+                        {post.date}
+                      </time>
                     )}
-                  </Link>
-                ))}
-              </div>
-            </section>
-          ))}
+                  </div>
+                  {post.description && (
+                    <p className="text-xs text-white/40 line-clamp-1">
+                      {post.description}
+                    </p>
+                  )}
+                </Link>
+              ))}
+            </div>
+          </section>
+        ))}
 
-          {posts.length === 0 && (
-            <p className="text-sm text-white/40">
-              还没有文章内容，请在 /content 里添加 .mdx 文件。
-            </p>
-          )}
-        </div>
+        {posts.length === 0 && (
+          <p className="text-sm text-white/40">
+            还没有文章内容，请在 /content 里添加 .mdx 文件。
+          </p>
+        )}
       </div>
     </div>
   );

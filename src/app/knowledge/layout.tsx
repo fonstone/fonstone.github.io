@@ -38,8 +38,8 @@ export default async function KnowledgeLayout({
     >
       <div className="min-h-screen bg-transparent">
         <div className="flex flex-col md:grid md:grid-cols-[280px,1fr] gap-0">
-          <aside className="border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 md:h-[calc(100svh-96px)] md:sticky md:top-[32px] overflow-y-auto bg-white/60 dark:bg-slate-900/40 backdrop-blur-sm rounded-2xl md:rounded-r-none md:rounded-l-2xl">
-            <div className="p-4 md:p-6">
+          <aside className="border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 backdrop-blur-sm rounded-2xl md:rounded-r-none md:rounded-l-2xl">
+            <div className="p-4 md:p-6 md:sticky md:top-[32px]">
               <div className="mb-6 flex items-center justify-between">
                 <Link
                   href="/"

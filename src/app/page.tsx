@@ -17,7 +17,7 @@ import BoltCard from "@/components/ui/BoltCard";
 import { contactInfo } from "@/lib/constants/contact";
 import { profile, aboutDescription, personImage } from "@/lib/constants/siteContent";
 import { socials } from "@/lib/constants/socials";
-import { getAllKnowledgePosts, getKnowledgeCategories } from "@/lib/knowledge/knowledge";
+import { getAllKnowledgePosts, getKnowledgeCategories, categoryToSlug } from "@/lib/knowledge/knowledge";
 
 function getCategoryIcon(category: string): {
   Icon: LucideIcon;
@@ -193,9 +193,7 @@ export default async function Home() {
               {latestPosts.map((p) => (
                 <Link
                   key={`${p.category}:${p.slug}`}
-                  href={`/knowledge/${encodeURIComponent(
-                    p.category
-                  )}/${encodeURIComponent(p.slug)}`}
+                  href={`/knowledge/${categoryToSlug(p.category)}/${p.slug}`}
                   className="bg-slate-50 rounded-2xl p-5 border border-slate-100 hover:bg-slate-100 transition-colors dark:bg-slate-950 dark:border-slate-800 dark:hover:bg-slate-900"
                 >
                   <div className="text-sm text-slate-500 dark:text-slate-400">
@@ -245,8 +243,8 @@ export default async function Home() {
                 const icon = getCategoryIcon(c.category);
                 return (
                   <Link
-                    key={c.category}
-                    href={`/knowledge/${encodeURIComponent(c.category)}`}
+                    key={c.slug}
+                    href={`/knowledge/${c.slug}`}
                     className="group flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 hover:bg-slate-100 transition-colors dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900 w-full max-w-xs"
                   >
                     <div

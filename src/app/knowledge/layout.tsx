@@ -38,9 +38,9 @@ export default async function KnowledgeLayout({
                 >
                   ← 返回主页
                 </Link>
-              </div>
-              <div className="mb-4 text-sm font-semibold text-white/80">
-                知识空间
+                <span className="text-sm font-semibold text-white/80">
+                  知识空间
+                </span>
               </div>
               <KnowledgeSidebar data={sidebarData} />
             </div>

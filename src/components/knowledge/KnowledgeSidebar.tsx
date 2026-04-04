@@ -31,16 +31,6 @@ export default function KnowledgeSidebar({ data }: Props) {
 
   return (
     <nav className="flex flex-col gap-2">
-      <Link
-        href="/knowledge"
-        className={clsx(
-          "rounded-lg px-3 py-2 text-sm font-medium hover:bg-white/5",
-          pathname === "/knowledge" && "bg-white/5"
-        )}
-      >
-        全部
-      </Link>
-
       {data.map((cat) => {
         const isOpen = open.has(cat.slug);
         const categoryHref = `/knowledge/${cat.slug}`;

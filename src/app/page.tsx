@@ -316,16 +316,16 @@ export default async function Home() {
               </h2>
             </div>
 
-            <div className="flex flex-wrap justify-center gap-4 max-w-3xl mx-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto w-full">
               <a
                 href={`mailto:${contactInfo.email}`}
-                className="bg-white/60 backdrop-blur rounded-2xl px-6 py-4 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900/60 dark:border-slate-800 min-w-[140px] text-center"
+                className="bg-white/60 backdrop-blur rounded-2xl p-6 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900/60 dark:border-slate-800 text-center flex flex-col items-center justify-center min-h-[140px]"
               >
-                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mx-auto mb-2">
+                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mb-3">
                   1
                 </div>
-                <div className="font-semibold text-sm">Email</div>
-                <div className="text-slate-600 dark:text-slate-300 text-xs mt-1 break-all">
+                <div className="font-semibold text-sm mb-1">Email</div>
+                <div className="text-slate-600 dark:text-slate-300 text-xs break-all">
                   {contactInfo.email}
                 </div>
               </a>
@@ -334,25 +334,25 @@ export default async function Home() {
                 href={socials.github}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="bg-white/60 backdrop-blur rounded-2xl px-6 py-4 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900/60 dark:border-slate-800 min-w-[140px] text-center"
+                className="bg-white/60 backdrop-blur rounded-2xl p-6 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900/60 dark:border-slate-800 text-center flex flex-col items-center justify-center min-h-[140px]"
               >
-                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mx-auto mb-2">
+                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mb-3">
                   2
                 </div>
-                <div className="font-semibold text-sm">GitHub</div>
-                <div className="text-slate-600 dark:text-slate-300 text-xs mt-1 break-all">
+                <div className="font-semibold text-sm mb-1">GitHub</div>
+                <div className="text-slate-600 dark:text-slate-300 text-xs break-all">
                   {socials.github}
                 </div>
               </a>
 
               <div
-                className="bg-white/60 backdrop-blur rounded-2xl px-6 py-4 border border-white/40 dark:bg-slate-900/60 dark:border-slate-800 min-w-[140px] text-center"
+                className="bg-white/60 backdrop-blur rounded-2xl p-6 border border-white/40 dark:bg-slate-900/60 dark:border-slate-800 text-center flex flex-col items-center justify-center min-h-[140px]"
               >
-                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mx-auto mb-2">
+                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mb-3">
                   3
                 </div>
-                <div className="font-semibold text-sm">WeChat</div>
-                <div className="text-slate-600 dark:text-slate-300 text-xs mt-1">
+                <div className="font-semibold text-sm mb-1">WeChat</div>
+                <div className="text-slate-600 dark:text-slate-300 text-xs">
                   sf_xiang
                 </div>
               </div>

@@ -80,11 +80,20 @@ export async function getKnowledgeCategories(): Promise<KnowledgeCategory[]> {
     .sort((a, b) => a.localeCompare(b));
 
   const customOrder = ["生活"];
+  const insertBefore = ["自动驾驶"];
   for (const cat of customOrder) {
     const idx = categoriesList.indexOf(cat);
     if (idx !== -1) {
       categoriesList.splice(idx, 1);
       categoriesList.push(cat);
+    }
+  }
+  for (const cat of insertBefore) {
+    const idx = categoriesList.indexOf(cat);
+    if (idx !== -1) {
+      categoriesList.splice(idx, 1);
+      const lifeIdx = categoriesList.indexOf("生活");
+      categoriesList.splice(lifeIdx !== -1 ? lifeIdx : categoriesList.length, 0, cat);
     }
   }
 

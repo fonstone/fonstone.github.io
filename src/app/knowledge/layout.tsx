@@ -56,7 +56,7 @@ export default async function KnowledgeLayout({
               </Suspense>
             </div>
           </aside>
-          <section className="p-4 md:p-8 lg:p-10 overflow-y-auto">
+          <section className="p-4 md:p-8 lg:p-10">
             {children}
           </section>
         </div>

@@ -2,16 +2,13 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   Bike,
-  Book,
   Brain,
-  Camera,
   Coffee,
   Github,
   Globe,
   Heart,
   Mail,
   MapPin,
-  Music,
   Sparkles,
   Trophy,
 } from "lucide-react";
@@ -35,18 +32,25 @@ function getCategoryIcon(category: string): {
       iconClassName: "text-blue-500 dark:text-blue-300",
     };
   }
-  if (key.includes("work")) {
+  if (key.includes("os")) {
     return {
       Icon: Coffee,
       iconWrapClassName: "bg-pink-100 dark:bg-pink-500/15",
       iconClassName: "text-pink-500 dark:text-pink-300",
     };
   }
-  if (key.includes("life")) {
+  if (key.includes("生活") || key.includes("life")) {
     return {
       Icon: Heart,
       iconWrapClassName: "bg-red-100 dark:bg-red-500/15",
       iconClassName: "text-red-500 dark:text-red-300",
+    };
+  }
+  if (key.includes("自动") || key.includes("驾驶")) {
+    return {
+      Icon: Bike,
+      iconWrapClassName: "bg-yellow-100 dark:bg-yellow-500/15",
+      iconClassName: "text-yellow-500 dark:text-yellow-300",
     };
   }
   return {
@@ -232,7 +236,7 @@ export default async function Home() {
                 href="/knowledge"
                 className="text-sm text-slate-500 hover:text-blue-500 transition-colors dark:text-slate-400"
               >
-                目录页
+                进入知识空间
               </Link>
             </div>
 
@@ -312,21 +316,17 @@ export default async function Home() {
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
+            <div className="flex flex-wrap justify-center gap-4 max-w-3xl mx-auto">
               <a
                 href={`mailto:${contactInfo.email}`}
-                className="bg-white/60 backdrop-blur rounded-2xl p-6 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900/60 dark:border-slate-800"
+                className="bg-white/60 backdrop-blur rounded-2xl px-6 py-4 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900/60 dark:border-slate-800 min-w-[140px] text-center"
               >
-                <div className="flex gap-3 items-center">
-                  <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
-                    1
-                  </div>
-                  <div>
-                    <div className="font-semibold">Email</div>
-                    <div className="text-slate-600 dark:text-slate-300 text-sm">
-                      {contactInfo.email}
-                    </div>
-                  </div>
+                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mx-auto mb-2">
+                  1
+                </div>
+                <div className="font-semibold text-sm">Email</div>
+                <div className="text-slate-600 dark:text-slate-300 text-xs mt-1 break-all">
+                  {contactInfo.email}
                 </div>
               </a>
 
@@ -334,54 +334,28 @@ export default async function Home() {
                 href={socials.github}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="bg-white/60 backdrop-blur rounded-2xl p-6 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900/60 dark:border-slate-800"
+                className="bg-white/60 backdrop-blur rounded-2xl px-6 py-4 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900/60 dark:border-slate-800 min-w-[140px] text-center"
               >
-                <div className="flex gap-3 items-center">
-                  <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
-                    2
-                  </div>
-                  <div>
-                    <div className="font-semibold">GitHub</div>
-                    <div className="text-slate-600 dark:text-slate-300 text-sm">
-                      {socials.github}
-                    </div>
-                  </div>
+                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mx-auto mb-2">
+                  2
+                </div>
+                <div className="font-semibold text-sm">GitHub</div>
+                <div className="text-slate-600 dark:text-slate-300 text-xs mt-1 break-all">
+                  {socials.github}
                 </div>
               </a>
 
               <div
-                className="bg-white/60 backdrop-blur rounded-2xl p-6 border border-white/40 dark:bg-slate-900/60 dark:border-slate-800"
+                className="bg-white/60 backdrop-blur rounded-2xl px-6 py-4 border border-white/40 dark:bg-slate-900/60 dark:border-slate-800 min-w-[140px] text-center"
               >
-                <div className="flex gap-3 items-center">
-                  <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
-                    3
-                  </div>
-                  <div>
-                    <div className="font-semibold">WeChat</div>
-                    <div className="text-slate-600 dark:text-slate-300 text-sm">
-                      sf_xiang
-                    </div>
-                  </div>
+                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mx-auto mb-2">
+                  3
+                </div>
+                <div className="font-semibold text-sm">WeChat</div>
+                <div className="text-slate-600 dark:text-slate-300 text-xs mt-1">
+                  sf_xiang
                 </div>
               </div>
-            </div>
-
-            <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-6">
-              {[
-                { Icon: Camera, label: "摄影/剪辑" },
-                { Icon: Coffee, label: "探店/咖啡" },
-                { Icon: Bike, label: "夜骑" },
-                { Icon: Music, label: "听歌/唱歌" },
-                { Icon: Book, label: "阅读" },
-                { Icon: Trophy, label: "运动/挑战" },
-              ].map(({ Icon, label }) => (
-                <BoltCard key={label} className="p-6">
-                  <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-3">
-                    <Icon className="w-7 h-7 text-slate-600 dark:text-slate-200" />
-                  </div>
-                  <p className="font-medium">{label}</p>
-                </BoltCard>
-              ))}
             </div>
           </BoltCard>
         </section>

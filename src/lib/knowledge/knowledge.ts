@@ -74,10 +74,21 @@ export async function getKnowledgeCategories(): Promise<KnowledgeCategory[]> {
   if (!(await pathExists(CONTENT_ROOT))) return [];
 
   const entries = await fs.readdir(CONTENT_ROOT, { withFileTypes: true });
-  const categories = entries
+  const categoriesList = entries
     .filter((e) => e.isDirectory() && !e.name.startsWith("."))
     .map((e) => e.name)
     .sort((a, b) => a.localeCompare(b));
+
+  const customOrder = ["生活"];
+  for (const cat of customOrder) {
+    const idx = categoriesList.indexOf(cat);
+    if (idx !== -1) {
+      categoriesList.splice(idx, 1);
+      categoriesList.push(cat);
+    }
+  }
+
+  const categories = categoriesList;
 
   const result: KnowledgeCategory[] = [];
 

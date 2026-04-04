@@ -20,49 +20,75 @@ export default async function KnowledgeCategoryPage({
   if (!current) notFound();
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold tracking-tight">{category}</h1>
-        <p className="text-sm text-white/50">{current.posts.length} 篇文章</p>
-      </header>
+    <div className="flex gap-8">
+      <aside className="hidden md:block w-48 shrink-0">
+        <nav className="sticky top-4 flex flex-col gap-1">
+          <h3 className="text-sm font-semibold text-white/80 mb-3">分类</h3>
+          {categories.map((cat) => (
+            <Link
+              key={cat.category}
+              href={`/knowledge/${encodeURIComponent(cat.category)}`}
+              className={`rounded-lg px-3 py-2 text-sm hover:bg-white/5 transition-colors ${
+                cat.category === category
+                  ? "bg-white/10 text-white font-medium"
+                  : "text-white/60"
+              }`}
+            >
+              {cat.category}
+              <span className="ml-2 text-xs text-white/40">
+                {cat.posts.length}
+              </span>
+            </Link>
+          ))}
+        </nav>
+      </aside>
 
-      <div className="flex flex-col divide-y divide-white/5">
-        {current.posts.map((post) => (
-          <Link
-            key={post.slug}
-            href={`/knowledge/${encodeURIComponent(category)}/${encodeURIComponent(post.slug)}`}
-            className="group flex flex-col gap-1 py-5 transition-colors hover:bg-white/5 -mx-2 px-2 rounded-lg"
-          >
-            <div className="flex items-baseline justify-between gap-4">
-              <h3 className="text-base font-medium text-white/90 group-hover:text-white transition-colors">
-                {post.title}
-              </h3>
-              {post.date && (
-                <time className="shrink-0 text-sm text-white/30 tabular-nums">
-                  {post.date}
-                </time>
-              )}
-            </div>
-            {post.description && (
-              <p className="text-sm text-white/40 line-clamp-2">
-                {post.description}
-              </p>
-            )}
-            {post.tags.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {post.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full border border-white/10 px-2 py-0.5 text-xs text-white/40"
-                  >
-                    {tag}
-                  </span>
-                ))}
+      <article className="flex-1 min-w-0">
+        <header className="flex flex-col gap-2 mb-8">
+          <h1 className="text-2xl font-bold tracking-tight">{category}</h1>
+          <p className="text-sm text-white/50">
+            {current.posts.length} 篇文章
+          </p>
+        </header>
+
+        <div className="flex flex-col divide-y divide-white/5">
+          {current.posts.map((post) => (
+            <Link
+              key={post.slug}
+              href={`/knowledge/${encodeURIComponent(category)}/${encodeURIComponent(post.slug)}`}
+              className="group flex flex-col gap-1 py-5 transition-colors hover:bg-white/5 -mx-2 px-2 rounded-lg"
+            >
+              <div className="flex items-baseline justify-between gap-4">
+                <h3 className="text-base font-medium text-white/90 group-hover:text-white transition-colors">
+                  {post.title}
+                </h3>
+                {post.date && (
+                  <time className="shrink-0 text-sm text-white/30 tabular-nums">
+                    {post.date}
+                  </time>
+                )}
               </div>
-            )}
-          </Link>
-        ))}
-      </div>
+              {post.description && (
+                <p className="text-sm text-white/40 line-clamp-2">
+                  {post.description}
+                </p>
+              )}
+              {post.tags.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {post.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-white/10 px-2 py-0.5 text-xs text-white/40"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Link>
+          ))}
+        </div>
+      </article>
     </div>
   );
 }

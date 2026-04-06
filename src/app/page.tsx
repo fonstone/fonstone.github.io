@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import BoltCard from "@/components/ui/BoltCard";
+import WeChatCard from "@/components/WeChatCard";
+import OfficialAccountCard from "@/components/OfficialAccountCard";
 import { contactInfo } from "@/lib/constants/contact";
 import { profile, aboutDescription, personImage } from "@/lib/constants/siteContent";
 import { socials } from "@/lib/constants/socials";
@@ -138,7 +140,7 @@ export default async function Home() {
                 </span>
               </h1>
 
-              <h2 className="mt-5 text-xl md:text-2xl font-medium text-slate-800 dark:text-slate-100">
+              <h2 className="mt-5 text-lg md:text-xl font-medium text-slate-800 dark:text-slate-100">
                 {profile.headline}
               </h2>
 
@@ -349,27 +351,35 @@ export default async function Home() {
           </BoltCard>
         </section>
 
-        <section id="contact" className="max-w-7xl mx-auto">
-          <BoltCard className="p-12 bg-gradient-to-br from-yellow-50 to-orange-50 border border-slate-100 dark:from-yellow-500/10 dark:to-orange-500/10 dark:border-slate-800">
-            <div className="flex items-center gap-3 mb-8 justify-center">
-              <Mail className="w-8 h-8 text-yellow-500" />
-              <span className="text-2xl">☀️</span>
-              <h2 className="text-3xl font-bold bg-gradient-to-r from-yellow-600 to-orange-600 bg-clip-text text-transparent">
-                联系方式
-              </h2>
+        <section id="contact" className="max-w-7xl mx-auto mb-16">
+          <div className="flex items-center gap-3 mb-8 justify-center">
+            <Mail className="w-8 h-8 text-yellow-500" />
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-yellow-600 to-orange-600 bg-clip-text text-transparent">
+              联系方式
+            </h2>
+          </div>
+
+          <BoltCard className="p-8">
+            <div className="flex items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📬</span>
+                <h3 className="text-xl font-bold">联系我</h3>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto w-full">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 justify-items-center">
               <a
                 href={`mailto:${contactInfo.email}`}
-                className="bg-white/60 backdrop-blur rounded-2xl p-6 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900/60 dark:border-slate-800 text-center flex flex-col items-center justify-center min-h-[140px]"
+                className="group flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 hover:bg-slate-100 transition-colors dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900 w-full max-w-xs"
               >
-                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mb-3">
-                  1
+                <div className="w-12 h-12 bg-orange-100 dark:bg-orange-500/15 rounded-2xl flex items-center justify-center">
+                  <Mail className="w-6 h-6 text-orange-500 dark:text-orange-300" />
                 </div>
-                <div className="font-semibold text-sm mb-1">Email</div>
-                <div className="text-slate-600 dark:text-slate-300 text-xs break-all">
-                  {contactInfo.email}
+                <div className="flex flex-col">
+                  <div className="font-semibold">Email</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 break-all">
+                    {contactInfo.email}
+                  </div>
                 </div>
               </a>
 
@@ -377,28 +387,22 @@ export default async function Home() {
                 href={socials.github}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="bg-white/60 backdrop-blur rounded-2xl p-6 border border-white/40 hover:bg-white/80 transition-colors dark:bg-slate-900/60 dark:border-slate-800 text-center flex flex-col items-center justify-center min-h-[140px]"
+                className="group flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 hover:bg-slate-100 transition-colors dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900 w-full max-w-xs"
               >
-                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mb-3">
-                  2
+                <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center">
+                  <Github className="w-6 h-6 text-slate-600 dark:text-slate-300" />
                 </div>
-                <div className="font-semibold text-sm mb-1">GitHub</div>
-                <div className="text-slate-600 dark:text-slate-300 text-xs break-all">
-                  {socials.github}
+                <div className="flex flex-col">
+                  <div className="font-semibold">GitHub</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 break-all">
+                    {socials.github}
+                  </div>
                 </div>
               </a>
 
-              <div
-                className="bg-white/60 backdrop-blur rounded-2xl p-6 border border-white/40 dark:bg-slate-900/60 dark:border-slate-800 text-center flex flex-col items-center justify-center min-h-[140px]"
-              >
-                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white font-bold mb-3">
-                  3
-                </div>
-                <div className="font-semibold text-sm mb-1">WeChat</div>
-                <div className="text-slate-600 dark:text-slate-300 text-xs">
-                  sf_xiang
-                </div>
-              </div>
+              <WeChatCard />
+
+              <OfficialAccountCard />
             </div>
           </BoltCard>
         </section>

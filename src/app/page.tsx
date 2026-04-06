@@ -3,12 +3,16 @@ import Link from "next/link";
 import {
   Bike,
   Brain,
+  Box,
+  CircuitBoard,
   Coffee,
+  Cpu,
   Github,
   Globe,
   Heart,
   Mail,
   MapPin,
+  Monitor,
   Sparkles,
   Trophy,
 } from "lucide-react";
@@ -284,24 +288,65 @@ export default async function Home() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { name: "OS", desc: "操作系统核心原理与实现", icon: "💻" },
-              { name: "QEMU", desc: "虚拟化与系统仿真工具", icon: "🔧" },
-              { name: "ARM/RISC-V64", desc: "主流指令集架构解析", icon: "⚙️" },
-              { name: "MCU", desc: "微控制器开发与应用", icon: "🔌" },
-            ].map((p) => (
-              <BoltCard key={p.name} className="p-6">
-                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-2xl mb-4 flex items-center justify-center text-3xl">
-                  {p.icon}
-                </div>
-                <h3 className="text-xl font-bold mb-2">{p.name}</h3>
-                <p className="text-slate-600 text-sm dark:text-slate-300">
-                  {p.desc}
-                </p>
-              </BoltCard>
-            ))}
-          </div>
+          <BoltCard className="p-8">
+            <div className="flex items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🛠️</span>
+                <h3 className="text-xl font-bold">项目领域</h3>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 justify-items-center">
+              {[
+                {
+                  name: "OS",
+                  desc: "操作系统核心原理与实现",
+                  Icon: Monitor,
+                  iconWrapClassName: "bg-purple-100 dark:bg-purple-500/15",
+                  iconClassName: "text-purple-500 dark:text-purple-300",
+                },
+                {
+                  name: "QEMU",
+                  desc: "虚拟化与系统仿真工具",
+                  Icon: Box,
+                  iconWrapClassName: "bg-orange-100 dark:bg-orange-500/15",
+                  iconClassName: "text-orange-500 dark:text-orange-300",
+                },
+                {
+                  name: "ARM/RISC-V",
+                  desc: "主流指令集架构解析",
+                  Icon: Cpu,
+                  iconWrapClassName: "bg-cyan-100 dark:bg-cyan-500/15",
+                  iconClassName: "text-cyan-500 dark:text-cyan-300",
+                },
+                {
+                  name: "MCU",
+                  desc: "微控制器开发与应用",
+                  Icon: CircuitBoard,
+                  iconWrapClassName: "bg-green-100 dark:bg-green-500/15",
+                  iconClassName: "text-green-500 dark:text-green-300",
+                },
+              ].map((p) => (
+                <Link
+                  key={p.name}
+                  href="#projects"
+                  className="group flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 hover:bg-slate-100 transition-colors dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900 w-full max-w-xs"
+                >
+                  <div
+                    className={`w-12 h-12 ${p.iconWrapClassName} rounded-2xl flex items-center justify-center`}
+                  >
+                    <p.Icon className={`w-6 h-6 ${p.iconClassName}`} />
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="font-semibold">{p.name}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {p.desc}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </BoltCard>
         </section>
 
         <section id="contact" className="max-w-7xl mx-auto">

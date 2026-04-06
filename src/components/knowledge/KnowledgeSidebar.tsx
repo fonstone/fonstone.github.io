@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import clsx from "clsx";
 
 export type KnowledgeSidebarData = Array<{
@@ -37,13 +37,19 @@ export default function KnowledgeSidebar({ data, tags }: Props) {
 
   const [open, setOpen] = useState<Set<string>>(initialOpen);
 
-  const activeTag = searchParams.get("tag") || null;
+  const [activeTag, setActiveTag] = useState<string | null>(searchParams.get("tag") || null);
+
+  const tagParam = searchParams.get("tag");
+
+  useEffect(() => {
+    setActiveTag(tagParam || null);
+  }, [tagParam, pathname]);
 
   function handleTagClick(tag: string) {
     if (activeTag === tag) {
       router.replace(pathname);
     } else {
-      router.replace(`${pathname}?tag=${encodeURIComponent(tag)}`);
+      router.push(`${pathname}?tag=${encodeURIComponent(tag)}`);
     }
   }
 

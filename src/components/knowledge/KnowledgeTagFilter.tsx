@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
-import { Suspense, useMemo } from "react";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
+import { Suspense, useMemo, useState, useEffect } from "react";
 import type { KnowledgePost, KnowledgeCategory, KnowledgeTagInfo } from "@/lib/knowledge/knowledge";
 
 type Props = {
@@ -13,8 +13,15 @@ type Props = {
 
 function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const router = useRouter();
-  const activeTag = searchParams.get("tag") || null;
+  const [activeTag, setActiveTag] = useState<string | null>(searchParams.get("tag") || null);
+
+  const tagParam = searchParams.get("tag");
+
+  useEffect(() => {
+    setActiveTag(tagParam || null);
+  }, [tagParam, pathname]);
 
   const filteredPosts = useMemo(
     () =>
@@ -38,7 +45,7 @@ function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
     if (activeTag === tag) {
       router.replace("/knowledge");
     } else {
-      router.replace(`/knowledge?tag=${encodeURIComponent(tag)}`);
+      router.push(`/knowledge?tag=${encodeURIComponent(tag)}`);
     }
   }
 

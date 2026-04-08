@@ -144,7 +144,7 @@ export default async function Home() {
                 {profile.headline}
               </h2>
 
-              <p className="mt-6 text-slate-600 dark:text-slate-300 leading-relaxed">
+              <p className="mt-6 text-slate-600 dark:text-slate-300 leading-relaxed text-justify">
                 {aboutDescription}
               </p>
 

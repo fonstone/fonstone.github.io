@@ -41,7 +41,7 @@ export default function WeChatCard() {
 
       {showImage && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center"
+          className="fixed inset-0 z-0 flex items-center justify-center"
           onClick={handleClose}
           role="dialog"
           aria-modal="true"
@@ -50,7 +50,7 @@ export default function WeChatCard() {
             className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-500"
           />
           <div
-            className="relative z-10 opacity-100 scale-100 transition-all duration-500 ease-in-out"
+            className="relative z-20 transition-all duration-500 ease-in-out"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="relative rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(59,130,246,0.3)] animate-[breathe_4s_ease-in-out_infinite] bg-white p-4 dark:bg-slate-900">

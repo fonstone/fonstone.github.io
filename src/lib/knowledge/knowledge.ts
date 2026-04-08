@@ -261,12 +261,13 @@ export async function getKnowledgePost(params: {
 }
 
 export function extractHeadings(mdxContent: string): KnowledgeHeading[] {
+  const stripped = stripCodeBlocks(mdxContent);
   const headingRegex = /^(#{1,3})\s+(.+)$/gm;
   const headings: KnowledgeHeading[] = [];
   const slugCounter = new Map<string, number>();
   let match;
 
-  while ((match = headingRegex.exec(mdxContent)) !== null) {
+  while ((match = headingRegex.exec(stripped)) !== null) {
     const level = match[1].length;
     const text = match[2].trim();
     const id = generateSlug(text, slugCounter);
@@ -274,6 +275,39 @@ export function extractHeadings(mdxContent: string): KnowledgeHeading[] {
   }
 
   return headings;
+}
+
+function stripCodeBlocks(content: string): string {
+  const lines = content.split("\n");
+  const result: string[] = [];
+  let fenceOpen = false;
+  let fenceMarker = "";
+
+  for (const line of lines) {
+    if (!fenceOpen) {
+      const m = line.match(/^([\x60~]{3,})/);
+      if (m) {
+        fenceOpen = true;
+        fenceMarker = m[1];
+        result.push("");
+      } else {
+        result.push(line);
+      }
+    } else {
+      if (line.startsWith(fenceMarker) && line.length >= fenceMarker.length) {
+        const after = line.substring(fenceMarker.length);
+        if (!after || after[0] === " " || after === "") {
+          fenceOpen = false;
+          fenceMarker = "";
+          result.push("");
+        }
+      }
+      // inside code block, skip line (push empty to preserve line numbers)
+      result.push("");
+    }
+  }
+
+  return result.join("\n");
 }
 
 function generateSlug(text: string, slugCounter: Map<string, number>): string {

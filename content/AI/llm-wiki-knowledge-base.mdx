@@ -1,0 +1,325 @@
+---
+title: "LLM Wiki：用大语言模型构建个人知识库"
+date: "2026-04-09"
+description: "基于 Karpathy 的 LLM Wiki 模式，详细讲解如何让 LLM 增量维护持久化知识库，替代传统 RAG 的检索范式，实现知识的持续积累与自动维护。"
+tags: ["AI", "LLM", "知识库", "个人Wiki", "Obsidian"]
+---
+
+## 核心思想：从检索到编译
+
+大多数人使用 LLM 处理文档的方式是 RAG（检索增强生成）：上传文件集合，LLM 在查询时检索相关片段并生成回答。这种方式的问题在于——**LLM 每次都在从零开始重新发现知识**。提问一个需要综合五篇文档的微妙问题，LLM 必须每次都找到并拼凑相关片段。没有任何积累。
+
+LLM Wiki 提出了一种不同的范式：LLM 不是在查询时从原始文档中检索，而是**增量构建并维护一个持久化的 wiki**——一组结构化、相互链接的 Markdown 文件，位于你和原始来源之间。当你添加新来源时，LLM 不仅仅为后续检索做索引，而是读取它、提取关键信息、并将其整合到已有的 wiki 中——更新实体页面、修订主题摘要、标注新数据与旧论断的矛盾之处。
+
+关键差异在于：**wiki 是一个持久的、可复利的制品。** 交叉引用已经建立，矛盾已经标注，综合已经反映了你读过的所有内容。每添加一个新来源、每提出一个新问题，wiki 都会变得更加丰富。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph 传统RAG
+        A1["原始文档"] --> B1["向量检索"]
+        B1 --> C1["LLM 生成回答"]
+        C1 --> D1["🚫 回答消失<br/>无积累"]
+    end
+    subgraph LLM Wiki
+        A2["原始文档"] --> B2["LLM 解析和整合"]
+        B2 --> C2["持久化 Wiki"]
+        C2 --> D2["✅ 知识复利<br/>持续增长"]
+        E2["新文档"] --> B2
+        F2["用户提问"] --> C2
+    end
+    style D1 fill:#ffcdd2
+    style D2 fill:#c8e6c9
+    style C2 fill:#e8f5e9
+`} />
+
+## 架构设计
+
+LLM Wiki 的架构分为三层：
+
+<MermaidDiagram chart={`flowchart TB
+    A["📄 原始来源层<br/>文章、论文、图片、数据文件<br/>不可变 — 只读"]
+    B["📒 Wiki 层<br/>LLM 生成的 Markdown 文件<br/>摘要、实体页、概念页、对比、综合<br/>LLM 拥有这一层"]
+    C["📋 Schema 层<br/>CLAUDE.md / AGENTS.md<br/>定义 Wiki 结构、约定和工作流<br/>你和 LLM 共同演化"]
+
+    A -->|LLM 读取| B
+    C -->|指导 LLM| B
+    B -->|供你浏览| D["🔍 查询与探索"]
+
+    style A fill:#e1f5fe
+    style B fill:#e8f5e9
+    style C fill:#fff3e0
+    style D fill:#fce4ec
+`} />
+
+### 第一层：原始来源（Raw Sources）
+
+你收集的原始文档——文章、论文、图片、数据文件。这些文件是**不可变的**：LLM 只读取，从不修改。这就是你的事实来源。
+
+例如，一个研究项目的原始来源目录可能长这样：
+
+```
+raw/
+├── articles/
+│   ├── attention-is-all-you-need.pdf
+│   ├── bert-pretraining.pdf
+│   └── scaling-laws.pdf
+├── podcasts/
+│   └── interview-geoffrey-hinton.md
+├── notes/
+│   └── 2026-03-15-research-ideas.md
+└── assets/
+    ├── figure1.png
+    └── comparison-table.png
+```
+
+### 第二层：Wiki
+
+LLM 生成的 Markdown 文件目录。包括摘要页、实体页、概念页、对比页、总览页和综合分析。LLM 完全拥有这一层——它创建页面、在新来源到来时更新、维护交叉引用并保持一致性。你负责阅读，LLM 负责编写。
+
+一个典型的 Wiki 目录结构：
+
+```
+wiki/
+├── index.md                 # 内容索引
+├── log.md                   # 操作日志
+├── overview.md              # 主题总览
+├── synthesis.md             # 综合分析
+├── entities/
+│   ├── transformer.md        # 实体页：Transformer 架构
+│   ├── bert.md               # 实体页：BERT 模型
+│   └── scaling-laws.md       # 实体页：缩放定律
+├── concepts/
+│   ├── self-attention.md     # 概念页：自注意力机制
+│   ├── pretraining.md        # 概念页：预训练范式
+│   └── emergent-abilities.md # 概念页：涌现能力
+├── comparisons/
+│   └── bert-vs-gpt.md        # 对比页：BERT vs GPT
+└── sources/
+    ├── attention-paper.md     # 来源摘要
+    └── scaling-laws-paper.md  # 来源摘要
+```
+
+### 第三层：Schema
+
+一个配置文件（如 Claude Code 的 `CLAUDE.md` 或 Codex 的 `AGENTS.md`），告诉 LLM wiki 的结构、约定以及在摄取来源、回答问题或维护 wiki 时应遵循的工作流。这是关键的配置文件——它使 LLM 成为一个有纪律的 wiki 维护者，而不是一个通用聊天机器人。
+
+Schema 示例：
+
+```markdown
+# Wiki Schema
+
+## 结构约定
+- Wiki 存放在 wiki/ 目录下
+- 每个实体/概念对应一个 Markdown 文件
+- 文件名使用小写英文，用连字符分隔单词
+- 每个页面包含 YAML frontmatter：tags、date、sources
+
+## 摄取工作流
+1. 读取新来源文档
+2. 与用户讨论关键要点
+3. 在 wiki/ 下创建来源摘要页
+4. 更新相关实体和概念页
+5. 更新 index.md
+6. 在 log.md 中追加操作记录
+
+## 问答工作流
+1. 先读 index.md 找到相关页面
+2. 阅读相关 wiki 页面
+3. 综合回答并引用来源
+4. 如果答案有长期价值，将其归档为新 wiki 页面
+
+## 维护工作流
+- 检查交叉引用是否一致
+- 标注新旧信息之间的矛盾
+- 发现孤立页面并添加链接
+- 为缺少页面的重要概念创建新页面
+```
+
+## 三大核心操作
+
+### 1. 摄取（Ingest）
+
+你将新来源放入原始文档集合，然后告诉 LLM 处理它。一个典型的摄取流程：
+
+<MermaidDiagram chart={`flowchart TD
+    A["添加新来源到 raw/"] --> B["LLM 阅读并提取关键信息"]
+    B --> C["与用户讨论要点"]
+    C --> D["创建来源摘要页"]
+    D --> E["更新相关实体页"]
+    E --> F["更新相关概念页"]
+    F --> G["更新 index.md"]
+    G --> H["追加记录到 log.md"]
+    
+    style A fill:#e1f5fe
+    style D fill:#e8f5e9
+    style E fill:#e8f5e9
+    style F fill:#e8f5e9
+    style G fill:#fff3e0
+    style H fill:#fff3e0
+`} />
+
+一个来源可能触及 10-15 个 wiki 页面。推荐逐个摄取并保持参与——阅读摘要、检查更新、引导 LLM 关注重点。也可以批量摄取，根据个人风格选择。
+
+**示例：摄取一篇论文**
+
+原始来源 `raw/articles/attention-is-all-you-need.pdf` 被处理后，LLM 可能更新以下 wiki 页面：
+
+| 操作 | 页面 | 更新内容 |
+|------|------|---------|
+| 新建 | `sources/attention-paper.md` | 论文核心贡献摘要 |
+| 新建 | `entities/transformer.md` | Transformer 架构详解 |
+| 新建 | `concepts/self-attention.md` | 自注意力机制说明 |
+| 新建 | `comparisons/transformer-vs-lstm.md` | Transformer 与 LSTM 对比 |
+| 更新 | `overview.md` | 加入 Transformer 部分 |
+| 更新 | `index.md` | 添加新页面链接 |
+| 更新 | `log.md` | 追加摄取记录 |
+
+### 2. 查询（Query）
+
+你针对 wiki 提问。LLM 搜索相关页面、阅读并综合回答。关键洞察是：**好的答案可以归档回 wiki 作为新页面。** 你请求的对比、分析、发现的联系——这些都是有价值的，不应该消失在聊天历史中。这样你的探索就像摄取的来源一样在知识库中复利增长。
+
+**示例：一次有价值的查询**
+
+```
+用户：Transformer 和 LSTM 在长序列建模上的关键区别是什么？
+
+LLM 阅读 wiki 中的相关页面后生成回答，
+然后自动建议：
+"这个对比分析很有价值，要不要我保存为 wiki 页面？"
+→ 创建 comparisons/transformer-vs-lstm-long-sequence.md
+```
+
+### 3. 维护（Lint）
+
+定期让 LLM 检查 wiki 健康：
+
+<MermaidDiagram chart={`flowchart LR
+    A["Wiki 维护检查"] --> B{"检查项"}
+    B --> C["页面间矛盾"]
+    B --> D["过时论断"]
+    B --> E["孤立页面"]
+    B --> F["缺少独立页面的重要概念"]
+    B --> G["缺失的交叉引用"]
+    B --> H["可补充的数据空缺"]
+    
+    style A fill:#e1f5fe
+    style C fill:#ffcdd2
+    style D fill:#ffcdd2
+    style E fill:#fff9c4
+    style F fill:#fff9c4
+    style G fill:#fff9c4
+    style H fill:#c8e6c9
+`} />
+
+LLM 擅长建议新的研究问题和新的来源检索方向，这使 wiki 在增长过程中保持健康。
+
+## 索引与日志
+
+两个特殊文件帮助 LLM（和你）在 wiki 增长时导航：
+
+### index.md — 内容索引
+
+按类别组织的内容目录，每页列出链接和一行摘要：
+
+```markdown
+# Wiki 索引
+
+## 实体
+- [[transformer]] — 基于 self-attention 的序列转换架构
+- [[bert]] — 双向编码器表示模型
+- [[scaling-laws]] — 神经网络缩放的幂律关系
+
+## 概念
+- [[self-attention]] — 将查询-键-值机制应用于同一输入序列
+- [[pretraining]] — 在大规模无标注数据上预训练模型
+
+## 来源
+- [[attention-paper]] — Attention Is All You Need (2017)
+- [[scaling-laws-paper]] — Scaling Laws for Neural Language Models (2020)
+
+## 对比
+- [[bert-vs-gpt]] — BERT 与 GPT 的架构和训练范式对比
+```
+
+LLM 每次摄取后更新索引。回答查询时先读索引找到相关页面，再深入阅读。这在中等规模（约 100 个来源、数百个页面）下效果出奇地好，**无需基于嵌入的 RAG 基础设施**。
+
+### log.md — 操作日志
+
+按时间顺序的追加记录——摄取、查询、维护检查：
+
+```markdown
+## [2026-04-02] ingest | Attention Is All You Need
+- 创建 sources/attention-paper.md
+- 创建 entities/transformer.md
+- 创建 concepts/self-attention.md
+- 更新 overview.md
+
+## [2026-04-03] query | Transformer vs LSTM 对比
+- 生成对比分析
+- 创建 comparisons/transformer-vs-lstm.md
+
+## [2026-04-05] lint | Wiki 健康检查
+- 发现 scaling-laws.md 孤立，添加了从 overview.md 的链接
+- 标注 pretraining.md 中与 scaling-laws.md 的矛盾
+```
+
+使用一致的前缀格式（如 `## [日期] 操作 | 标题`），日志可以被简单的 Unix 工具解析：`grep "^## \[" log.md | tail -5` 即可获取最近 5 条记录。
+
+## 适用场景
+
+LLM Wiki 可以应用于多种场景：
+
+| 场景 | 描述 | 示例 |
+|------|------|------|
+| **个人成长** | 追踪目标、健康、心理学，建立自我认知的结构化图景 | 日记条目、文章、播客笔记 |
+| **学术研究** | 深入研究某个主题数周或数月，构建包含演进论题的综合 wiki | 论文、报告、分析文章 |
+| **阅读书籍** | 逐章归档，建立角色、主题、情节线索的页面和连接 | 类似 Tolkien Gateway 那样的深度维基 |
+| **团队/企业** | 内部 wiki，由 LLM 维护，喂入 Slack 线程、会议记录等 | 项目文档、客户电话记录 |
+| **竞争分析** | 追踪竞争对手的产品、策略和市场动态 | 新闻、财报、产品发布 |
+| **旅行规划** | 积累目的地信息，构建行程 | 旅行博客、攻略、地图信息 |
+| **课程笔记** | 将课堂数据构建成结构化知识体系 | 教材、讲义、作业 |
+
+## 工具与技巧
+
+### Obsidian 集成
+
+Obsidian 是 LLM Wiki 的理想浏览器：
+
+- **Obsidian Web Clipper**：浏览器扩展，将网页文章转为 Markdown，快速加入原始来源
+- **本地图片下载**：在设置中指定附件文件夹路径后，可以一键下载文章中的所有图片到本地磁盘。LLM 可以直接查看和引用图片，而不依赖可能失效的 URL
+- **图谱视图**：最佳方式查看 wiki 的形态——哪些页面互相关联，哪些页面是枢纽，哪些是孤立节点
+- **Dataview 插件**：在页面 frontmatter 上运行查询（如标签、日期、来源数量），生成动态表格和列表
+
+### 可选 CLI 工具
+
+随着 wiki 增长，索引文件可能不够用。[qmd](https://github.com/tobi/qmd) 是一个不错的选择——基于 Markdown 文件的本地搜索引擎，支持混合 BM25/向量搜索和 LLM 重排序，全部在设备端运行。它同时提供 CLI（LLM 可以调用）和 MCP 服务器（LLM 可作为原生工具使用）。
+
+### 版本控制
+
+Wiki 本质上就是一个 Git 仓库的 Markdown 文件集合。你天然就获得了版本历史、分支和协作能力：
+
+```bash
+# 查看最近变更
+git log --oneline wiki/ | head -10
+
+# 查看特定页面的演进
+git log --oneline wiki/entities/transformer.md
+
+# 创建实验性分支
+git checkout -b experiment/new-concept
+```
+
+## 为什么这行得通
+
+维护知识库的繁琐部分不是阅读或思考——而是**簿记**。更新交叉引用、保持摘要最新、标注新旧数据矛盾、维护数十个页面间的一致性。人类放弃 wiki 是因为维护负担增长得比价值还快。
+
+LLM 不会厌倦，不会忘记更新交叉引用，可以一次性触碰 15 个文件。Wiki 保持维护是因为维护成本趋近于零。
+
+**人的工作是策展来源、指导分析、提出好问题、思考意义。LLM 的工作是一切其他事情。**
+
+这个想法在精神上与 Vannevar Bush 1945 年提出的 Memex 相近——一个私人的、精心策展的知识存储，文档之间有联想路径。Bush 无法解决的是谁来做维护。LLM 处理了这个问题。
+
+## 参考
+
+- [Karpathy - LLM Wiki Gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
+- [Vannevar Bush - As We May Think (1945)](https://www.theatlantic.com/magazine/archive/1945/07/as-we-may-think/303881/)
+- [qmd - Local search engine for markdown files](https://github.com/tobi/qmd)

@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" font-family="'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+    <linearGradient id="folder" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e94560"/>
+      <stop offset="100%" stop-color="#c23152"/>
+    </linearGradient>
+    <linearGradient id="file" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f3460"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#e94560"/>
+      <stop offset="100%" stop-color="#533483"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="520" fill="url(#bg)" rx="12"/>
+
+  <!-- Title -->
+  <text x="400" y="45" text-anchor="middle" fill="#e94560" font-size="22" font-weight="bold" filter="url(#glow)">Skill 目录结构</text>
+
+  <!-- Tree structure -->
+  <!-- Root folder: my-skill/ -->
+  <g transform="translate(80, 80)">
+    <!-- Root folder icon -->
+    <rect x="0" y="5" width="24" height="18" rx="3" fill="url(#folder)" opacity="0.9"/>
+    <rect x="0" y="0" width="14" height="8" rx="2" fill="url(#folder)"/>
+    <text x="32" y="20" fill="#e94560" font-size="16" font-weight="bold">my-skill/</text>
+
+    <!-- SKILL.md - REQUIRED -->
+    <g transform="translate(40, 50)">
+      <rect x="0" y="0" width="220" height="52" rx="8" fill="url(#file)" stroke="#e94560" stroke-width="2" filter="url(#shadow)"/>
+      <rect x="4" y="4" width="3" height="44" rx="1.5" fill="#e94560"/>
+      <text x="16" y="22" fill="#fff" font-size="13" font-weight="bold">SKILL.md</text>
+      <rect x="82" y="9" width="58" height="16" rx="8" fill="#e94560" opacity="0.9"/>
+      <text x="111" y="21" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">必填</text>
+      <text x="16" y="40" fill="#8892b0" font-size="11">核心指令文件</text>
+    </g>
+
+    <!-- template.md -->
+    <g transform="translate(40, 125)">
+      <rect x="0" y="0" width="220" height="52" rx="8" fill="url(#file)" stroke="#533483" stroke-width="1.5" filter="url(#shadow)"/>
+      <rect x="4" y="4" width="3" height="44" rx="1.5" fill="#533483"/>
+      <text x="16" y="22" fill="#a8b2d1" font-size="13" font-weight="bold">template.md</text>
+      <rect x="109" y="9" width="58" height="16" rx="8" fill="#533483" opacity="0.8"/>
+      <text x="138" y="21" text-anchor="middle" fill="#fff" font-size="9">可选</text>
+      <text x="16" y="40" fill="#8892b0" font-size="11">输出模板文件</text>
+    </g>
+
+    <!-- references/ -->
+    <g transform="translate(40, 200)">
+      <rect x="0" y="0" width="260" height="110" rx="8" fill="url(#file)" stroke="#533483" stroke-width="1.5" stroke-dasharray="6,3" filter="url(#shadow)"/>
+      <rect x="4" y="4" width="3" height="102" rx="1.5" fill="#533483"/>
+      <text x="16" y="22" fill="#a8b2d1" font-size="13" font-weight="bold">references/</text>
+      <rect x="109" y="9" width="58" height="16" rx="8" fill="#533483" opacity="0.8"/>
+      <text x="138" y="21" text-anchor="middle" fill="#fff" font-size="9">可选</text>
+
+      <!-- Sub-files -->
+      <g transform="translate(20, 35)">
+        <rect x="0" y="2" width="12" height="14" rx="2" fill="#0f3460" stroke="#533483" stroke-width="1"/>
+        <text x="18" y="14" fill="#8892b0" font-size="11">api-spec.md</text>
+        <text x="100" y="14" fill="#533483" font-size="10">API 规范文档</text>
+      </g>
+      <g transform="translate(20, 58)">
+        <rect x="0" y="2" width="12" height="14" rx="2" fill="#0f3460" stroke="#533483" stroke-width="1"/>
+        <text x="18" y="14" fill="#8892b0" font-size="11">code-style.md</text>
+        <text x="110" y="14" fill="#533483" font-size="10">编码风格指南</text>
+      </g>
+      <g transform="translate(20, 81)">
+        <rect x="0" y="2" width="12" height="14" rx="2" fill="#0f3460" stroke="#533483" stroke-width="1"/>
+        <text x="18" y="14" fill="#8892b0" font-size="11">patterns.md</text>
+        <text x="100" y="14" fill="#533483" font-size="10">设计模式参考</text>
+      </g>
+    </g>
+
+    <!-- scripts/ -->
+    <g transform="translate(40, 330)">
+      <rect x="0" y="0" width="260" height="85" rx="8" fill="url(#file)" stroke="#533483" stroke-width="1.5" stroke-dasharray="6,3" filter="url(#shadow)"/>
+      <rect x="4" y="4" width="3" height="77" rx="1.5" fill="#533483"/>
+      <text x="16" y="22" fill="#a8b2d1" font-size="13" font-weight="bold">scripts/</text>
+      <rect x="82" y="9" width="58" height="16" rx="8" fill="#533483" opacity="0.8"/>
+      <text x="111" y="21" text-anchor="middle" fill="#fff" font-size="9">可选</text>
+
+      <g transform="translate(20, 35)">
+        <rect x="0" y="2" width="12" height="14" rx="2" fill="#0f3460" stroke="#533483" stroke-width="1"/>
+        <text x="18" y="14" fill="#8892b0" font-size="11">validate.sh</text>
+        <text x="100" y="14" fill="#533483" font-size="10">验证脚本</text>
+      </g>
+      <g transform="translate(20, 58)">
+        <rect x="0" y="2" width="12" height="14" rx="2" fill="#0f3460" stroke="#533483" stroke-width="1"/>
+        <text x="18" y="14" fill="#8892b0" font-size="11">build.sh</text>
+        <text x="80" y="14" fill="#533483" font-size="10">构建脚本</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Right side: annotations -->
+  <g transform="translate(430, 80)">
+    <rect x="0" y="0" width="330" height="340" rx="10" fill="#0f3460" opacity="0.6" filter="url(#shadow)"/>
+    <text x="16" y="28" fill="#e94560" font-size="14" font-weight="bold">SKILL.md 结构说明</text>
+
+    <g transform="translate(16, 45)">
+      <rect x="0" y="0" width="298" height="70" rx="6" fill="#1a1a2e" stroke="#e94560" stroke-width="1" opacity="0.8"/>
+      <text x="10" y="20" fill="#e94560" font-size="12" font-weight="bold">YAML Frontmatter</text>
+      <text x="10" y="38" fill="#8892b0" font-size="10">--- </text>
+      <text x="10" y="52" fill="#a8b2d1" font-size="10">name / description / allowed-tools</text>
+      <text x="10" y="64" fill="#a8b2d1" font-size="10">context / model / effort ...</text>
+    </g>
+
+    <g transform="translate(16, 125)">
+      <rect x="0" y="0" width="298" height="90" rx="6" fill="#1a1a2e" stroke="#533483" stroke-width="1" opacity="0.8"/>
+      <text x="10" y="20" fill="#533483" font-size="12" font-weight="bold">Markdown 内容</text>
+      <text x="10" y="40" fill="#8892b0" font-size="10">• 具体指令和步骤</text>
+      <text x="10" y="55" fill="#8892b0" font-size="10">• $ARGUMENTS 变量替换</text>
+      <text x="10" y="70" fill="#8892b0" font-size="10">• !`command` 动态上下文</text>
+      <text x="10" y="85" fill="#8892b0" font-size="10">• 引用 references/ 中的文件</text>
+    </g>
+
+    <g transform="translate(16, 225)">
+      <rect x="0" y="0" width="298" height="100" rx="6" fill="#1a1a2e" stroke="#e9456044" stroke-width="1" stroke-dasharray="4,2" opacity="0.8"/>
+      <text x="10" y="20" fill="#533483" font-size="12" font-weight="bold">配套文件（可选）</text>
+      <text x="10" y="40" fill="#8892b0" font-size="10">• references/ — 知识库 &amp; 参考资料</text>
+      <text x="10" y="55" fill="#8892b0" font-size="10">• scripts/ — 验证 &amp; 构建脚本</text>
+      <text x="10" y="70" fill="#8892b0" font-size="10">• template.md — 输出模板</text>
+      <text x="10" y="85" fill="#8892b0" font-size="10">• examples/ — 示例输出</text>
+    </g>
+  </g>
+</svg>

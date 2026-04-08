@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 380" font-family="'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+    <filter id="glow2">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#e94560"/>
+    </marker>
+    <marker id="arrowhead2" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#533483"/>
+    </marker>
+  </defs>
+
+  <rect width="800" height="380" fill="url(#bg2)" rx="12"/>
+
+  <!-- Title -->
+  <text x="400" y="40" text-anchor="middle" fill="#e94560" font-size="20" font-weight="bold" filter="url(#glow2)">Skill 调用流程</text>
+
+  <!-- Step 1: User Input -->
+  <g transform="translate(40, 80)">
+    <rect x="0" y="0" width="120" height="50" rx="8" fill="#e94560" opacity="0.15" stroke="#e94560" stroke-width="1.5"/>
+    <text x="60" y="20" text-anchor="middle" fill="#e94560" font-size="11" font-weight="bold">用户输入</text>
+    <text x="60" y="38" text-anchor="middle" fill="#a8b2d1" font-size="9">/deploy staging</text>
+  </g>
+
+  <!-- Arrow 1 -->
+  <line x1="165" y1="105" x2="215" y2="105" stroke="#e94560" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Step 2: Claude matching -->
+  <g transform="translate(220, 75)">
+    <rect x="0" y="0" width="140" height="60" rx="8" fill="#533483" opacity="0.2" stroke="#533483" stroke-width="1.5"/>
+    <text x="70" y="20" text-anchor="middle" fill="#533483" font-size="11" font-weight="bold">Skill 匹配</text>
+    <text x="70" y="38" text-anchor="middle" fill="#a8b2d1" font-size="9">根据 description</text>
+    <text x="70" y="50" text-anchor="middle" fill="#a8b2d1" font-size="9">或用户 /slash 命令</text>
+  </g>
+
+  <!-- Arrow 2 -->
+  <line x1="365" y1="105" x2="415" y2="105" stroke="#e94560" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Step 3: Load Skill -->
+  <g transform="translate(420, 70)">
+    <rect x="0" y="0" width="160" height="70" rx="8" fill="#0f3460" opacity="0.8" stroke="#e9456080" stroke-width="1.5"/>
+    <text x="80" y="22" text-anchor="middle" fill="#e94560" font-size="11" font-weight="bold">加载 SKILL.md</text>
+    <text x="80" y="40" text-anchor="middle" fill="#a8b2d1" font-size="9">1. 解析 frontmatter</text>
+    <text x="80" y="55" text-anchor="middle" fill="#a8b2d1" font-size="9">2. 变量替换 $ARGUMENTS</text>
+  </g>
+
+  <!-- Arrow 3 -->
+  <line x1="585" y1="105" x2="635" y2="105" stroke="#e94560" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Step 4: Execute -->
+  <g transform="translate(640, 70)">
+    <rect x="0" y="0" width="120" height="70" rx="8" fill="#e94560" opacity="0.2" stroke="#e94560" stroke-width="1.5"/>
+    <text x="60" y="22" text-anchor="middle" fill="#e94560" font-size="11" font-weight="bold">执行指令</text>
+    <text x="60" y="40" text-anchor="middle" fill="#a8b2d1" font-size="9">Claude 根据</text>
+    <text x="60" y="55" text-anchor="middle" fill="#a8b2d1" font-size="9">Skill 内容执行</text>
+  </g>
+
+  <!-- Bottom: Context flow -->
+  <g transform="translate(40, 175)">
+    <rect x="0" y="0" width="720" height="180" rx="10" fill="#0f3460" opacity="0.4" stroke="#533483" stroke-width="1" stroke-dasharray="6,3"/>
+    <text x="360" y="25" text-anchor="middle" fill="#533483" font-size="14" font-weight="bold">context 模式对比</text>
+
+    <!-- Inline mode -->
+    <g transform="translate(20, 45)">
+      <rect x="0" y="0" width="330" height="120" rx="8" fill="#1a1a2e" stroke="#e94560" stroke-width="1.5"/>
+      <rect x="8" y="8" width="55" height="18" rx="9" fill="#e94560"/>
+      <text x="35" y="21" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">默认</text>
+      <text x="75" y="21" fill="#e94560" font-size="12" font-weight="bold">内联模式 (Inline)</text>
+
+      <text x="15" y="48" fill="#a8b2d1" font-size="10">Skill 内容注入到当前对话</text>
+      <text x="15" y="65" fill="#8892b0" font-size="10">✓ 可访问完整对话历史</text>
+      <text x="15" y="80" fill="#8892b0" font-size="10">✓ 适合需要上下文的任务</text>
+      <text x="15" y="95" fill="#8892b0" font-size="10">✗ 占用上下文窗口</text>
+      <text x="15" y="110" fill="#8892b0" font-size="10">  适用：代码审查、文档生成</text>
+    </g>
+
+    <!-- Fork mode -->
+    <g transform="translate(370, 45)">
+      <rect x="0" y="0" width="330" height="120" rx="8" fill="#1a1a2e" stroke="#533483" stroke-width="1.5"/>
+      <rect x="8" y="8" width="55" height="18" rx="9" fill="#533483"/>
+      <text x="35" y="21" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">隔离</text>
+      <text x="75" y="21" fill="#533483" font-size="12" font-weight="bold">Fork 模式 (context: fork)</text>
+
+      <text x="15" y="48" fill="#a8b2d1" font-size="10">在隔离子代理中执行</text>
+      <text x="15" y="65" fill="#8892b0" font-size="10">✓ 独立上下文，不影响主对话</text>
+      <text x="15" y="80" fill="#8892b0" font-size="10">✓ 并行执行多个任务</text>
+      <text x="15" y="95" fill="#8892b0" font-size="10">✗ 无法访问主对话历史</text>
+      <text x="15" y="110" fill="#8892b0" font-size="10">  适用：部署、研究、独立任务</text>
+    </g>
+  </g>
+</svg>

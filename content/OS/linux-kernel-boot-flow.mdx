@@ -1,0 +1,619 @@
+---
+title: "Linux 内核启动流程分析"
+description: "以 ARM64 为例，从内核链接脚本、汇编启动入口到 start_kernel，系统梳理 Linux 内核的启动流程与各子系统的初始化时序。"
+date: "2026-04-08"
+tags: ["Linux", "嵌入式", "ARM64", "内核启动"]
+---
+
+## 1. 内核链接文件
+
+内核编译后生成的目标文件是 ELF 格式的 vmlinux，它是各源代码按照 `vmlinux.lds` 设定的规则链接后得到的 Object 文件，并不能直接在 ARM 平台上运行。通常内核映像以压缩格式存储（zImage 或 bzImage），因此内核启动阶段需要先自解压。
+
+Linux 内核的链接文件位于 `arch/arm64/kernel/vmlinux.lds.S`，编译时会据此生成 `vmlinux.lds`，用于最终链接生成内核镜像 `vmlinux`。
+
+在该文件的开头指定了输出的架构和内核入口地址：
+
+```
+OUTPUT_ARCH(aarch64)
+ENTRY(_text)
+```
+
+`_text` 是代码段的起始地址，定义在 `SECTIONS` 部分：
+
+```
+. = KIMAGE_VADDR + TEXT_OFFSET;
+
+.head.text : {
+    _text = .;
+    HEAD_TEXT
+}
+```
+
+其中 `KIMAGE_VADDR` 和 `TEXT_OFFSET` 定义在 `arch/arm64/include/asm/memory.h` 中：
+
+![KIMAGE_VADDR 和 TEXT_OFFSET 宏定义](/images/linux-kernel-boot/kimage-vaddr.png)
+
+## 2. 内核启动第一阶段（汇编阶段）
+
+### 2.1 内核启动入口点
+
+将编译好的 `vmlinux` ELF 文件反汇编后，可以查看入口地址：
+
+![vmlinux 入口地址反汇编结果](/images/linux-kernel-boot/vmlinux-entry.png)
+
+Linux 内核的第一条指令是 `add x13, x18, #0x16`，对应符号在 `.head.text` 段。在 `include/linux/init.h` 中有如下定义：
+
+```c
+/* For assembly routines */
+#define __HEAD      .section ".head.text","ax"
+#define __INIT       .section ".init.text","ax"
+```
+
+`__HEAD` 宏代表 `.head.text` 段，在 `arch/arm64/kernel/head.S` 中使用：
+
+```asm
+__HEAD
+_head:
+    /*
+     * The requirements are:
+     *   MMU = off, D-cache = off, I-cache = on or off,
+     *   x0 = physical address to the FDT blob.
+     */
+#ifdef CONFIG_EFI
+    add x13, x18, #0x16       // "MZ" signature required by UEFI
+    b   primary_entry
+#else
+    b   primary_entry           // branch to kernel start, magic
+    .long   0                   // reserved
+#endif
+    .quad   0                   // Image load offset from start of RAM
+    le64sym _kernel_size_le     // Effective size of kernel image
+    le64sym _kernel_flags_le    // Informative flags
+    .quad   0                   // reserved
+    .quad   0                   // reserved
+    .quad   0                   // reserved
+    .ascii  ARM64_IMAGE_MAGIC   // Magic number
+#ifdef CONFIG_EFI
+    .long   pe_header - _head   // Offset to PE header
+pe_header:
+    __EFI_PE_HEADER
+#else
+    .long   0                   // reserved
+#endif
+```
+
+内核启动前需要关闭 MMU 和 D-cache，x0 为 FDT blob 的物理地址。`add x13, x18, #0x16` 用于形成 UEFI 要求的 "MZ" 签名，然后执行 `b primary_entry` 跳转。
+
+> D-cache 可能缓存了 bootloader 的数据，不清除可能导致内核访问错误数据。而 bootloader 的指令与内核指令无关，所以可以不关闭 I-cache。
+
+<MermaidDiagram chart={`flowchart TD
+    A["uboot 加载内核镜像"] --> B["_head 入口"]
+    B -->|"add x13, x18, #0x16<br/>MZ 签名"| C["b primary_entry"]
+    C --> D["primary_entry"]
+`} />
+
+### 2.2 primary_entry 函数
+
+```asm
+SYM_CODE_START(primary_entry)
+    bl  preserve_boot_args
+    bl  init_kernel_el              // w0=cpu_boot_mode
+    adrp x23, __PHYS_OFFSET
+    and x23, x23, MIN_KIMG_ALIGN - 1  // KASLR offset, defaults to 0
+    bl  set_cpu_boot_mode_flag
+    bl  __create_page_tables
+    bl  __cpu_setup                  // initialise processor
+    b   __primary_switch
+SYM_CODE_END(primary_entry)
+```
+
+<MermaidDiagram chart={`flowchart TD
+    A["preserve_boot_args<br/>保存启动参数 x0-x3"] --> B["init_kernel_el<br/>初始化异常级别"]
+    B --> C["set_cpu_boot_mode_flag<br/>设置 CPU 启动模式标志"]
+    C --> D["__create_page_tables<br/>创建页表"]
+    D --> E["__cpu_setup<br/>初始化处理器"]
+    E --> F["__primary_switch<br/>启用 MMU 并跳转"]
+    style A fill:#e1f5fe
+    style B fill:#e1f5fe
+    style C fill:#e1f5fe
+    style D fill:#fff3e0
+    style E fill:#fff3e0
+    style F fill:#e8f5e9
+`} />
+
+`primary_entry` 依次调用以下函数：
+
+#### 2.2.1 preserve_boot_args
+
+```asm
+SYM_CODE_START_LOCAL(preserve_boot_args)
+    mov x21, x0                      // x21=FDT，将 dtb 地址暂存到 x21
+    adr_l x0, boot_args             // 将 boot_args 数组地址保存到 x0
+    stp x21, x1, [x0]               // 保存 x21、x1 到 boot_args[0]、boot_args[1]
+    stp x2, x3, [x0, #16]           // 保存 x2、x3 到 boot_args[2]、boot_args[3]
+    dmb sy                           // 内存屏障
+    mov x1, #0x20                    // 4 x 8 bytes = 32
+    b   __inval_dcache_area          // 无效化数据缓存区域
+SYM_CODE_END(preserve_boot_args)
+```
+
+`boot_args` 定义在 `arch/arm64/setup.c` 中，用于保存内核启动时传入的参数（x0-x3）。
+
+#### 2.2.2 init_kernel_el
+
+这段代码根据当前异常级别（EL2 或 EL1）对处理器进行初始化：
+
+```asm
+SYM_FUNC_START(init_kernel_el)
+    mov_q x0, INIT_SCTLR_EL1_MMU_OFF
+    msr  sctlr_el1, x0              // 配置 EL1 系统控制寄存器
+
+    mrs  x0, CurrentEL               // 读取当前异常级别
+    cmp  x0, #CurrentEL_EL2          // 是否为 EL2？
+    b.eq init_el2                     // 是则跳转到 EL2 初始化
+
+init_el1:
+    isb
+    mov_q x0, INIT_PSTATE_EL1
+    msr  spsr_el1, x0                // 配置 EL1 的 PSTATE
+    msr  elr_el1, lr                  // 配置 EL1 异常链接寄存器
+    mov  w0, #BOOT_CPU_MODE_EL1
+    eret
+
+init_el2:
+    mov_q x0, HCR_HOST_NVHE_FLAGS
+    msr  hcr_el2, x0                 // 配置 EL2 Hypervisor 配置寄存器
+    isb
+    init_el2_state
+
+    adr_l x0, __hyp_stub_vectors     // EL2 异常向量表地址
+    msr  vbar_el2, x0                // 设置 EL2 向量基址寄存器
+    isb
+
+    msr  elr_el2, lr
+    mov  w0, #BOOT_CPU_MODE_EL2
+    eret
+SYM_FUNC_END(init_kernel_el)
+```
+
+<MermaidDiagram chart={`flowchart TD
+    A["init_kernel_el"] --> B["配置 sctlr_el1"]
+    B --> C{"当前异常级别?"}
+    C -->|"EL1"| D["配置 PSTATE_EL1<br/>配置 elr_el1<br/>eret 返回"]
+    C -->|"EL2"| E["配置 HCR_EL2<br/>init_el2_state<br/>设置异常向量表 vbar_el2<br/>eret 返回"]
+    D --> F["返回 BOOT_CPU_MODE_EL1"]
+    E --> G["返回 BOOT_CPU_MODE_EL2"]
+    style C fill:#fff9c4
+`} />
+
+主要步骤：
+
+1. 配置 EL1 的系统控制寄存器 `sctlr_el1`
+2. 读取当前异常级别
+3. 若为 EL1：配置 PSTATE 和异常链接寄存器后 `eret` 返回
+4. 若为 EL2：配置 HCR 寄存器、初始化 EL2 状态、设置异常向量表后 `eret` 返回
+
+常量定义：
+
+```c
+// arch/arm64/include/asm/virt.h
+#define BOOT_CPU_MODE_EL1   (0xe11)
+#define BOOT_CPU_MODE_EL2   (0xe12)
+```
+
+#### 2.2.3 set_cpu_boot_mode_flag
+
+```asm
+SYM_FUNC_START_LOCAL(set_cpu_boot_mode_flag)
+    adr_l x1, __boot_cpu_mode
+    cmp  w0, #BOOT_CPU_MODE_EL2
+    b.ne 1f
+    add  x1, x1, #4              // EL2 则偏移 4 字节
+1:  str  w0, [x1]                 // 存储启动模式
+    dmb  sy
+    dc   ivac, x1                 // 无效化缓存行
+    ret
+SYM_FUNC_END(set_cpu_boot_mode_flag)
+```
+
+`__boot_cpu_mode` 是一个 64 位全局变量，前 4 字节默认值为 `0xe11`（EL1），后 4 字节为 `0xe12`（EL2）。根据实际启动级别写入对应位置。
+
+#### 2.2.4 __create_page_tables
+
+```asm
+SYM_FUNC_START_LOCAL(__create_page_tables)
+    mov  x28, lr
+
+    // 1. 无效化 init 页表缓存
+    adrp x0, init_pg_dir
+    adrp x1, init_pg_end
+    sub  x1, x1, x0
+    bl   __inval_dcache_area
+
+    // 2. 清空 init 页表
+    adrp x0, init_pg_dir
+    adrp x1, init_pg_end
+    sub  x1, x1, x0
+1:  stp  xzr, xzr, [x0], #16
+    stp  xzr, xzr, [x0], #16
+    stp  xzr, xzr, [x0], #16
+    stp  xzr, xzr, [x0], #16
+    subs x1, x1, #64
+    b.ne 1b
+
+    mov  x7, SWAPPER_MM_MMUFLAGS
+
+    // 3. 创建恒等映射（identity mapping）
+    adrp x0, idmap_pg_dir
+    adrp x3, __idmap_text_start
+
+    // 配置 VA_BITS 和 T0SZ
+    // ...
+
+    // 4. 映射内核镜像
+    adrp x0, init_pg_dir
+    mov_q x5, KIMAGE_VADDR
+    add  x5, x5, x23
+    // ...
+
+    // 5. 无效化页表缓存
+    dmb  sy
+    adrp x0, idmap_pg_dir
+    // ...
+    bl   __inval_dcache_area
+
+    adrp x0, init_pg_dir
+    // ...
+    bl   __inval_dcache_area
+
+    ret  x28
+SYM_FUNC_END(__create_page_tables)
+```
+
+<MermaidDiagram chart={`flowchart LR
+    A["无效化页表缓存"] --> B["清空页表"]
+    B --> C["创建恒等映射<br/>identity mapping"]
+    C --> D["映射内核镜像<br/>kernel mapping"]
+    D --> E["再次无效化缓存"]
+    style A fill:#e1f5fe
+    style B fill:#e1f5fe
+    style C fill:#fff3e0
+    style D fill:#fff3e0
+    style E fill:#e8f5e9
+`} />
+
+主要功能：缓存无效化 → 页表清空 → 虚拟地址配置 → 内核映射。创建两类映射：
+
+- **恒等映射（identity mapping）**：使 MMU 开启前后物理地址和虚拟地址一致
+- **内核线性映射**：映射内核镜像本身
+
+#### 2.2.5 __cpu_setup
+
+`__cpu_setup` 定义在 `arch/arm64/mm/proc.S` 中，负责在开启 MMU 前初始化处理器：
+
+1. 无效化本地 TLB（`tlbi vmalle1`）
+2. 启用浮点和 SIMD 单元（`cpacr_el1`）
+3. 设置调试寄存器
+4. 配置内存属性寄存器 `MAIR_EL1`
+5. 配置翻译控制寄存器 `TCR_EL1`（包括地址空间大小、页大小等）
+6. 设置物理地址大小和硬件访问标志
+7. 准备 `SCTLR_EL1` 的初始值并返回
+
+#### 2.2.6 __primary_switch
+
+```asm
+SYM_FUNC_START_LOCAL(__primary_switch)
+#ifdef CONFIG_RANDOMIZE_BASE
+    mov  x19, x0                  // 保存新 SCTLR_EL1
+    mrs  x20, sctlr_el1           // 保存旧 SCTLR_EL1
+#endif
+    adrp x1, init_pg_dir
+    bl   __enable_mmu
+#ifdef CONFIG_RELOCATABLE
+    // 内核地址重定位...
+#endif
+    ldr  x8, =__primary_switched
+    adrp x0, __PHYS_OFFSET
+    br   x8
+SYM_FUNC_END(__primary_switch)
+```
+
+主要工作是启用 MMU，必要时进行内核地址重定位（KASLR），然后跳转到 `__primary_switched`。
+
+### 2.3 __primary_switched
+
+```asm
+SYM_FUNC_START_LOCAL(__primary_switched)
+    adrp x4, init_thread_union
+    add  sp, x4, #THREAD_SIZE
+    adr_l x5, init_task
+    msr  sp_el0, x5               // 保存 thread_info
+
+    adr_l x8, vectors              // 加载异常向量表
+    msr  vbar_el1, x8
+    isb
+
+    stp  xzr, x30, [sp, #-16]!
+    mov  x29, sp
+
+    str_l x21, __fdt_pointer, x5   // 保存 FDT 指针
+
+    ldr_l x4, kimage_vaddr
+    sub  x4, x4, x0                // 计算内核虚拟地址偏移
+    str_l x4, kimage_voffset, x5
+
+    // 清空 BSS 段
+    adr_l x0, __bss_start
+    mov  x1, xzr
+    adr_l x2, __bss_stop
+    sub  x2, x2, x0
+    bl   __pi_memset
+    dsb  ishst
+
+    // KASAN 早期初始化
+#if defined(CONFIG_KASAN_GENERIC) || defined(CONFIG_KASAN_SW_TAGS)
+    bl   kasan_early_init
+#endif
+    mov  x0, x21                    // 传递 FDT 地址
+    bl   early_fdt_map               // 早期映射 FDT
+    bl   init_feature_override       // 解析 CPU 特性覆盖
+
+#ifdef CONFIG_RANDOMIZE_BASE
+    // KASLR 处理...
+#endif
+
+    bl   switch_to_vhe              // 优先使用 VHE
+    add  sp, sp, #16
+    mov  x29, #0
+    mov  x30, #0
+    b    start_kernel               // 跳转到 C 语言入口
+SYM_FUNC_END(__primary_switched)
+```
+
+此函数在 MMU 启用后执行，完成以下工作：
+
+<MermaidDiagram chart={`flowchart TD
+    A["设置内核栈<br/>init_thread_union"] --> B["加载异常向量表<br/>vbar_el1"]
+    B --> C["保存 FDT 指针<br/>__fdt_pointer"]
+    C --> D["计算内核虚拟地址偏移<br/>kimage_voffset"]
+    D --> E["清空 BSS 段"]
+    E --> F["KASAN 早期初始化"]
+    F --> G["早期映射 FDT<br/>early_fdt_map"]
+    G --> H["解析 CPU 特性覆盖<br/>init_feature_override"]
+    H --> I["KASLR 处理<br/>（可选）"]
+    I --> J["切换到 VHE 模式<br/>switch_to_vhe"]
+    J --> K["b start_kernel<br/>进入 C 语言阶段"]
+    style K fill:#c8e6c9
+`} />
+
+## 3. 内核启动第二阶段（C 语言阶段）
+
+第二阶段从 `start_kernel()` 函数开始，定义在 `init/main.c` 中。这是所有 Linux 平台进入系统内核初始化后的入口函数，主要完成各子系统的初始化。
+
+### 3.1 start_kernel
+
+```c
+asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
+{
+    char *command_line;
+    char *after_dashes;
+
+    set_task_stack_end_magic(&init_task);
+    smp_setup_processor_id();
+    debug_objects_early_init();
+
+    cgroup_init_early();
+
+    local_irq_disable();
+    early_boot_irqs_disabled = true;
+
+    boot_cpu_init();
+    page_address_init();
+    pr_notice("%s", linux_banner);
+    early_security_init();
+    setup_arch(&command_line);
+    setup_boot_config(command_line);
+    setup_command_line(command_line);
+    setup_nr_cpu_ids();
+    setup_per_cpu_areas();
+    smp_prepare_boot_cpu();
+    boot_cpu_hotplug_init();
+
+    build_all_zonelists(NULL);
+    page_alloc_init();
+
+    pr_notice("Kernel command line: %s\n", saved_command_line);
+
+    jump_label_init();
+    parse_early_param();
+    // 解析启动参数...
+
+    setup_log_buf(0);
+    vfs_caches_init_early();
+    sort_main_extable();
+    trap_init();
+    mm_init();
+    poking_init();
+    ftrace_init();
+
+    early_trace_init();
+
+    sched_init();                    // 调度器初始化
+
+    radix_tree_init();
+    housekeeping_init();
+    workqueue_init_early();
+
+    rcu_init();                      // RCU 机制初始化
+
+    trace_init();
+
+    context_tracking_init();
+    early_irq_init();
+    init_IRQ();                      // 中断初始化
+    tick_init();
+    rcu_init_nohz();
+    init_timers();                   // 定时器初始化
+    hrtimers_init();                 // 高精度定时器
+    softirq_init();                  // 软中断初始化
+    timekeeping_init();
+    kfence_init();
+    time_init();                     // 时间初始化
+
+    random_init(command_line);
+    boot_init_stack_canary();
+
+    perf_event_init();
+    profile_init();
+    call_function_init();
+
+    early_boot_irqs_disabled = false;
+    local_irq_enable();               // 使能中断
+
+    kmem_cache_init_late();
+
+    console_init();                   // 控制台初始化
+
+    lockdep_init();
+    locking_selftest();
+
+    // 初始化 initrd...
+    setup_per_cpu_pageset();
+    numa_policy_init();
+    acpi_early_init();
+
+    sched_clock_init();
+    calibrate_delay();
+
+    arch_cpu_finalize_init();
+
+    pid_idr_init();
+    anon_vma_init();
+    thread_stack_cache_init();
+    cred_init();
+    fork_init();                     // 进程 fork 初始化
+    proc_caches_init();
+    uts_ns_init();
+    buffer_init();
+    key_init();
+    security_init();                 // 安全子系统初始化
+    dbg_late_init();
+    vfs_caches_init();               // VFS 缓存初始化
+    pagecache_init();
+    signals_init();
+    seq_file_init();
+    proc_root_init();                // /proc 文件系统初始化
+    nsfs_init();
+    cpuset_init();
+    cgroup_init();                    // cgroup 初始化
+    taskstats_init_early();
+    delayacct_init();
+
+    acpi_subsystem_init();
+    arch_post_acpi_subsys_init();
+    sfi_init_late();
+    kcsan_init();
+
+    arch_call_rest_init();            // 进入 rest_init → 创建 init 进程
+
+    prevent_tail_call_optimization();
+}
+```
+
+`start_kernel` 依次调用了数十个初始化函数，涵盖了内核的各个核心子系统：
+
+| 阶段 | 关键初始化函数 | 说明 |
+|------|---------------|------|
+| 早期 | `setup_arch()` | 架构相关初始化 |
+| 内存 | `mm_init()`, `build_all_zonelists()`, `page_alloc_init()` | 内存管理初始化 |
+| 调度 | `sched_init()` | 进程调度器初始化 |
+| 中断 | `init_IRQ()`, `softirq_init()` | 中断和软中断初始化 |
+| 时间 | `tick_init()`, `hrtimers_init()`, `time_init()` | 时间子系统初始化 |
+| RCU | `rcu_init()` | RCU 机制初始化 |
+| 控制 | `console_init()` | 控制台初始化 |
+| 进程 | `fork_init()`, `proc_caches_init()` | 进程管理初始化 |
+| VFS | `vfs_caches_init()`, `proc_root_init()` | 虚拟文件系统初始化 |
+| 安全 | `security_init()` | 安全子系统初始化 |
+| cgroup | `cgroup_init()` | 控制组初始化 |
+
+<MermaidDiagram chart={`flowchart TD
+    A["setup_arch<br/>架构初始化"] --> B["mm_init<br/>内存管理"]
+    B --> C["sched_init<br/>调度器"]
+    C --> D["rcu_init<br/>RCU机制"]
+    D --> E["init_IRQ + softirq_init<br/>中断子系统"]
+    E --> F["hrtimers_init + time_init<br/>时间子系统"]
+    F --> G["console_init<br/>控制台"]
+    G --> H["fork_init<br/>进程管理"]
+    H --> I["vfs_caches_init<br/>虚拟文件系统"]
+    I --> J["security_init<br/>安全子系统"]
+    J --> K["cgroup_init<br/>控制组"]
+    K --> L["arch_call_rest_init<br/>rest_init"]
+    L --> M["kernel_init<br/>init进程 PID=1"]
+    L --> N["kthreadd<br/>内核线程 PID=2"]
+    style A fill:#e1f5fe
+    style B fill:#e1f5fe
+    style C fill:#fff3e0
+    style D fill:#fff3e0
+    style E fill:#fff3e0
+    style F fill:#fff3e0
+    style G fill:#e8f5e9
+    style H fill:#e8f5e9
+    style I fill:#e8f5e9
+    style J fill:#fce4ec
+    style K fill:#fce4ec
+    style L fill:#c8e6c9
+    style M fill:#c8e6c9
+    style N fill:#c8e6c9
+`} />
+
+最后通过 `arch_call_rest_init()` 调用 `rest_init()`，创建内核线程 `kernel_init`（即 init 进程，PID=1）和 `kthreadd`（PID=2），完成内核的整个启动过程。
+
+## 4. 启动流程总结
+
+<MermaidDiagram chart={`flowchart TD
+    A["uboot 加载内核镜像"] --> B["_head<br/>内核入口, MZ签名"]
+    B --> C["primary_entry"]
+    C --> D["preserve_boot_args<br/>保存启动参数"]
+    D --> E["init_kernel_el<br/>初始化异常级别"]
+    E --> F["set_cpu_boot_mode_flag<br/>设置启动模式标志"]
+    F --> G["__create_page_tables<br/>创建恒等映射+内核映射"]
+    G --> H["__cpu_setup<br/>初始化处理器"]
+    H --> I["__primary_switch<br/>启用MMU"]
+    I --> J["__primary_switched"]
+    J --> K["清空BSS段"]
+    K --> L["映射FDT"]
+    L --> M["start_kernel<br/>C语言阶段入口"]
+    M --> N["各子系统初始化"]
+    N --> O["rest_init"]
+    O --> P["kernel_init<br/>init进程 PID=1"]
+    O --> Q["kthreadd<br/>PID=2"]
+
+    style A fill:#e1f5fe
+    style B fill:#e1f5fe
+    style C fill:#bbdefb
+    style D fill:#bbdefb
+    style E fill:#bbdefb
+    style F fill:#bbdefb
+    style G fill:#fff3e0
+    style H fill:#fff3e0
+    style I fill:#fff3e0
+    style J fill:#e8f5e9
+    style K fill:#e8f5e9
+    style L fill:#e8f5e9
+    style M fill:#c8e6c9
+    style N fill:#c8e6c9
+    style O fill:#c8e6c9
+    style P fill:#a5d6a7
+    style Q fill:#a5d6a7
+`} />
+
+整体启动流程可以概括为三个阶段：
+
+1. **汇编阶段**（`_head` → `__primary_switched`）：MMU 关闭状态下完成硬件初始化、建立页表、启用 MMU，并跳转到 C 语言入口
+2. **C 语言阶段**（`start_kernel`）：依次初始化各内核子系统（内存、调度、中断、时间、VFS、安全等）
+3. **用户空间启动**（`rest_init` → `kernel_init`）：创建 init 进程和 kthreadd 内核线程，最终启动用户空间
+
+## 参考
+
+- [Linux内核启动流程-基于ARM64 | Mshrimp blog](https://mshrimp.github.io/2020/04/19/Linux%E5%86%85%E6%A0%B8%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B-%E5%9F%BA%E4%BA%8EARM64/)
+- [05 Linux 内核 - 飞书云文档](https://b2qtatgfkp.feishu.cn/docx/CttXdvBEuomVmmxQcw5cqh5jnJg)

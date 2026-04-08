@@ -39,6 +39,7 @@
     "framer-motion": "^11.18.2",
     "gray-matter": "^4.0.3",
     "lucide-react": "^0.542.0",
+    "mermaid": "^11.14.0",
     "motion": "^12.23.12",
     "next": "15.5.2",
     "next-mdx-remote": "^5.0.0",

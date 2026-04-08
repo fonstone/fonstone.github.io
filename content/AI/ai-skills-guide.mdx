@@ -1,235 +1,611 @@
 ---
-title: "AI Skills 详解：从基础概念到实战应用"
-date: "2026-04-04"
-description: "全面介绍 AI Skills 的核心概念、架构设计、应用场景与最佳实践，帮助开发者理解并掌握 AI 技能系统的构建方法。"
-tags: ["AI", "Skills", "LLM", "Agent", "工具调用"]
+title: "Claude Code Skills 编写与使用全指南"
+date: "2026-04-08"
+description: "从 SKILL.md 必填文件到 references 目录，系统讲解 Claude Code Skills 的编写方法、核心步骤与最佳实践。"
+tags: ["AI", "Claude", "Skills", "工具调用", "LLM"]
 ---
 
-## 什么是 AI Skills？
+## 什么是 Claude Code Skills？
 
-AI Skills（AI 技能）是指为大型语言模型（LLM）定义的结构化能力模块，使模型能够执行特定任务、调用外部工具或访问专业知识。它是 AI Agent 系统的核心组成部分，将"模型能做什么"从单纯的文本生成扩展到与真实世界的交互。
+Claude Code Skills 是 Anthropic 为 Claude Code CLI 工具设计的一套**结构化能力扩展系统**。它允许开发者通过编写简单的 Markdown 文件（`SKILL.md`），将特定领域知识、工作流程和工具调用授权注入到 Claude 的上下文中，使其能够自主决定何时以及如何使用这些技能。
 
-可以把 AI Skills 理解为给 AI 装上的"工具箱"——每个工具（Skill）都有明确的用途、输入参数和输出格式，模型根据用户意图自主选择并调用合适的工具。
+可以把 Skills 理解为给 Claude 装上的"专业技能包"——每个 Skill 都有明确的用途描述、参数规则和执行指令，Claude 根据用户意图自动匹配并调用合适的 Skill，也可以通过 `/skill-name` 手动触发。
 
-## 核心架构
+![Skill 目录结构](/images/claude-code-skills/skill-structure.svg)
 
-### 1. Skill 定义
+## 核心必填文件：SKILL.md
 
-一个标准的 AI Skill 通常包含以下要素：
+每个 Skill 必须包含一个 `SKILL.md` 文件，这是 Skill 的核心定义文件。它由两部分组成：
 
-```json
-{
-  "name": "search_knowledge_base",
-  "description": "在知识库中检索与查询相关的文档",
-  "parameters": {
-    "query": {
-      "type": "string",
-      "description": "搜索关键词或自然语言查询"
-    },
-    "top_k": {
-      "type": "integer",
-      "description": "返回结果数量",
-      "default": 5
-    }
-  },
-  "returns": "匹配文档列表，包含标题、摘要和相关度评分"
-}
+### 1. YAML Frontmatter（前置配置）
+
+Frontmatter 位于文件开头的 `---` 之间，用于配置 Skill 的行为属性：
+
+```yaml
+---
+name: deploy
+description: "将应用部署到生产环境，执行测试、构建和推送"
+argument-hint: "[environment]"
+disable-model-invocation: true
+context: fork
+allowed-tools: Bash(git *) Bash(npm *)
+effort: high
+---
 ```
 
-### 2. 工具调用（Tool Calling）流程
+各字段说明：
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `name` | 否 | 显示名称和 `/slash` 命令名。默认为目录名。仅限小写、数字、连字符，最长 64 字符 |
+| `description` | 推荐 | 描述功能和触发时机。Claude 据此自动匹配。前 250 字符最关键 |
+| `argument-hint` | 否 | 参数自动补全提示，如 `[issue-number]` |
+| `disable-model-invocation` | 否 | `true` = 仅用户手动触发，Claude 不会自动调用。默认 `false` |
+| `user-invocable` | 否 | `false` = 从 `/` 菜单隐藏（仅作背景知识）。默认 `true` |
+| `allowed-tools` | 否 | Skill 激活时 Claude 可免确认使用的工具列表，空格分隔 |
+| `model` | 否 | Skill 激活时覆盖模型选择 |
+| `effort` | 否 | 思考深度：`low` / `medium` / `high` / `max` |
+| `context` | 否 | 设为 `fork` 在隔离子代理中运行 |
+| `agent` | 否 | 搭配 `context: fork` 使用，指定子代理类型 |
+| `paths` | 否 | Glob 模式，限制 Skill 自动激活的文件范围 |
+| `shell` | 否 | `` !`command` `` 使用的 shell：`bash`（默认）或 `powershell` |
+
+### 2. Markdown 内容（执行指令）
+
+Frontmatter 之后是 Claude 执行该 Skill 时遵循的具体指令。支持以下特殊语法：
+
+**变量替换：**
+
+| 变量 | 说明 |
+|------|------|
+| `$ARGUMENTS` | 用户传入的全部参数 |
+| `$0`, `$1`, `$2`... | 第 N 个参数（从 0 开始） |
+| `${CLAUDE_SESSION_ID}` | 当前会话 ID |
+| `${CLAUDE_SKILL_DIR}` | SKILL.md 所在目录路径 |
+
+**动态上下文注入（`` !`command` ``）：**
+
+在 Skill 内容中嵌入 shell 命令，命令在 Skill 加载时执行，输出替换占位符：
+
+````markdown
+## 当前 PR 变更
+
+- PR diff: !`gh pr diff`
+- 变更文件: !`gh pr diff --name-only`
+````
+
+多行命令使用 ` ```! ` 围栏语法：
+
+````markdown
+```!
+git log --oneline -10
+```
+````
+
+### 完整 SKILL.md 示例
+
+````markdown
+---
+name: code-review
+description: "对指定文件或 PR 进行深度代码审查，输出改进建议"
+argument-hint: "[file-or-pr-url]"
+allowed-tools: Read Grep Glob Bash(gh *)
+context: fork
+agent: Explore
+---
+
+## 代码审查任务
+
+对 $ARGUMENTS 进行全面代码审查。
+
+### 审查步骤
+
+1. 使用 Glob 和 Grep 定位相关文件
+2. 仔细阅读每个文件的实现逻辑
+3. 检查以下方面：
+   - 代码正确性和边界情况
+   - 错误处理是否完善
+   - 性能问题
+   - 安全风险
+   - 代码风格一致性
+
+### 审查范围
+
+- PR diff: !`gh pr diff $ARGUMENTS`
+- 变更文件: !`gh pr diff --name-only $ARGUMENTS`
+
+### 输出格式
+
+请按以下结构输出审查结果：
+
+1. **严重问题**（必须修复）
+2. **建议改进**（推荐修复）
+3. **肯定之处**（值得保留的设计）
+
+引用代码时请使用 `file_path:line_number` 格式。
+
+### 参考规范
+
+请参考 [编码风格指南](references/code-style.md) 和 [API 设计规范](references/api-spec.md)。
+````
+
+## 配套目录：references
+
+`SKILL.md` 是必填文件，但一个完整的 Skill 通常还包含配套目录，用于存放参考文档、脚本和模板等支持文件。
+
+### references 目录
+
+用于存放 Claude 在执行 Skill 时可能需要参考的附加知识文档。当 `SKILL.md` 内容超过 500 行时，应将详细内容拆分到 `references/` 目录中：
 
 ```
-用户输入 → LLM 理解意图 → 选择合适 Skill → 生成参数 → 执行工具 → 返回结果 → LLM 整合输出
+my-skill/
+├── SKILL.md                           # 核心指令（< 500 行）
+└── references/
+    ├── api-spec.md                    # API 规范文档
+    ├── code-style.md                  # 编码风格指南
+    └── patterns.md                    # 设计模式参考
 ```
 
-整个过程是自动化的，模型根据上下文和 Skill 描述自主决策。
+在 SKILL.md 中通过相对路径引用：
 
-### 3. Skill 注册与管理
-
-```python
-class SkillRegistry:
-    def __init__(self):
-        self.skills = {}
-
-    def register(self, skill):
-        self.skills[skill.name] = skill
-
-    def get_tool_definitions(self):
-        return [skill.to_openai_format() for skill in self.skills.values()]
-
-    def execute(self, name, arguments):
-        return self.skills[name].execute(**arguments)
+```markdown
+请参考 [API 设计规范](references/api-spec.md) 和 [编码风格指南](references/code-style.md)。
 ```
 
-## 主要类型
+### scripts 目录
 
-### 信息检索类
+存放验证和构建脚本，Claude 可以通过 `Bash` 工具执行这些脚本：
 
-| Skill | 功能 | 典型场景 |
-|-------|------|----------|
-| Web Search | 实时网络搜索 | 获取最新资讯 |
-| Knowledge Base | 私有知识库检索 | 企业内部问答 |
-| Code Search | 代码库检索 | 开发者助手 |
-| Document QA | 文档问答 | 合同/论文分析 |
-
-### 计算分析类
-
-| Skill | 功能 | 典型场景 |
-|-------|------|----------|
-| Code Interpreter | 执行代码 | 数据分析、数学计算 |
-| Data Visualization | 生成图表 | 报告可视化 |
-| Statistical Analysis | 统计分析 | 数据科学工作流 |
-
-### 交互操作类
-
-| Skill | 功能 | 典型场景 |
-|-------|------|----------|
-| API Call | 调用 REST API | 天气查询、翻译 |
-| File Operation | 文件读写 | 文档处理 |
-| Database Query | 数据库查询 | 业务数据检索 |
-
-### 内容生成类
-
-| Skill | 功能 | 典型场景 |
-|-------|------|----------|
-| Image Generation | 文生图 | 设计辅助 |
-| Text Summarization | 文本摘要 | 长文精简 |
-| Code Generation | 代码生成 | 开发辅助 |
-
-## 实战：构建一个 AI Skill
-
-以下是一个完整的 Skill 实现示例：
-
-```python
-from typing import Any
-import requests
-
-class WeatherSkill:
-    name = "get_weather"
-    description = "获取指定城市的当前天气信息"
-
-    parameters = {
-        "type": "object",
-        "properties": {
-            "city": {
-                "type": "string",
-                "description": "城市名称，如 'Beijing' 或 '上海'"
-            },
-            "units": {
-                "type": "string",
-                "description": "温度单位",
-                "enum": ["celsius", "fahrenheit"],
-                "default": "celsius"
-            }
-        },
-        "required": ["city"]
-    }
-
-    def execute(self, city: str, units: str = "celsius") -> dict[str, Any]:
-        api_key = "your_api_key"
-        url = f"https://api.openweathermap.org/data/2.5/weather"
-        params = {
-            "q": city,
-            "appid": api_key,
-            "units": "metric" if units == "celsius" else "imperial",
-            "lang": "zh_cn"
-        }
-
-        response = requests.get(url, params=params)
-        data = response.json()
-
-        return {
-            "city": data["name"],
-            "temperature": data["main"]["temp"],
-            "description": data["weather"][0]["description"],
-            "humidity": data["main"]["humidity"],
-            "wind_speed": data["wind"]["speed"]
-        }
 ```
+my-skill/
+├── SKILL.md
+└── scripts/
+    ├── validate.sh                    # 验证脚本
+    └── build.sh                       # 构建脚本
+```
+
+### template.md
+
+输出模板文件，定义 Skill 执行后结果的标准格式：
+
+```markdown
+<!-- template.md -->
+## 代码审查报告
+
+**文件**: {{file_path}}
+**日期**: {{date}}
+
+### 严重问题
+{{critical_issues}}
+
+### 建议改进
+{{suggestions}}
+
+### 肯定之处
+{{positives}}
+```
+
+### examples 目录
+
+示例输出文件，帮助 Claude 理解期望的输出格式：
+
+```
+my-skill/
+├── SKILL.md
+└── examples/
+    └── sample-output.md              # 示例输出
+```
+
+![Skill 调用流程](/images/claude-code-skills/invocation-flow.svg)
+
+## 自定义 Skill 编写核心步骤（基于范本实践）
+
+### 步骤一：确定 Skill 类型和作用域
+
+根据 Skill 的用途选择合适的类型：
+
+| 类型 | 说明 | 推荐配置 |
+|------|------|---------|
+| **参考知识型** | 提供领域知识让 Claude 内联使用 | 无需 `context: fork`，`user-invocable: false` |
+| **任务执行型** | 按步骤完成具体任务 | `context: fork` + `disable-model-invocation: true` |
+| **研究探索型** | 搜索和分析代码/文档 | `context: fork` + `agent: Explore` |
+| **自动化型** | 执行部署、提交等操作 | `context: fork` + `allowed-tools` 限定 |
+
+选择存储位置（优先级从高到低）：
+
+![Skill 存储位置与优先级](/images/claude-code-skills/skill-priority.svg)
+
+| 作用域 | 路径 | 适用场景 |
+|--------|------|---------|
+| 企业 | Managed Settings 推送 | 组织统一规范和安全策略 |
+| 个人 | `~/.claude/skills/<name>/SKILL.md` | 跨项目个人偏好 |
+| 项目 | `.claude/skills/<name>/SKILL.md` | 团队共享、提交到 Git |
+| 插件 | `<plugin>/skills/<name>/SKILL.md` | 社区分发 |
+
+### 步骤二：创建 Skill 目录
+
+```bash
+# 项目级 Skill（最常用，可提交到 Git 团队共享）
+mkdir -p .claude/skills/my-skill
+
+# 个人级 Skill（跨项目共享）
+mkdir -p ~/.claude/skills/my-skill
+```
+
+### 步骤三：编写 SKILL.md
+
+根据范本编写核心文件。以下是一个从零开始的完整实战示例——**Git Commit Message 生成器**：
+
+````markdown
+---
+name: commit-gen
+description: "根据暂存区变更自动生成规范的 Git commit message，遵循 Conventional Commits 规范"
+argument-hint: "[scope]"
+allowed-tools: Bash(git diff *) Bash(git status *) Bash(git log *)
+disable-model-invocation: true
+---
+
+## 任务
+
+根据当前暂存区的变更，生成一条符合 Conventional Commits 规范的 commit message。
+
+### 步骤
+
+1. 查看当前暂存区变更：
+   ```!
+   git diff --cached --stat
+   ```
+
+2. 查看详细变更内容：
+   ```!
+   git diff --cached
+   ```
+
+3. 参考最近的提交风格：
+   ```!
+   git log --oneline -5
+   ```
+
+4. 分析变更类型（feat/fix/docs/refactor/test/chore 等），如果用户提供了 $ARGUMENTS 作为 scope，请将其纳入。
+
+5. 输出一条 commit message，格式为：
+   ```
+   <type>(<scope>): <subject>
+
+   <body>
+   ```
+
+### 规范参考
+
+请参阅 [Conventional Commits 规范](references/conventional-commits.md)。
+
+### 示例
+
+以下情况应生成：
+
+- 新增功能 → `feat(api): add user authentication endpoint`
+- 修复 bug → `fix(auth): resolve token refresh race condition`
+- 文档更新 → `docs(readme): update installation instructions`
+````
+
+同时创建参考文档 `references/conventional-commits.md`：
+
+```markdown
+# Conventional Commits 规范
+
+## 格式
+
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+
+## Type 列表
+
+- feat: 新功能
+- fix: 修复 bug
+- docs: 文档变更
+- style: 代码格式（不影响逻辑）
+- refactor: 重构（不是新功能也不是修复）
+- perf: 性能优化
+- test: 添加或修改测试
+- chore: 构建工具或辅助工具变更
+
+## 规则
+
+1. subject 不超过 50 字符
+2. subject 使用祈使句
+3. body 每行不超过 72 字符
+4. breaking change 在 footer 中标注BREAKING CHANGE:
+```
+
+### 步骤四：添加自定义子代理（可选）
+
+当 Skill 需要专门的子代理时，可以在 `.claude/agents/` 中定义：
+
+```markdown
+<!-- .claude/agents/review.md -->
+你是一个专业的代码审查助手。你的职责是：
+
+1. 仔细阅读代码变更
+2. 识别潜在的安全、性能和正确性问题
+3. 提供具体可操作的改进建议
+
+输出时请使用 file_path:line_number 格式引用代码。
+```
+
+然后在 SKILL.md 中引用：
+
+```yaml
+---
+name: code-review
+context: fork
+agent: review
+---
+```
+
+### 步骤五：测试和迭代
+
+通过以下方式测试 Skill：
+
+```bash
+# 手动触发
+/commit-gen api
+
+# 检查 Skill 是否被自动识别
+# Claude 会在相关场景自动匹配 description
+```
+
+测试检查清单：
+
+- [ ] `/skill-name` 能正常触发
+- [ ] `$ARGUMENTS` 变量替换正确
+- [ ] `` !`command` `` 动态注入输出符合预期
+- [ ] `allowed-tools` 权限范围合理
+- [ ] `context: fork` 模式下子代理正确执行
+- [ ] 参考文档引用路径正确
+
+## 更多实战示例
+
+### 示例一：API 接口文档生成器
+
+````markdown
+---
+name: api-doc
+description: "为指定的 API 路由生成 OpenAPI 格式文档"
+argument-hint: "[route-file]"
+allowed-tools: Read Glob Grep
+context: fork
+---
+
+## 任务
+
+为 $ARGUMENTS 指定的路由文件生成 OpenAPI 3.0 文档。
+
+### 步骤
+
+1. 定位路由文件（如果 $ARGUMENTS 为空，搜索所有路由）
+2. 阅读 route handler 实现细节
+3. 识别请求参数、响应格式和错误码
+4. 生成 OpenAPI YAML 格式文档
+
+### 参考规范
+
+请参考 [API 设计规范](references/api-spec.md)。
+
+### 输出格式
+
+```yaml
+openapi: "3.0.0"
+info:
+  title: "... "
+  version: "1.0.0"
+paths:
+  /api/endpoint:
+    get:
+      summary: "..."
+      responses:
+        "200":
+          description: "..."
+```
+````
+
+### 示例二：性能分析 Skill
+
+```markdown
+---
+name: perf-analyze
+description: "分析代码中的性能瓶颈，提供优化建议"
+paths: "src/**/*.ts,src/**/*.tsx,src/**/*.js"
+user-invocable: false
+---
+
+当被要求分析性能或优化代码时，请遵循以下规范：
+
+## 性能分析检查清单
+
+1. **算法复杂度**：是否有 O(n²) 或更高复杂度的热路径？
+2. **内存分配**：是否有不必要的对象创建或大数组拷贝？
+3. **异步阻塞**：是否有 await 在循环内使用？
+4. **缓存策略**：重复计算是否可以缓存？
+5. **渲染性能**（前端）：是否有不必要的 re-render？
+
+请参考 [性能优化模式](references/perf-patterns.md)。
+```
+
+### 示例三：多参数部署 Skill
+
+```markdown
+---
+name: deploy
+description: "部署应用到指定环境，自动执行测试、构建和发布"
+argument-hint: "[environment] [service]"
+allowed-tools: Bash(npm *) Bash(docker *) Bash(kubectl *)
+disable-model-invocation: true
+context: fork
+effort: high
+---
+
+## 部署任务
+
+将 $1（服务）部署到 $0（环境）。
+
+### 步骤
+
+1. 验证目标环境：$0（仅支持 staging / production）
+2. 运行测试：
+   ```!
+   npm test -- --coverage
+   ```
+
+3. 构建服务：
+   ```!
+   npm run build:$0
+   ```
+
+4. 推送镜像并部署：
+   ```!
+   kubectl set image deployment/$1 $1=registry/$1:$0-latest --namespace=$0
+   ```
+
+5. 验证部署状态：
+   ```!
+   kubectl rollout status deployment/$1 --namespace=$0
+   ```
+```
+
+### 示例四：深度研究 Skill
+
+```markdown
+---
+name: deep-research
+description: "深入研究代码库中的特定主题，汇总所有相关实现"
+context: fork
+agent: Explore
+---
+
+## 研究任务
+
+深入研究 $ARGUMENTS:
+
+1. 使用 Glob 查找所有相关文件
+2. 使用 Grep 搜索关键词和模式
+3. 逐个阅读和分析每个相关文件
+4. 汇总发现，引用具体的 file_path:line_number
+
+### 输出结构
+
+- **概述**：主题的宏观理解
+- **核心实现**：关键代码及其位置
+- **依赖关系**：模块间的调用链
+- **改进建议**：基于发现的优化方向
+```
+
+## 调用控制机制
+
+Skills 提供了灵活的调用控制：
+
+| Frontmatter 配置 | 用户可调用 | Claude 可自动调用 | 上下文加载方式 |
+|-----------------|-----------|-----------------|-------------|
+| 默认 | 是 | 是 | description 始终加载；调用时加载全文 |
+| `disable-model-invocation: true` | 是 | 否 | 不加载上下文；用户调用时才加载 |
+| `user-invocable: false` | 否 | 是 | description 始终加载；调用时加载全文 |
+
+典型搭配：
+
+- **需要用户明确确认的操作**（部署、发版）→ `disable-model-invocation: true`
+- **背景知识**（团队编码规范、架构决策）→ `user-invocable: false`
+- **可自动触发的辅助工具**（代码审查、文档生成）→ 默认配置
 
 ## 最佳实践
 
-### 1. Skill 命名规范
+### 1. 描述质量决定调用准确率
 
-- 使用动词 + 名词结构，如 `search_documents`、`generate_report`
-- 保持名称简洁，不超过 3-4 个单词
-- 避免歧义，确保名称能准确反映功能
+`description` 是 Claude 自动匹配的关键依据，应前置核心用例（250 字符截断处显示最关键信息）：
 
-### 2. 描述质量
-
-Skill 的 `description` 是模型选择工具的关键依据。优秀的描述应该：
-
-- 明确说明 Skill 的功能和适用场景
-- 包含使用限制或前提条件
-- 提供典型示例
-
-```
+```yaml
 # 差
-description: "搜索文档"
+description: "代码审查"
 
 # 好
-description: "在企业知识库中检索与用户查询最相关的文档片段。适用于回答基于内部文档的问题，如公司政策、技术文档等。不支持实时信息检索。"
+description: "对 Git 暂存区或 PR 进行深度代码审查，输出安全、性能、可维护性改进建议"
 ```
 
-### 3. 参数设计
+### 2. 保持 SKILL.md 精简
 
-- 必填参数用 `required` 明确标注
-- 提供合理的默认值
-- 使用 `enum` 约束可选值范围
-- 每个参数都要有清晰的描述
-
-### 4. 错误处理
-
-```python
-def execute(self, **kwargs):
-    try:
-        result = self._do_work(**kwargs)
-        return {"status": "success", "data": result}
-    except ConnectionError:
-        return {"status": "error", "message": "无法连接到服务，请稍后重试"}
-    except ValueError as e:
-        return {"status": "error", "message": f"参数错误: {str(e)}"}
-```
-
-### 5. Skill 组合（Chaining）
-
-复杂任务通常需要多个 Skill 协同：
+将 SKILL.md 控制在 500 行以内，详细参考内容拆分到 `references/` 目录：
 
 ```
-用户: "分析上季度销售数据并生成可视化报告"
-
-流程:
-1. database_query("SELECT * FROM sales WHERE quarter = 'Q3'")
-2. statistical_analysis(data, metrics=["revenue", "growth"])
-3. generate_chart(data, type="bar")
-4. generate_report(analysis, chart, format="markdown")
+code-review/
+├── SKILL.md                    # 精简指令（< 200 行）
+└── references/
+    ├── security-checklist.md  # 安全审查清单
+    ├── perf-patterns.md       # 性能优化模式
+    └── style-guide.md         # 代码风格指南
 ```
 
-## 主流框架对比
+### 3. 合理使用 allowed-tools
 
-| 框架 | Skill 定义方式 | 工具调用 | 多步编排 |
-|------|---------------|---------|---------|
-| OpenAI Functions | JSON Schema | 原生支持 | 需自行实现 |
-| LangChain Tools | Python 类 | LCEL 链 | 内置 Agent |
-| Anthropic Tool Use | XML/JSON | 原生支持 | Claude 自主编排 |
-| LlamaIndex | FunctionTool | 原生支持 | Query Engine |
-| AutoGen | 可注册函数 | 多 Agent 协作 | 内置工作流 |
+仅为 Skill 授权必要的工具权限，减小安全隐患：
 
-## 未来趋势
+```yaml
+# 仅授权只读工具
+allowed-tools: Read Grep Glob
 
-1. **自适应 Skill**：模型能根据执行结果动态调整 Skill 参数和调用策略
-2. **Skill 市场**：标准化的 Skill 发布和共享平台
-3. **自动 Skill 生成**：从文档或示例代码中自动生成 Skill 定义
-4. **多模态 Skill**：支持图像、音频、视频等多模态输入输出
-5. **安全沙箱**：Skill 执行环境的安全隔离和权限控制
+# 授权特定 Bash 命令
+allowed-tools: Bash(git diff *) Bash(git log *) Bash(npm test)
+
+# 部署场景：限制操作范围
+allowed-tools: Bash(kubectl *) Bash(docker *)
+```
+
+### 4. 使用 paths 限制自动激活范围
+
+避免 Skill 在不相关场景被误触发：
+
+```yaml
+# 仅在前端代码变更时激活
+paths: "src/components/**,src/pages/**"
+
+# 仅在 API 代码变更时激活
+paths: "src/api/**,src/routes/**"
+```
+
+### 5. 使用动态上下文注入
+
+`` !`command` `` 语法在 Skill 加载时执行命令，将结果注入指令上下文，让 Claude 获取实时信息：
+
+````markdown
+## 当前 PR 上下文
+
+变更文件: !`gh pr diff --name-only`
+最近提交: !`git log --oneline -5`
+当前分支: !`git branch --show-current`
+````
+
+### 6. 组合使用 context: fork 和 agent
+
+对于研究探索类任务，组合使用 Fork 模式和专业子代理：
+
+```yaml
+---
+name: deep-research
+context: fork
+agent: Explore
+---
+```
+
+这确保 Skill 在独立上下文中运行，并使用擅长搜索和分析的 Explore 代理。
 
 ## 总结
 
-AI Skills 是将 LLM 从"聊天机器人"升级为"智能助手"的关键技术。通过合理设计和组织 Skill，可以构建出功能强大、行为可控的 AI Agent 系统。核心要点：
+Claude Code Skills 是将 Claude Code 从通用编程助手扩展为领域专家的关键机制。核心要点：
 
-- **描述质量决定调用准确率**
-- **参数设计影响执行成功率**
-- **错误处理保障系统稳定性**
-- **Skill 组合释放更大潜力**
+- **SKILL.md 是必填核心**：通过 YAML frontmatter 配置行为，Markdown 内容定义指令
+- **references 目录是知识仓库**：将详细参考从 SKILL.md 中分离，保持精简
+- **变量和动态注入是连接器**：`$ARGUMENTS` 接收参数，`` !`command` `` 获取实时上下文
+- **调用控制是安全阀**：`disable-model-invocation` 防止误触发，`allowed-tools` 限定权限
+- **fork 模式是隔离器**：独立上下文执行，不影响主对话
 
-掌握 AI Skills 的设计与实现，是构建下一代智能应用的必备技能。
+掌握 Skills 的编写与组织，是高效使用 Claude Code 的必备能力。

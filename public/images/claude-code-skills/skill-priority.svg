@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 440" font-family="'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+    <filter id="glow3">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arr3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#e94560"/>
+    </marker>
+  </defs>
+
+  <rect width="800" height="440" fill="url(#bg3)" rx="12"/>
+  <text x="400" y="40" text-anchor="middle" fill="#e94560" font-size="20" font-weight="bold" filter="url(#glow3)">Skill 存储位置与优先级</text>
+
+  <!-- Enterprise scope -->
+  <g transform="translate(40, 70)">
+    <rect x="0" y="0" width="720" height="80" rx="8" fill="#e94560" opacity="0.08" stroke="#e94560" stroke-width="1.5"/>
+    <rect x="10" y="10" width="80" height="24" rx="12" fill="#e94560"/>
+    <text x="50" y="27" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">1 最高优先</text>
+    <text x="105" y="27" fill="#e94560" font-size="13" font-weight="bold">Enterprise 企业级</text>
+    <text x="20" y="58" fill="#a8b2d1" font-size="11">通过 managed settings 推送 · 适用于组织内所有用户 · 统一安全策略和规范</text>
+  </g>
+
+  <!-- Personal scope -->
+  <g transform="translate(40, 165)">
+    <rect x="0" y="0" width="720" height="80" rx="8" fill="#533483" opacity="0.12" stroke="#533483" stroke-width="1.5"/>
+    <rect x="10" y="10" width="80" height="24" rx="12" fill="#533483"/>
+    <text x="50" y="27" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">2 个人级</text>
+    <text x="105" y="27" fill="#533483" font-size="13" font-weight="bold">Personal</text>
+    <text x="20" y="55" fill="#a8b2d1" font-size="11">路径：~/.claude/skills/&lt;name&gt;/SKILL.md</text>
+    <text x="20" y="70" fill="#8892b0" font-size="11">跨项目共享 · 个人偏好配置 · 适用于所有项目</text>
+  </g>
+
+  <!-- Project scope -->
+  <g transform="translate(40, 260)">
+    <rect x="0" y="0" width="720" height="80" rx="8" fill="#0f3460" opacity="0.5" stroke="#4a8fe7" stroke-width="1.5"/>
+    <rect x="10" y="10" width="80" height="24" rx="12" fill="#4a8fe7"/>
+    <text x="50" y="27" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">3 项目级</text>
+    <text x="105" y="27" fill="#4a8fe7" font-size="13" font-weight="bold">Project</text>
+    <text x="20" y="55" fill="#a8b2d1" font-size="11">路径：.claude/skills/&lt;name&gt;/SKILL.md</text>
+    <text x="20" y="70" fill="#8892b0" font-size="11">项目特定 · 可提交到 Git 团队共享 · 单仓嵌套自动发现</text>
+  </g>
+
+  <!-- Plugin scope -->
+  <g transform="translate(40, 355)">
+    <rect x="0" y="0" width="720" height="70" rx="8" fill="#1a1a2e" opacity="0.8" stroke="#8892b0" stroke-width="1" stroke-dasharray="6,3"/>
+    <rect x="10" y="10" width="80" height="24" rx="12" fill="#8892b0"/>
+    <text x="50" y="27" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">4 插件级</text>
+    <text x="105" y="27" fill="#8892b0" font-size="13" font-weight="bold">Plugin</text>
+    <text x="20" y="55" fill="#8892b0" font-size="11">路径：&lt;plugin&gt;/skills/&lt;name&gt;/SKILL.md · 插件分发 · 社区共享</text>
+  </g>
+</svg>

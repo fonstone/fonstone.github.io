@@ -14,28 +14,36 @@ type Props = {
 function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [activeTag, setActiveTag] = useState<string | null>(searchParams.get("tag"));
+  
+  const urlTag = searchParams.get("tag");
+  const decodedUrlTag = urlTag ? decodeURIComponent(urlTag) : null;
+  
+  const [activeTag, setActiveTag] = useState<string | null>(() => {
+    if (!urlTag) return null;
+    return allTags.find(t => t.tag === decodedUrlTag)?.tag ?? null;
+  });
 
   useEffect(() => {
-    setActiveTag(searchParams.get("tag"));
-  }, [searchParams]);
+    if (decodedUrlTag) {
+      setActiveTag(allTags.find(t => t.tag === decodedUrlTag)?.tag ?? null);
+    } else {
+      setActiveTag(null);
+    }
+  }, [decodedUrlTag, allTags]);
 
-  const filteredPosts = useMemo(
-    () =>
-      activeTag
-        ? allPosts.filter((p) => p.tags.includes(activeTag))
-        : allPosts,
-    [allPosts, activeTag],
-  );
+  const filteredPosts = useMemo(() => {
+    if (!activeTag) return allPosts;
+    return allPosts.filter(p => p.tags.includes(activeTag));
+  }, [allPosts, activeTag]);
 
   const filteredCategories = useMemo(() => {
     if (!activeTag) return categories;
     return categories
-      .map((cat) => ({
+      .map(cat => ({
         ...cat,
-        posts: cat.posts.filter((p) => p.tags.includes(activeTag)),
+        posts: cat.posts.filter(p => p.tags.includes(activeTag)),
       }))
-      .filter((cat) => cat.posts.length > 0);
+      .filter(cat => cat.posts.length > 0);
   }, [categories, activeTag]);
 
   function handleTagClick(tag: string) {
@@ -44,11 +52,12 @@ function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
       router.replace("/knowledge");
     } else {
       setActiveTag(tag);
-      router.push(`/knowledge?tag=${encodeURIComponent(tag)}`);
+      router.push(`/knowledge?tag=${encodeURIComponent(tag)}`, { scroll: false });
     }
   }
 
   function clearTagFilter() {
+    setActiveTag(null);
     router.replace("/knowledge");
   }
 

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import KnowledgeMdx from "@/components/knowledge/KnowledgeMdx";
 import TableOfContents from "@/components/knowledge/TableOfContents";
+import PostBreadcrumb from "@/components/knowledge/PostBreadcrumb";
 import {
   getKnowledgePost,
   getKnowledgeStaticParams,
@@ -34,25 +36,22 @@ export default async function KnowledgePostPage({
     <div className="flex gap-8">
       <article className="flex-1 min-w-0">
         <header className="flex flex-col gap-3 mb-8">
-          <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
-            <Link href={`/knowledge/${catSlug}`} className="hover:text-blue-500 transition-colors">
-              {post.category}
-            </Link>
-            <span className="text-slate-300 dark:text-slate-600">/</span>
-            <Link href="/knowledge" className="hover:text-blue-500 transition-colors">全部</Link>
-          </div>
+          <Suspense fallback={<div className="h-5 w-20 animate-pulse bg-slate-200 dark:bg-slate-700 rounded" />}>
+            <PostBreadcrumb category={post.category} categorySlug={catSlug} />
+          </Suspense>
 
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{post.title}</h1>
 
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
             {post.date && <span>{post.date}</span>}
             {post.tags.map((tag) => (
-              <span
+              <Link
                 key={tag}
-                className="rounded-full border border-slate-200 dark:border-slate-700 px-2 py-1"
+                href={`/knowledge?tag=${encodeURIComponent(tag)}`}
+                className="rounded-full border border-slate-200 dark:border-slate-700 px-2 py-1 hover:border-blue-500 dark:hover:border-blue-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
               >
                 {tag}
-              </span>
+              </Link>
             ))}
           </div>
         </header>

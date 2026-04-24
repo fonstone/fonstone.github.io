@@ -56,13 +56,13 @@ superpowers-openspec-team-skills/
 
 项目提供 5 个工作流，覆盖从探索到归档、再到学习反思的完整开发生命周期：
 
-<MermaidDiagram chart={`graph TD
-    A["superpowers-feature<br/>探索+设计+TDD+验证<br/>（不含OpenSpec）"] --> B["openspec-feature<br/>创建OpenSpec产物<br/>（不含实现）"]
-    A --> C["superpowers-learning<br/>会话反思+记忆更新<br/>（后置）"]
-    B --> D["openspec-superpowers<br/>全流程入口<br/>（探索→规范→实现→验证）"]
-    B --> E["superpowers-openspec-execution<br/>四步显式路径<br/>（探索→规范→执行→归档）"]
-    A --> E
-    A --> D
+<MermaidDiagram chart={`flowchart TD
+    A["superpowers-feature<br/>探索+设计+TDD+验证<br/>不含OpenSpec"] --> B["openspec-feature<br/>创建OpenSpec产物<br/>不含实现"]
+    A --> C["superpowers-learning<br/>会话反思+记忆更新<br/>后置"]
+    A --> D["openspec-superpowers<br/>全流程入口"]
+    A --> E["superpowers-openspec-execution<br/>四步显式路径"]
+    B --> D
+    B --> E
     C --> D
     C --> E
 `} />
@@ -106,7 +106,7 @@ Use $superpowers-openspec-execution-workflow for this feature: first explore wit
 
 **四步流程**：
 
-<MermaidDiagram chart={`graph LR
+<MermaidDiagram chart={`flowchart LR
     S1["步骤1<br/>Superpowers<br/>探索与设计"] --> S2["步骤2<br/>OpenSpec<br/>锁定规范"]
     S2 --> S3["步骤3<br/>Superpowers<br/>实现+TDD+验证"]
     S3 --> S4["步骤4<br/>OpenSpec<br/>归档变更"]
@@ -135,7 +135,7 @@ Use $superpowers-openspec-execution-workflow for this feature: first explore wit
 
 **执行流程**：
 
-<MermaidDiagram chart={`graph TD
+<MermaidDiagram chart={`flowchart TD
     A["1. 探索项目上下文<br/>读取 .superpowers-memory/"] --> B["2. 逐一澄清需求"]
     B --> C["3. 提出2-3个方案<br/>并给出推荐"]
     C --> D["4. 写设计文档<br/>docs/superpowers/specs/"]
@@ -191,7 +191,7 @@ Use $superpowers-openspec-execution-workflow for this feature: first explore wit
 
 **执行流程**：
 
-<MermaidDiagram chart={`graph TD
+<MermaidDiagram chart={`flowchart TD
     A["1. 回顾近期工作、决策和验证证据"] --> B["2. 分类学习内容"]
     B --> B1["durable project facts"]
     B --> B2["current working state"]
@@ -239,9 +239,20 @@ Superpowers Memory 是一套 **repo-owned 的跨会话记忆层**，不是自动
 
 ### 3.2 记忆文件体系
 
-<MermaidDiagram chart={`graph TD
+<MermaidDiagram chart={`flowchart TD
     subgraph memory[".superpowers-memory/"]
-        PC["PROJECT_CONTEXT.md<br/>长期稳定项目事实"] -- CS["CURRENT_STATE.md<br/>当前工作状态"] -- DE["DECISIONS.md<br/>关键决策与理由"] -- KF["KNOWN_FAILURES.md<br/>重复失败模式"] -- VB["VERIFICATION_BASELINE.md<br/>可信验证方式"] -- TP["TEAM_PREFERENCES.md<br/>团队协作偏好"] -- UP["USER_PROFILE.md<br/>用户交互偏好"] -- AN["AGENT_NOTES.md<br/>Agent执行提醒"] -- LB["LEARNING_BACKLOG.md<br/>可晋升经验候选"] -- SC["SESSION_CLOSE_CHECKLIST.md<br/>收尾检查清单"] -- MI["memory-index.yaml<br/>健康摘要索引"] -- SJ["session-journal/<br/>会话日志"]
+        PC["PROJECT_CONTEXT.md<br/>长期稳定项目事实"]
+        CS["CURRENT_STATE.md<br/>当前工作状态"]
+        DE["DECISIONS.md<br/>关键决策与理由"]
+        KF["KNOWN_FAILURES.md<br/>重复失败模式"]
+        VB["VERIFICATION_BASELINE.md<br/>可信验证方式"]
+        TP["TEAM_PREFERENCES.md<br/>团队协作偏好"]
+        UP["USER_PROFILE.md<br/>用户交互偏好"]
+        AN["AGENT_NOTES.md<br/>Agent执行提醒"]
+        LB["LEARNING_BACKLOG.md<br/>可晋升经验候选"]
+        SC["SESSION_CLOSE_CHECKLIST.md<br/>收尾检查清单"]
+        MI["memory-index.yaml<br/>健康摘要索引"]
+        SJ["session-journal/<br/>会话日志"]
     end
     
     PC --> MI
@@ -514,7 +525,7 @@ Use $superpowers-openspec-execution-workflow for this feature.
 
 ## 九、关键数据流总览
 
-<MermaidDiagram chart={`graph TB
+<MermaidDiagram chart={`flowchart LR
     subgraph input["用户输入"]
         U1["功能需求"]
         U2["显式调用工作流"]
@@ -530,93 +541,23 @@ Use $superpowers-openspec-execution-workflow for this feature.
     end
 
     subgraph artifacts["产物层"]
-        A1["docs/superpowers/specs/<br/>设计文档"]
-        A2["docs/superpowers/plans/<br/>实现计划"]
-        A3["openspec/changes/name/<br/>proposal/design/specs/tasks"]
+        A1["设计文档"]
+        A2["实现计划"]
+        A3["OpenSpec产物"]
         A4["代码/测试/验证"]
     end
 
     subgraph memory["记忆层"]
-        M1["PROJECT_CONTEXT.md"]
-        M2["CURRENT_STATE.md"]
-        M3["DECISIONS.md"]
-        M4["KNOWN_FAILURES.md"]
-        M5["LEARNING_BACKLOG.md"]
-        M6["session-journal/"]
+        M1["PROJECT_CONTEXT"]
+        M2["CURRENT_STATE"]
+        M3["DECISIONS"]
+        M4["KNOWN_FAILURES"]
+        M5["LEARNING_BACKLOG"]
     end
 
-    subgraph governance["治理层"]
-        G1["validate"]
-        G2["search"]
-        G3["suggest"]
-        G4["closeout"]
-        G5["promote"]
-    end
-
-    U1 --> W1
-    U1 --> W2
-    U1 --> W3
-    U1 --> W4
-    U2 --> W1
-    U2 --> W2
-    U2 --> W3
-    U2 --> W4
-    U3 --> W5
-
-    W1 --> A1
-    W1 --> A2
-    W1 --> A3
-    W1 --> A4
-    W2 --> A1
-    W2 --> A2
-    W2 --> A3
-    W2 --> A4
-    W3 --> A1
-    W3 --> A2
-    W3 --> A4
-    W4 --> A3
-
-    W5 --> M1
-    W5 --> M2
-    W5 --> M3
-    W5 --> M4
-    W5 --> M5
-    W5 --> M6
-    A1 --> W5
-    A2 --> W5
-    A3 --> W5
-    A4 --> W5
-
-    M1 --> G1
-    M1 --> G2
-    M1 --> G3
-    M1 --> G4
-    M1 --> G5
-    M2 --> G1
-    M2 --> G2
-    M2 --> G3
-    M2 --> G4
-    M2 --> G5
-    M3 --> G1
-    M3 --> G2
-    M3 --> G3
-    M3 --> G4
-    M3 --> G5
-    M4 --> G1
-    M4 --> G2
-    M4 --> G3
-    M4 --> G4
-    M4 --> G5
-    M5 --> G1
-    M5 --> G2
-    M5 --> G3
-    M5 --> G4
-    M5 --> G5
-    M6 --> G1
-    M6 --> G2
-    M6 --> G3
-    M6 --> G4
-    M6 --> G5
+    input --> workflows --> artifacts
+    input --> workflows --> memory
+    artifacts --> memory
 `} />
 
 ---

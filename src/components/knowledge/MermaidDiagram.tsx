@@ -70,7 +70,7 @@ export default function MermaidDiagram({ chart }: Props) {
 
   return (
     <div
-      className="not-prose my-6 overflow-x-auto rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
+      className="not-prose my-6 w-full overflow-x-auto rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 [&>svg]:max-w-full [&>svg]:h-auto"
       ref={containerRef}
       dangerouslySetInnerHTML={{ __html: svg }}
     />

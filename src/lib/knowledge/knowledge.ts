@@ -177,7 +177,16 @@ export type KnowledgeTagInfo = {
 
 export async function getAllKnowledgePosts(): Promise<KnowledgePost[]> {
   const categories = await getKnowledgeCategories();
-  return categories.flatMap((c) => c.posts);
+  const posts = categories.flatMap((c) => c.posts);
+  posts.sort((a, b) => {
+    const ad = a.date ? Date.parse(a.date) : Number.NaN;
+    const bd = b.date ? Date.parse(b.date) : Number.NaN;
+    if (!Number.isNaN(ad) && !Number.isNaN(bd)) return bd - ad;
+    if (!Number.isNaN(ad) && Number.isNaN(bd)) return -1;
+    if (Number.isNaN(ad) && !Number.isNaN(bd)) return 1;
+    return b.updatedAtMs - a.updatedAtMs;
+  });
+  return posts;
 }
 
 export async function getAllTags(): Promise<KnowledgeTagInfo[]> {

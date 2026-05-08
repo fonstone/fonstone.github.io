@@ -202,8 +202,11 @@ export default async function Home() {
                   href={`/knowledge/${categoryToSlug(p.category)}/${p.slug}`}
                   className="bg-slate-50 rounded-2xl p-5 border border-slate-100 hover:bg-slate-100 transition-colors dark:bg-slate-950 dark:border-slate-800 dark:hover:bg-slate-900"
                 >
-                  <div className="text-sm text-slate-500 dark:text-slate-400">
-                    {p.category}
+                  <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                    <span>{p.category}</span>
+                    {p.date && (
+                      <span className="text-slate-400 dark:text-slate-500">· {p.date}</span>
+                    )}
                   </div>
                   <div className="mt-2 font-semibold">{p.title}</div>
                   {p.description && (

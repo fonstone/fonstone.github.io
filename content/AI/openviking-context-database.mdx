@@ -283,7 +283,7 @@ viking://
     style 分层加载 fill:#c8e6c9
 `}/>
 
-实测效果（基于 LoCoMo 长对话评测，1540 个用例）：
+实测效果（基于 LoCoMo 长对话评测，1540 个用例；数据来自 OpenViking README_CN 的评测结果汇总）：
 
 | 实验组 | 任务完成率 | 输入 Token 总量 |
 |--------|----------|---------------|
@@ -454,6 +454,50 @@ ov find "代码搜索" --uri viking://agent/skills/
 2. **记忆提取**：异步分析任务结果和用户反馈，提取偏好、实体、事件
 3. **记忆更新**：自动写入 `viking://user/memories/` 和 `viking://agent/memories/`
 
+### 7.1 Session 的两阶段提交（commit）
+
+OpenViking 的 `session.commit()` 可以理解为“把一段对话固化为可检索资产 + 提取长期记忆”的事务入口。它拆为同步与异步两阶段：
+
+<MermaidDiagram chart={`flowchart TD
+    A["commit()"] --> P1["Phase 1（同步）<br/>归档消息 → 清空当前会话"]
+    P1 --> R1["返回 task_id / archive_uri"]
+    R1 --> P2["Phase 2（异步后台）<br/>生成 L0/L1 摘要 + 提取记忆 + 写审计日志"]
+    P2 --> DONE["写 .done 标记完成"]
+
+    style P1 fill:#e1f5fe
+    style P2 fill:#fff9c4
+    style DONE fill:#c8e6c9
+`}/>
+
+好处是：调用方立刻得到可追踪的 `task_id`，而耗时的摘要/记忆提取在后台完成，避免阻塞主流程。
+
+### 7.2 记忆提取：8 类记忆与去重决策
+
+OpenViking 把长期记忆按归属与形态分为 8 类（用户维度 + Agent 维度），并在写入前做“向量预过滤 + LLM 去重决策”：
+
+| 分类 | 归属 | 说明 | 可合并 |
+|------|------|------|--------|
+| profile | user | 用户身份/属性 | ✅ |
+| preferences | user | 用户偏好 | ✅ |
+| entities | user | 人/项目等实体 | ✅ |
+| events | user | 事件/决策 | ❌ |
+| cases | agent | 问题+解决方案 | ❌ |
+| patterns | agent | 可复用流程 | ✅ |
+| tools | agent | 工具使用经验 | ✅ |
+| skills | agent | 技能执行经验与策略 | ✅ |
+
+<MermaidDiagram chart={`flowchart TD
+    M["会话消息/工具调用/上下文引用"] --> EX["LLM 提取候选记忆"]
+    EX --> VF["向量预过滤<br/>找相似旧记忆"]
+    VF --> DD["LLM 去重决策<br/>skip/create/merge/delete"]
+    DD --> W["写入 AGFS（记忆文件）"]
+    W --> IDX["向量化并写入索引"]
+
+    style EX fill:#fff3e0
+    style DD fill:#fff9c4
+    style IDX fill:#fce4ec
+`}/>
+
 ## 8. 实践指南
 
 ### 8.1 安装与配置
@@ -497,7 +541,49 @@ openviking-server doctor
 }
 ```
 
-### 8.3 核心操作流程
+### 8.3 多租户与鉴权（生产推荐）
+
+OpenViking 的多租户模型用 `account`、`user`、`agent` 三层边界在同一个服务实例内完成隔离与共享：
+
+- account：团队/工作区边界；`resources` 通常在 account 内共享
+- user：用户边界；用户记忆与会话按 user 隔离
+- agent：Agent 边界；用于隔离不同 Agent 的技能、指令与 agent 级记忆
+
+服务端常用两种认证模式：
+
+- `api_key`：标准方式。配置 `server.root_api_key` 后进入正式多租户模式（Root key 管理 account/user；业务请求用 user key）
+- `trusted`：部署在受信网关后，由上游注入 `X-OpenViking-Account` / `X-OpenViking-User`
+
+最小多租户配置示例：
+
+```json
+{
+  "server": {
+    "auth_mode": "api_key",
+    "root_api_key": "your-strong-root-key"
+  }
+}
+```
+
+业务侧推荐用 user key（服务端可从 key 反解出 account/user 身份）：
+
+```bash
+curl "http://localhost:1933/api/v1/fs/ls?uri=viking://" \
+  -H "X-API-Key: <user-api-key>" \
+  -H "X-OpenViking-Agent: coding-agent"
+```
+
+Root key 访问“租户级数据 API”时需要显式指定目标租户头：
+
+```bash
+curl "http://localhost:1933/api/v1/fs/ls?uri=viking://" \
+  -H "X-API-Key: <root-api-key>" \
+  -H "X-OpenViking-Account: acme" \
+  -H "X-OpenViking-User: alice" \
+  -H "X-OpenViking-Agent: coding-agent"
+```
+
+### 8.4 核心操作流程
 
 <MermaidDiagram chart={`flowchart TD
     START["启动服务<br/>openviking-server"] --> IMPORT["导入资源<br/>ov add-resource URL"]
@@ -537,7 +623,7 @@ ov read viking://resources/volcengine/OpenViking/docs/zh/concepts/07-retrieval.m
 ov memcommit
 ```
 
-### 8.4 与 Agent 框架集成
+### 8.5 与 Agent 框架集成
 
 <MermaidDiagram chart={`flowchart LR
     subgraph 集成方式["三种集成方式"]
@@ -571,7 +657,7 @@ openviking-server --with-bot
 ov chat
 ```
 
-### 8.5 与 OpenCode / Claude Code 集成
+### 8.6 与 OpenCode / Claude Code 集成
 
 OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的记忆后端：
 
@@ -666,8 +752,8 @@ OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的�
     end
 
     D1 --> OUT1["告别上下文碎片化"]
-    D2 --> OUT2["91% Token 成本降低"]
-    D3 --> OUT3["17% 任务完成率提升"]
+    D2 --> OUT2["降低 Token 成本（LoCoMo：-83%~-96%）"]
+    D3 --> OUT3["提升完成率（LoCoMo：+15%~+49%）"]
     D4 --> OUT4["检索链路可调试"]
     D5 --> OUT5["Agent 越用越聪明"]
 

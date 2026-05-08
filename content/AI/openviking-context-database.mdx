@@ -1,0 +1,692 @@
+---
+title: "OpenViking 深度解析：AI 智能体的上下文数据库"
+description: "从原理到实践，全面拆解 OpenViking 的文件系统范式、L0/L1/L2 分层上下文、目录递归检索、会话自迭代机制，以及如何用它为 Agent 构建可观察、可控、可演化的上下文基础设施。"
+date: "2026-05-08"
+tags: ["AI", "Agent", "RAG", "Context", "OpenViking", "VikingFS", "向量检索"]
+---
+
+## 1. 为什么 Agent 需要上下文数据库
+
+<MermaidDiagram chart={`mindmap
+  root((Agent 上下文困境))
+    碎片化["碎片化问题"]
+      mem["记忆散落在代码/向量库"]
+      res["资源只有 URL 引用"]
+      skill["技能没有统一管理"]
+      session["会话上下文无法持久"]
+    成本["Token 成本爆炸"]
+      flat["扁平 RAG 全量灌入"]
+      window["超出模型上下文窗口"]
+      noise["噪声>信号"]
+    检索["检索效果差"]
+      no_global["无全局视图"]
+      no_context["缺乏上下文连贯"]
+      blackbox["检索链路不可解释"]
+    迭代["记忆无法自演化"]
+      only_record["记忆只是交互记录"]
+      no_task["缺少任务维度的记忆"]
+      no_skill["技能经验无法沉淀"]
+`}/>
+
+AI Agent 的能力受制于上下文质量。传统 RAG 把所有内容压扁成向量片段，在一个平坦的索引上做相似度匹配——这在简单问答下可用，但在 Agent 长任务中暴露四大困境：
+
+| 困境 | 根因 | 后果 |
+|------|------|------|
+| 碎片化 | 记忆在代码、资源在向量库、技能在脚本 | 无法统一管理、权限和生命周期 |
+| Token 成本爆炸 | 扁平 RAG 全量灌入 | 每次请求耗费大量 token，噪声淹没信号 |
+| 检索黑盒 | 传统 RAG 检索链路不可观察 | 出错时无法调试、无法优化 |
+| 记忆停滞 | 只记录用户交互、无任务记忆 | Agent 无法从任务执行中积累经验 |
+
+**OpenViking 的核心命题**：把"给 Agent 准备上下文"从零散的向量库/脚本，升级为一套可运营的基础设施——**上下文数据库**。
+
+## 2. 核心设计理念：文件系统范式
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph 传统RAG["传统 RAG"]
+        DOC1["文档"] --> CHUNK["切片 → 向量化"]
+        CHUNK --> VDB["向量数据库"]
+        VDB --> RET["相似度检索"]
+        RET --> LLM["LLM"]
+    end
+
+    subgraph OpenViking["OpenViking"]
+        RES2["资源"] --> TREE["目录树结构"]
+        MEM2["记忆"] --> TREE
+        SK2["技能"] --> TREE
+        TREE --> VFS["viking:// 虚拟文件系统"]
+        VFS --> L0["L0 摘要"]
+        VFS --> L1["L1 概览"]
+        VFS --> L2["L2 全文"]
+        L0 --> HR["目录递归检索"]
+        L1 --> HR
+        L2 --> HR
+        HR --> LLM2["LLM"]
+    end
+
+    style 传统RAG fill:#ffcdd2
+    style OpenViking fill:#c8e6c9
+`}/>
+
+OpenViking 创新性地采用**文件系统范式**管理上下文。核心抽象是 `viking://` 协议的虚拟文件系统，所有上下文类型被映射为目录和文件：
+
+```
+viking://
+├── resources/              # 资源：项目文档、代码仓库、网页等
+│   ├── my_project/
+│   │   ├── docs/
+│   │   │   ├── api/
+│   │   │   └── tutorials/
+│   │   └── src/
+│   └── ...
+├── user/                   # 用户：个人偏好、习惯等
+│   └── memories/
+│       ├── preferences/
+│       │   ├── writing_style
+│       │   └── coding_habits
+│       └── ...
+└── agent/                  # Agent：技能、指令、任务记忆等
+    ├── skills/
+    │   ├── search_code
+    │   ├── analyze_data
+    │   └── ...
+    ├── memories/
+    └── instructions/
+```
+
+**为什么文件系统是更好的抽象？**
+
+| 文件系统特性 | 对应 Agent 上下文 | 优势 |
+|-------------|-----------------|------|
+| 目录层级 | 上下文分类、子分类 | 天然的组织结构 |
+| 文件路径 | 唯一 URI 标识 | 确定性定位 |
+| 读写权限 | 上下文权限隔离 | 多租户安全 |
+| 递归遍历 | 逐层检索 | 先粗后细，降低 token |
+| 变更通知 | 上下文更新 | 实时同步 |
+
+## 3. 架构总览
+
+### 3.1 系统架构图
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph 客户端["客户端层"]
+        CLI["ov CLI<br/>Rust 编写"]
+        SDK["Python SDK<br/>openviking 包"]
+        MCP["MCP 端点<br/>OpenCode/Claude 集成"]
+        BOT["VikingBot<br/>Agent 框架"]
+        HTTP["HTTP API<br/>REST 端点"]
+    end
+
+    subgraph 服务端["OpenViking Server (Python)"]
+        API["REST API Layer"]
+        AUTH["鉴权 & 多租户"]
+        
+        subgraph VikingFS["VikingFS 虚拟文件系统"]
+            URI["URI 路由<br/>viking:// 分发"]
+            PERM["权限校验<br/>scope/role"]
+            SYNC["一致性维护<br/>文件变更↔索引同步"]
+        end
+        
+        subgraph 检索引擎["检索引擎"]
+            HR2["HierarchicalRetriever<br/>目录递归检索"]
+            VEC["向量搜索"]
+            RERANK["Rerank 重排"]
+            HOT["Hotness 融合"]
+        end
+        
+        subgraph 上下文处理["上下文处理器"]
+            PARSER["Parser<br/>文档/Media 解析"]
+            SUMM["Summarizer<br/>L0/L1 生成"]
+            IDX["Indexer<br/>向量化 upsert"]
+        end
+
+        subgraph 会话管理["会话管理器"]
+            EXTRACT["记忆提取<br/>偏好/经验/实体"]
+            COMPRESS["会话压缩"]
+            ITERATE["自迭代循环"]
+        end
+    end
+
+    subgraph 存储后端["存储后端"]
+        subgraph AGFS_RAGFS["AGFS/RAGFS (Rust)"]
+            MEMFS["memfs<br/>内存文件系统"]
+            SQLFS["sqlfs<br/>SQLite 持久化"]
+            KVFS["kvfs<br/>键值存储"]
+            S3FS["s3fs<br/>对象存储"]
+            QUEUEFS["queuefs<br/>队列存储"]
+        end
+        VDB2["VectorDB<br/>LanceDB / Milvus 等"]
+        MODELS["模型服务<br/>Embedding + VLM"]
+    end
+
+    客户端 --> API
+    API --> AUTH --> VikingFS
+    VikingFS --> 检索引擎
+    VikingFS --> 上下文处理
+    VikingFS --> 会话管理
+    VikingFS --> AGFS_RAGFS
+    检索引擎 --> VDB2
+    检索引擎 --> MODELS
+    上下文处理 --> MODELS
+    上下文处理 --> VDB2
+
+    style 客户端 fill:#e1f5fe
+    style VikingFS fill:#e8f5e9
+    style 检索引擎 fill:#fff9c4
+    style 上下文处理 fill:#fce4ec
+    style 会话管理 fill:#ede7f6
+    style 存储后端 fill:#f3e5f5
+`}/>
+
+### 3.2 五大核心组件
+
+| 组件 | 语言 | 功能 | 关键类/模块 |
+|------|------|------|------------|
+| 服务端 | Python | REST API、鉴权、多租户、业务编排 | `openviking-server` |
+| VikingFS | Python | viking:// URI 路由、权限、一致性 | VikingFS 类 |
+| 检索器 | Python | 目录递归 + rerank + hotness | HierarchicalRetriever |
+| AGFS/RAGFS | Rust | 可插拔文件存储后端 | memfs/sqlfs/kvfs/s3fs |
+| CLI | Rust | 命令行交互 | `ov` 命令 |
+
+### 3.3 数据流全景
+
+<MermaidDiagram chart={`flowchart TD
+    INPUT["外部输入"] --> PARSE["解析/下载"]
+    
+    subgraph 导入流程["导入流程"]
+        PARSE --> TEMP["临时区"]
+        TEMP --> TREE["TreeBuilder<br/>目录树生成"]
+        TREE --> AGFS["写入 AGFS/RAGFS<br/>持久文件系统"]
+        AGFS --> L0L1["Summarizer<br/>生成 .abstract/.overview"]
+        AGFS --> EMB["Indexer<br/>向量化 + upsert"]
+    end
+
+    subgraph 检索流程["检索流程"]
+        QUERY["用户查询"] --> INTENT["意图分析"]
+        INTENT --> GLOBAL["全局向量搜索<br/>定位起点目录"]
+        GLOBAL --> RECURSE["目录递归<br/>逐层下钻"]
+        RECURSE --> CANDIDATE["候选集"]
+        CANDIDATE --> RERANK2["Rerank 重排"]
+        RERANK2 --> RESULT["结构化结果<br/>含 L0/L1/L2"]
+    end
+
+    subgraph 会话流程["会话流程"]
+        SESSION["Agent 会话"] --> CONTEXT["上下文提取"]
+        CONTEXT --> USER_MEM["用户记忆更新"]
+        CONTEXT --> AGENT_MEM["Agent 经验沉淀"]
+        USER_MEM --> VIKING2["viking://user/memories/"]
+        AGENT_MEM --> VIKING3["viking://agent/memories/"]
+    end
+
+    L0L1 --> 检索流程
+    EMB --> 检索流程
+    VIKING2 --> 检索流程
+    VIKING3 --> 检索流程
+
+    style 导入流程 fill:#c8e6c9
+    style 检索流程 fill:#bbdefb
+    style 会话流程 fill:#fff9c4
+`}/>
+
+## 4. L0/L1/L2：分层上下文加载
+
+### 4.1 三层结构
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph 文件树["viking://resources/my_project/"]
+        ABSTRACT[".abstract<br/>L0 层: 一句话摘要<br/>约 100 tokens"]
+        OVERVIEW[".overview<br/>L1 层: 核心概览<br/>约 2K tokens"]
+        subgraph 子目录["docs/"]
+            AB2[".abstract"]
+            OV2[".overview"]
+            AUTH["auth.md<br/>L2 层: 全文内容"]
+            EP["endpoints.md<br/>L2 层: 全文内容"]
+        end
+    end
+
+    ABSTRACT --> Q1["快速判断相关性"]
+    OVERVIEW --> Q2["理解结构与要点"]
+    AUTH --> Q3["需要证据时深读"]
+    EP --> Q3
+
+    style ABSTRACT fill:#c8e6c9
+    style OVERVIEW fill:#fff9c4
+    style AUTH fill:#ffcdd2
+    style EP fill:#ffcdd2
+`}/>
+
+每一层的设计意图与 token 消耗：
+
+| 层级 | 内容 | Token 量 | 使用场景 | 何时加载 |
+|------|------|---------|---------|---------|
+| L0 (abstract) | 目录一句话摘要 | ~100 | 快速判断相关性 | 检索定位时 |
+| L1 (overview) | 目录核心信息+使用场景 | ~2K | 规划阶段决策 | Agent 需要理解结构时 |
+| L2 (detail) | 完整原始数据 | 全量 | 深度阅读取证 | 确定需要具体证据时 |
+
+### 4.2 分层加载如何节省 Token
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph 传统RAG["传统扁平 RAG"]
+        FLAT_Q["查询"] --> FLAT_R["全量召回 Top-K"]
+        FLAT_R --> FLAT_P["所有内容塞入 Prompt"]
+        FLAT_P --> LLM_OLD["LLM 生成"]
+    end
+
+    subgraph 分层加载["OpenViking L0/L1/L2"]
+        LV0["查询"] --> LV1["扫描所有 L0"]
+        LV1 --> LV2["定位相关目录"]
+        LV2 --> LV3["读取 L1 概览"]
+        LV3 --> LV4["仅需时读 L2"]
+        LV4 --> LLM_NEW["LLM 生成"]
+    end
+
+    style 传统RAG fill:#ffcdd2
+    style 分层加载 fill:#c8e6c9
+`}/>
+
+实测效果（基于 LoCoMo 长对话评测，1540 个用例）：
+
+| 实验组 | 任务完成率 | 输入 Token 总量 |
+|--------|----------|---------------|
+| OpenClaw（原生记忆） | 35.65% | 24,611,530 |
+| OpenClaw + LanceDB | 44.55% | 51,574,530 |
+| OpenClaw + OpenViking（禁用原生记忆） | **51.23%** | **2,099,622** |
+| OpenClaw + OpenViking（启用原生记忆） | **52.08%** | **4,264,396** |
+
+关键发现：
+- 相比原生 OpenClaw：任务完成率提升 **43%**，Token 成本降低 **91%**
+- 相比 LanceDB：任务完成率提升 **17%**，Token 成本降低 **92-96%**
+
+## 5. 目录递归检索：从粗到细
+
+### 5.1 检索流程
+
+<MermaidDiagram chart={`flowchart TD
+    Q["用户查询<br/>'OpenViking 的检索机制是什么'"]
+    Q --> INTENT["Step 1: 意图分析<br/>生成多个检索条件"]
+    INTENT --> GLOBAL["Step 2: 全局向量搜索<br/>快速定位高分目录"]
+    GLOBAL --> POS["定位: viking://resources/OpenViking/docs/zh/"]
+    POS --> RECURSE["Step 3: 目录内二次检索<br/>扫描当前目录的 children"]
+    RECURSE --> DECIDE{"子项类型?"}
+    DECIDE -->|子目录| RECURSE2["递归下钻<br/>继续二次检索"]
+    DECIDE -->|文件| CANDIDATE["加入候选集"]
+    RECURSE2 --> DECIDE
+    CANDIDATE --> RERANK["Step 4: Rerank 重排"]
+    RERANK --> L0L1_LOAD["Step 5: 加载 L0/L1 上下文"]
+    L0L1_LOAD --> RESULT["结构化结果返回 Agent"]
+    
+    style Q fill:#e1f5fe
+    style GLOBAL fill:#fff9c4
+    style RECURSE fill:#c8e6c9
+    style RERANK fill:#fce4ec
+    style RESULT fill:#e8f5e9
+`}/>
+
+### 5.2 检索策略对比
+
+| 策略 | 传统扁平 RAG | OpenViking 目录递归 |
+|------|-------------|-------------------|
+| 搜索空间 | 全局向量索引 | 先缩目录，再搜内容 |
+| 定位精度 | 相似度 Top-K | 目录+语义双维度 |
+| 上下文完整性 | 孤立片段 | 理解信息所在的全局上下文 |
+| 可解释性 | 黑盒 | 轨迹可视化 |
+| Token 效率 | 全文灌入 | L0/L1 逐层加载 |
+
+### 5.3 检索轨迹可视化
+
+OpenViking 的每条检索都保留完整的目录浏览和文件定位轨迹，用户可以清楚观察到检索链路：
+
+```
+查询: "OpenViking 的检索机制"
+轨迹:
+  viking://resources/              [L0: OpenViking 项目文档]
+  → viking://resources/OpenViking/  [L0: 核心代码与文档]
+  → viking://resources/OpenViking/docs/zh/  [L0: 中文文档]
+  → viking://resources/OpenViking/docs/zh/concepts/  [L1: 核心概念目录]
+  → viking://resources/OpenViking/docs/zh/concepts/07-retrieval.md  [L2: 命中!]
+```
+
+## 6. 三种上下文类型详解
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph Resources["资源 (viking://resources/)"]
+        direction LR
+        R1["代码仓库"]
+        R2["产品文档"]
+        R3["API 文档"]
+        R4["网页截取"]
+        R5["图片/PDF"]
+    end
+
+    subgraph UserMem["用户记忆 (viking://user/memories/)"]
+        direction LR
+        U1["编写偏好"]
+        U2["代码风格"]
+        U3["沟通习惯"]
+        U4["项目上下文"]
+    end
+
+    subgraph AgentCtx["Agent 上下文 (viking://agent/)"]
+        direction LR
+        A1["skills/<br/>工具使用技能"]
+        A2["memories/<br/>任务执行记忆"]
+        A3["instructions/<br/>使用指令"]
+    end
+
+    style Resources fill:#e1f5fe
+    style UserMem fill:#e8f5e9
+    style AgentCtx fill:#fff9c4
+`}/>
+
+### 6.1 资源 (resources)
+
+资源是 Agent 的"知识库"——项目文档、代码仓库、网页内容等外部材料。通过 `add-resource` 命令导入：
+
+```bash
+# 导入 GitHub 仓库
+ov add-resource https://github.com/volcengine/OpenViking
+
+# 导入本地文件
+ov add-resource /path/to/project-docs
+
+# 导入网页
+ov add-resource https://docs.example.com/api
+```
+
+导入后自动触发解析 → 树构建 → L0/L1 生成 → 向量索引。
+
+### 6.2 用户记忆 (user/memories)
+
+用户记忆存储个人偏好、习惯和项目上下文。会话结束后由系统自动提取并更新：
+
+```bash
+# 查看用户偏好
+ov ls viking://user/memories/preferences/
+
+# 读取特定偏好
+ov read viking://user/memories/preferences/coding_habits
+```
+
+### 6.3 Agent 上下文 (agent/)
+
+Agent 上下文包括技能（skills）、任务记忆（memories）和指令（instructions），是 Agent 自我演化的核心：
+
+```bash
+# 查看 Agent 已掌握的技能
+ov ls viking://agent/skills/
+
+# 搜索特定技能
+ov find "代码搜索" --uri viking://agent/skills/
+```
+
+## 7. 会话自迭代：Agent 越用越聪明
+
+<MermaidDiagram chart={`sequenceDiagram
+    participant U as 用户
+    participant A as Agent
+    participant OV as OpenViking
+    participant MEM as 记忆存储
+
+    U->>A: 提问/下发任务
+    A->>OV: 搜索上下文
+    OV-->>A: 相关记忆 + 资源
+    A->>A: 执行任务
+    A-->>U: 返回结果
+
+    Note over A,OV: 会话结束，触发记忆提取
+
+    A->>OV: memcommit (提交会话)
+    OV->>OV: 分析任务结果
+    OV->>MEM: 更新 user/memories
+    OV->>MEM: 更新 agent/memories
+    MEM-->>OV: 确认更新
+
+    Note over A,OV: 下次对话，记忆更丰富
+
+    U->>A: 新任务
+    A->>OV: 搜索(含上次记忆)
+    OV-->>A: 更精准的上下文
+    A-->>U: 更好的结果
+`}/>
+
+会话自迭代的三个关键步骤：
+
+1. **会话记录**：记录完整对话、工具调用、推理过程
+2. **记忆提取**：异步分析任务结果和用户反馈，提取偏好、实体、事件
+3. **记忆更新**：自动写入 `viking://user/memories/` 和 `viking://agent/memories/`
+
+## 8. 实践指南
+
+### 8.1 安装与配置
+
+```bash
+# 安装 Python 包
+pip install openviking --upgrade --force-reinstall
+
+# 安装 Rust CLI（可选）
+curl -fsSL https://raw.githubusercontent.com/volcengine/OpenViking/main/crates/ov_cli/install.sh | bash
+
+# 交互式配置（推荐）
+openviking-server init
+
+# 验证配置
+openviking-server doctor
+```
+
+### 8.2 配置示例（火山引擎豆包模型）
+
+```json
+{
+  "storage": {
+    "workspace": "/home/your-name/openviking_workspace"
+  },
+  "embedding": {
+    "dense": {
+      "api_base": "https://ark.cn-beijing.volces.com/api/v3",
+      "api_key": "your-api-key",
+      "provider": "volcengine",
+      "dimension": 1024,
+      "model": "doubao-embedding-vision-251215"
+    }
+  },
+  "vlm": {
+    "api_base": "https://ark.cn-beijing.volces.com/api/v3",
+    "api_key": "your-api-key",
+    "provider": "volcengine",
+    "model": "doubao-seed-2-0-pro-260215"
+  }
+}
+```
+
+### 8.3 核心操作流程
+
+<MermaidDiagram chart={`flowchart TD
+    START["启动服务<br/>openviking-server"] --> IMPORT["导入资源<br/>ov add-resource URL"]
+    IMPORT --> BROWSE["浏览目录树<br/>ov ls / ov tree"]
+    BROWSE --> SEARCH["语义检索<br/>ov find '查询'"]
+    SEARCH --> READ["读取内容<br/>ov read URI"]
+    READ --> AGENT["Agent 使用上下文<br/>通过 API/MCP"]
+    AGENT --> SESSION["会话结束<br/>ov memcommit"]
+    SESSION --> ITERATE["记忆自迭代<br/>更新 user/agent 记忆"]
+    ITERATE --> |下次对话| SEARCH
+
+    style START fill:#e1f5fe
+    style IMPORT fill:#c8e6c9
+    style SEARCH fill:#fff9c4
+    style ITERATE fill:#fce4ec
+`}/>
+
+```bash
+# 1. 启动服务
+openviking-server
+
+# 2. 导入资源
+ov add-resource https://github.com/volcengine/OpenViking --wait
+
+# 3. 浏览目录
+ov ls viking://resources/
+ov tree viking://resources/volcengine -L 2
+
+# 4. 语义检索
+ov find "OpenViking 的检索机制是什么"
+ov grep "openviking" --uri viking://resources/volcengine/OpenViking/docs/zh
+
+# 5. 读取内容
+ov read viking://resources/volcengine/OpenViking/docs/zh/concepts/07-retrieval.md
+
+# 6. 会话结束后提交记忆
+ov memcommit
+```
+
+### 8.4 与 Agent 框架集成
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph 集成方式["三种集成方式"]
+        MCP["MCP 协议<br/>OpenCode / Claude Code"]
+        SDK["Python SDK<br/>openviking 包"]
+        BOT["VikingBot<br/>内置 Agent 框架"]
+    end
+
+    MCP --> OV["OpenViking Server"]
+    SDK --> OV
+    BOT --> OV
+
+    MCP --> APP1["代码助手<br/>记忆 + 资源检索"]
+    SDK --> APP2["自定义 Agent<br/>任意上下文应用"]
+    BOT --> APP3["对话 Agent<br/>内置技能 + 记忆"]
+
+    style 集成方式 fill:#e1f5fe
+    style OV fill:#e8f5e9
+`}/>
+
+**VikingBot 快速启动**：
+
+```bash
+# 安装 VikingBot
+pip install "openviking[bot]"
+
+# 启动（含 Bot）
+openviking-server --with-bot
+
+# 另一个终端启动对话
+ov chat
+```
+
+### 8.5 与 OpenCode / Claude Code 集成
+
+OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的记忆后端：
+
+1. OpenViking Server 与 OpenCode 同进程启动
+2. Agent 通过 `memsearch`、`memread`、`membrowse` 等工具访问 `viking://` URI
+3. 会话结束时通过 `memcommit` 提交记忆
+4. 下次会话自动加载历史偏好和技能
+
+## 9. 存储后端架构
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph VikingFS["VikingFS 虚拟文件系统"]
+        URI2["viking:// URI 路由"]
+        PERM2["权限 & 多租户"]
+        SYNC2["一致性维护"]
+    end
+
+    URI2 --> ROUTER["后端路由"]
+    PERM2 --> ROUTER
+    SYNC2 --> ROUTER
+
+    ROUTER --> MEM["memfs<br/>内存文件系统<br/>临时/会话"]
+    ROUTER --> SQL["sqlfs<br/>SQLite 持久化<br/>默认存储"]
+    ROUTER --> KV["kvfs<br/>键值存储<br/>快速读写"]
+    ROUTER --> S3["s3fs<br/>对象存储<br/>大规模部署"]
+    ROUTER --> QUEUE["queuefs<br/>队列存储<br/>异步任务"]
+
+    subgraph 索引["向量索引"]
+        LANCE["LanceDB<br/>内置轻量"]
+        MILVUS["Milvus<br/>大规模部署"]
+    end
+
+    SQL --> LANCE
+    S3 --> MILVUS
+
+    style VikingFS fill:#e8f5e9
+    style 索引 fill:#fff9c4
+`}/>
+
+各后端的适用场景：
+
+| 后端 | 语言 | 适用场景 | 持久化 |
+|------|------|---------|--------|
+| memfs | Rust | 临时数据、会话缓存 | 否（进程内） |
+| sqlfs | Rust+SQLite | 默认存储、单机部署 | 是 |
+| kvfs | Rust | 快速键值读写 | 是 |
+| s3fs | Rust | 大规模、云端部署 | 是 |
+| queuefs | Rust | 异步任务队列 | 是 |
+
+## 10. OpenViking vs 传统 RAG：什么时候选什么
+
+<MermaidDiagram chart={`flowchart TD
+    START{"选择上下文方案"} --> Q1{"上下文类型是否多样<br/>(资源+记忆+技能)?"}
+    Q1 -->|是| Q2{"需要会话记忆自迭代?"}
+    Q1 -->|否,只有文档| Q3{"文档是否有层级结构?"}
+    
+    Q2 -->|是| OV["OpenViking<br/>完整上下文数据库"]
+    Q2 -->|否| Q4{"需要可观察的检索链路?"}
+    
+    Q4 -->|是| OV
+    Q4 -->|否| Q5{"需要跨会话记忆?"}
+    Q5 -->|是| OV_H["OpenViking<br/>(只用记忆功能)"]
+    Q5 -->|否| SIMPLE["简单向量库<br/>+ RAG"]
+    
+    Q3 -->|是| OV_R["OpenViking<br/>(只用资源功能)"]
+    Q3 -->|否| SIMPLE
+
+    style OV fill:#c8e6c9
+    style OV_H fill:#c8e6c9
+    style OV_R fill:#c8e6c9
+    style SIMPLE fill:#fff9c4
+`}/>
+
+| 场景 | 推荐 | 原因 |
+|------|------|------|
+| 多类型上下文（资源+记忆+技能） | OpenViking | 文件系统范式统一管理 |
+| 长 Agent 任务、上下文持续增长 | OpenViking | 会话压缩 + L0/L1 降本 |
+| 需要调试检索链路 | OpenViking | 轨迹可视化 |
+| 代码/文档天然有层级结构 | OpenViking | 目录递归检索 |
+| 独立短文档、无层级语义 | 传统向量库+RAG | 更轻量简单 |
+| 极简问答场景 | 传统 RAG | 够用就好 |
+
+## 11. 设计哲学总结
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph 核心理念["OpenViking 设计哲学"]
+        D1["文件系统范式<br/>→ 统一管理"]
+        D2["分层加载<br/>→ 降低成本"]
+        D3["目录递归检索<br/>→ 提高精度"]
+        D4["轨迹可视化<br/>→ 可观测"]
+        D5["会话自迭代<br/>→ 自演化"]
+    end
+
+    D1 --> OUT1["告别上下文碎片化"]
+    D2 --> OUT2["91% Token 成本降低"]
+    D3 --> OUT3["17% 任务完成率提升"]
+    D4 --> OUT4["检索链路可调试"]
+    D5 --> OUT5["Agent 越用越聪明"]
+
+    style 核心理念 fill:#e1f5fe
+`}/>
+
+OpenViking 把 Agent 的上下文管理从"散装 RAG"升级为"可运营的基础设施"。五个核心设计对应五个核心问题：
+
+1. **文件系统范式** → 统一管理 → 解决碎片化
+2. **L0/L1/L2 分层** → 按需加载 → 降低 Token 成本
+3. **目录递归检索** → 先粗后细 → 提高检索精度
+4. **轨迹可视化** → 全链路追溯 → 可观测、可调试
+5. **会话自迭代** → 记忆演化 → Agent 越用越聪明
+
+---
+
+**参考资源：**
+
+- [OpenViking GitHub 仓库](https://github.com/volcengine/OpenViking)
+- [OpenViking 官网](https://www.openviking.ai)
+- [OpenViking 文档](https://www.openviking.ai/docs)
+- [OpenClaw 评测数据](https://github.com/snap-research/locomo)

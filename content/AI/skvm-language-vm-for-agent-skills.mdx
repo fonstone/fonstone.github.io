@@ -1,0 +1,694 @@
+---
+title: "SkVM 深度解析：LLM Agent 技能的语言虚拟机"
+description: "从编译器理论到 Agent 技能可移植性，全面拆解 SkVM 的 26 原语建模、TCP/SCR 能力剖析、三遍 AOT 编译、JIT 加固与优化的完整技术路线，以及它在 8 个 LLM × 3 个 Agent 框架上的实测效果——任务完成率显著提升、Token 消耗降低 40%、延迟降低 19-50x。"
+date: "2026-05-08"
+tags: ["AI", "Agent", "SkVM", "LLM", "编译器", "技能可移植性", "AOT编译"]
+---
+
+## 1. 问题：技能不应因切换模型而断裂
+
+<MermaidDiagram chart={`mindmap
+  root((Agent 技能移植困境))
+    碎裂["技能碎裂"]
+      skill1["同一技能在不同模型上行为不一致"]
+      manual["N技能 × M模型 = N×M 手动适配"]
+      version["模型版本更新使提示词失效"]
+    效率["效率低下"]
+      static["静态提示词无法从执行中学习"]
+      no_cache["重复代码模式无法缓存"]
+      no_feedback["没有从生产运行到技能优化的反馈回路"]
+    成本["成本爆炸"]
+      token["每次调用都消耗完整上下文 Token"]
+      brittle["脆弱的提示词需要大量试错调优"]
+`}/>
+
+LLM Agent 越来越多地将**技能（Skill）**作为可复用的组合单元。然而，当前系统把技能当作原始上下文处理，导致：
+
+| 困境 | 根因 | 后果 |
+|------|------|------|
+| 技能跨模型断裂 | 不同模型能力差异巨大 | 同一技能在强模型可用、弱模型失效 |
+| 手动调优不可扩展 | N × M 组合爆炸 | 每次模型更新都需重写提示词 |
+| 没有运行时学习 | 提示词是静态文本 | 重复代码模式不缓存，无反馈循环 |
+
+**SkVM 的核心洞察**：借鉴传统编译器和虚拟机设计——把技能当作**源代码**，把 LLM 当作**异构处理器**，用编译和运行时技术实现"一次编写，到处高效运行"。
+
+## 2. 总体架构
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph 输入["输入"]
+        SKILL["技能目录<br/>SKILL.md + 配置文件"]
+    end
+
+    subgraph Profiling["Stage 1: 能力画像"]
+        PRIM["26 原语微基准<br/>gen.code.* / tool.* / reason.* / follow.*"]
+        TCP["TCP 目标能力画像<br/>L0-L3 四级评估"]
+        PRIM --> TCP
+    end
+
+    subgraph AOT["Stage 2: AOT 编译 (3遍)"]
+        P1["Pass 1: 能力缺口分析<br/>SCR 提取 → 缺口检测 → 替换/补偿"]
+        P2["Pass 2: 环境绑定<br/>依赖清单 → 存在性检查 → 安装脚本"]
+        P3["Pass 3: 并发提取<br/>工作流分解 → DAG → DLP/ILP/TLP"]
+        P1 --> P2 --> P3
+    end
+
+    subgraph Runtime["Stage 3: 运行时优化"]
+        JIT_B["JIT-Boost<br/>代码加固<br/>重复模式 → 绕过 LLM 调用"]
+        JIT_O["JIT-Optimize<br/>技能改写<br/>执行轨迹 → 提案式编辑"]
+        AUTO["Autotune<br/>自闭环优化<br/>合成任务 → 评分 → 迭代"]
+    end
+
+    subgraph Benchmark["评估"]
+        BENCH["SkillsBench<br/>108 技能 × 216 任务"]
+        EVAL["4 类评估方法<br/>script / file-check / llm-judge / custom"]
+    end
+
+    SKILL --> Profiling
+    SKILL --> AOT
+    AOT --> Runtime
+    TCP --> AOT
+    Runtime --> Benchmark
+    AOT --> Benchmark
+
+    style Profiling fill:#e1f5fe
+    style AOT fill:#fff9c4
+    style Runtime fill:#c8e6c9
+    style Benchmark fill:#fce4ec
+`}/>
+
+SkVM 的四大部分：
+
+| 组件 | 功能 | 类比 |
+|------|------|------|
+| **Profiling** | 测量模型+框架的原语能力 | CPU 特性探测（CPUID） |
+| **AOT-Compilation** | 三遍编译，适配目标能力 | AOT 编译器（LLVM Pass） |
+| **JIT-Optimization** | 运行时加固 + 技能改写 | JIT 编译优化 |
+| **Benchmark** | 评测原始/编译/优化技能 | SPEC 基准测试 |
+
+## 3. 原语目录与能力画像
+
+### 3.1 26 原语分类
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph 代码生成["代码生成 gen.code.*"]
+        GC_W["write<br/>文件写入"]
+        GC_E["edit<br/>文件编辑"]
+        GC_D["debug<br/>调试修复"]
+        GC_T["test<br/>测试生成"]
+        GC_R["refactor<br/>重构"]
+        GC_M["更多..."]
+    end
+
+    subgraph 工具使用["工具使用 tool.*"]
+        T_FR["file.read<br/>文件读取"]
+        T_FW["file.write<br/>文件写入"]
+        T_EX["exec<br/>命令执行"]
+        T_WF["web_fetch<br/>网页获取"]
+        T_M["更多..."]
+    end
+
+    subgraph 推理["推理 reason.*"]
+        R_P["plan<br/>规划"]
+        R_DC["decompose<br/>分解"]
+        R_DG["diagnose<br/>诊断"]
+        R_A["analyze<br/>分析"]
+    end
+
+    subgraph 指令遵循["指令遵循 follow.*"]
+        F_FMT["format<br/>格式遵循"]
+        F_CST["constraint<br/>约束遵循"]
+        F_MS["multi-step<br/>多步执行"]
+        F_EC["edge-case<br/>边界情况"]
+    end
+`}/>
+
+每个原语可在三个难度级别测试：
+
+| 级别 | 含义 | 测试策略 |
+|------|------|---------|
+| L3 | 完全胜任——处理复杂实例 | 先测 L3，通过则 L2/L1 免测 |
+| L2 | 中等胜任——处理标准实例 | L3 失败后测试 L2 |
+| L1 | 基本胜任——处理简单实例 | L2 失败后测试 L1 |
+| L0 | 无能力——连简单实例也失败 | L1 也失败 |
+
+这种**渐进式测试**策略最小化 API 调用成本：如果一个模型通过了 L3，就不再测试 L2 和 L1。
+
+### 3.2 TCP（目标能力画像）
+
+TCP 是对模型+框架组合的能力画像，存储为 JSON：
+
+```json
+{
+  "gen.code.write": { "level": 2, "scores": { "L3": 0.33, "L2": 0.83 } },
+  "tool.file.read":  { "level": 3, "scores": { "L3": 1.0 } },
+  "reason.plan":     { "level": 1, "scores": { "L3": 0.0, "L2": 0.17, "L1": 0.67 } }
+}
+```
+
+关键理解：**TCP 是 per-(model, adapter) 的**——同一个模型在不同 Agent 框架下能力表现不同，因为框架提供的工具、格式约束、系统提示都不同。
+
+### 3.3 SCR（技能能力需求）
+
+SCR 描述技能需要什么原语能力、以及在什么级别上需要。它由编译器 Pass 1 从 `SKILL.md` 自动提取，并可包含**替代实现路径**：
+
+<MermaidDiagram chart={`flowchart LR
+    SKILL_MD["SKILL.md<br/>技能描述文件"]
+    SCR["SCR 提取<br/>技能能力需求"]
+    
+    SCR --> REQ1["主路径需求<br/>gen.code.edit: L2"]
+    SCR --> REQ2["替代路径需求<br/>gen.code.write: L3<br/>(如果 edit 不可用)"]
+    SCR --> REQ3["工具需求<br/>tool.file.read: L2<br/>tool.exec: L1"]
+
+    style SKILL_MD fill:#e1f5fe
+    style SCR fill:#fff9c4
+`}/>
+
+**核心洞察**：TCP 和 SCR 之间的缺口决定了需要什么编译变换——没有缺口意味着技能可以原样运行。
+
+## 4. 三遍 AOT 编译
+
+<MermaidDiagram chart={`flowchart TD
+    INPUT["SKILL.md 原始技能"]
+    
+    subgraph PASS1["Pass 1: 能力缺口分析"]
+        EXTRACT["SCR 提取<br/>从技能描述中提取需求"]
+        GAP["缺口检测<br/>SCR vs TCP 逐项比较"]
+        TRANSFORM["变换决策"]
+        TRANSFORM --> SUB["硬缺口(L0) → 替换<br/>换用替代原语"]
+        TRANSFORM --> COMP["弱缺口 → 补偿<br/>加脚手架/示例/分解"]
+        TRANSFORM --> NONE["无缺口 → 不变换"]
+    end
+
+    subgraph PASS2["Pass 2: 环境绑定"]
+        DEP["依赖提取<br/>工具/包/API/二进制"]
+        CHECK["存在性检查<br/>环境中是否已安装"]
+        SCRIPT["生成安装脚本<br/>幂等环境设置脚本"]
+    end
+
+    subgraph PASS3["Pass 3: 并发提取"]
+        DECOMP["工作流分解"]
+        DAG["构建 DAG<br/>识别数据/控制依赖"]
+        PARA["并行性标注<br/>DLP/ILP/TLP"]
+    end
+
+    INPUT --> PASS1 --> PASS2 --> PASS3 --> OUTPUT["编译后技能变体"]
+
+    style PASS1 fill:#e1f5fe
+    style PASS2 fill:#fff9c4
+    style PASS3 fill:#c8e6c9
+`}/>
+
+### 4.1 Pass 1：能力缺口分析
+
+Pass 1 是编译器的核心——它解决"这个技能在这个模型上能不能跑"的问题：
+
+| 缺口类型 | 条件 | 策略 |
+|----------|------|------|
+| 硬缺口 (L0) | 模型完全不具备该能力 | **替换**：使用替代原语路径 |
+| 弱缺口 | 模型具备但低于需求级别 | **补偿**：添加脚手架、示例、分解步骤 |
+| 无缺口 | 模型能力满足需求 | **不变换** |
+
+示例：一个技能要求 `gen.code.edit: L2`，但目标模型只有 `L1`。编译器会补偿——添加更多示例、将编辑操作分解为读-写两步、增加格式约束提示。
+
+### 4.2 Pass 2：环境绑定
+
+Pass 2 把技能从"通用描述"变成"可运行包"：
+
+```bash
+# 自动生成的幂等安装脚本示例
+#!/bin/bash
+set -e
+pip install --quiet requests  # 技能依赖的 Python 包
+curl -sL https://example.com/tool -o /usr/local/bin/tool  # 二进制工具
+chmod +x /usr/local/bin/tool
+```
+
+这意味着 AOT 输出不仅是"给模型更好的指令"，还是一个**自包含的可部署技能包**。
+
+### 4.3 Pass 3：并发提取
+
+Pass 3 分析技能的工作流结构，识别并行执行机会：
+
+| 并行类型 | 全称 | 示例 |
+|----------|------|------|
+| DLP | 数据级并行 | 同时处理多个独立文件 |
+| ILP | 指令级并行 | 流水线化独立步骤 |
+| TLP | 任务级并行 | 并发执行独立子任务 |
+
+**三遍顺序有意义**：Pass 1 改变技能"做什么"，Pass 2 改变"需要什么环境"，Pass 3 改变"如何调度"。乱序会使后续分析基于过时假设。
+
+## 5. 运行时优化
+
+### 5.1 JIT-Boost（代码加固）
+
+<MermaidDiagram chart={`flowchart TD
+    SCAN["扫描技能包<br/>headless agent 分析全文"]
+    SCAN --> CANDIDATES["生成 boost-candidates.json<br/>代码签名/关键词/参数模板"]
+    
+    EXEC["运行时执行技能"]
+    EXEC --> HOOK["运行时钩子<br/>监控 LLM 调用"]
+    HOOK --> MATCH{"匹配已知签名?"}
+    MATCH -->|"否"| LLM["调用 LLM<br/>正常路径"]
+    MATCH -->|"是: 连续 N 次"|"提升候选为已加固"
+    
+    CANDIDATES --> PROMOTE["加固模式提升"]
+    PROMOTE --> BYPASS["绕过 LLM<br/>直接执行模板<br/>零 LLM 调用"]
+    BYPASS --> SUCCESS{"执行成功?"}
+    SUCCESS -->|"是"| FAST["加速完成"]
+    SUCCESS -->|"否"| DEMOTE["降级回 LLM 调用<br/>自动回退"]
+    LLM --> NORMAL["正常完成"]
+
+    style SCAN fill:#e1f5fe
+    style BYPASS fill:#c8e6c9
+    style DEMOTE fill:#fff9c4
+`}/>
+
+JIT-Boost 的核心思想是**代码加固（Code Solidification）**——类似于 JVM 的 JIT 编译将热点字节码编译为本地机器码。当一个代码模式被 LLM 连续重复执行多次后，SkVM 将其"加固"为直接执行的模板，绕过 LLM 调用：
+
+- **零 LLM 调用**：已加固的模式在运行时完全绕过 LLM
+- **自动降级**：加固失败时自动回退到 LLM 调用
+- **模型无关**：加固状态按技能存储，与具体模型无关
+
+实测效果：**19-50x 延迟降低**（对于重复性操作模式）。
+
+### 5.2 JIT-Optimize（技能改写）
+
+<MermaidDiagram chart={`flowchart TD
+    LOG["执行轨迹 / 会话日志"]
+    NORMALIZE["标准化证据<br/>统一为共享 Schema"]
+    NORMALIZE --> COPY["复制技能到临时工作区"]
+    COPY --> EVIDENCE["写入 .optimize/ 目录<br/>证据 + 历史"]
+    EVIDENCE --> AGENT["启动 headless agent<br/>编辑 SKILL.md 或任何包文件"]
+    AGENT --> PROPOSAL["提交结构化提案<br/>根因 + 推理 + 置信度 + 变更文件"]
+    PROPOSAL --> SNAPSHOT["快照为编号轮次"]
+    SNAPSHOT --> DIFF["计算实际 diff"]
+    DIFF --> RERUN["重跑评估"]
+    RERUN --> SCORE["评分"]
+    SCORE --> BEST["选择最佳轮次"]
+    
+    BEST --> REVIEW["提案审查<br/>proposals show/accept/reject"]
+
+    style LOG fill:#e1f5fe
+    style AGENT fill:#fff9c4
+    style REVIEW fill:#c8e6c9
+`}/>
+
+JIT-Optimize 是**提案驱动的编辑循环**，不是原地突变。三种证据来源：
+
+| 来源 | 参数 | 说明 |
+|------|------|------|
+| `synthetic` | `--task-source=synthetic` | 合成任务，自闭环 |
+| `real` | `--task-source=real` | 使用基准测试任务 |
+| `log` | `--task-source=log` | 从已有会话日志分析，不重跑 |
+
+### 5.3 Autotune：自闭环优化
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph Autotune循环["Autotune 自闭环"]
+        GEN["合成任务生成<br/>从技能描述派生"]
+        GEN --> EXEC2["执行任务"]
+        EXEC2 --> SCORE2["评分"]
+        SCORE2 --> EDIT2["优化器编辑技能"]
+        EDIT2 --> EXEC2
+    end
+
+    CONV{"达到收敛阈值<br/>或轮次上限?"}
+    EDIT2 --> CONV
+    CONV -->|"否"| EXEC2
+    CONV -->|"是"| DEPLOY["部署最佳轮次"]
+
+    style Autotune循环 fill:#fff9c4
+    style DEPLOY fill:#c8e6c9
+`}/>
+
+Autotune 是 SkVM 最接近"自我监督在线技能改进"的特性——生成任务 → 执行 → 评分 → 编辑 → 再执行，直到收敛或达到轮次上限。
+
+## 6. 系统架构详解
+
+### 6.1 模块化管线架构
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph Profiler["_profiler<br/>画像器"]
+        P_26["26 原语微基准<br/>渐进式 L3→L1"]
+        P_TCP["TCP 输出"]
+        P_26 --> P_TCP
+    end
+
+    subgraph Compiler["AOT 编译器"]
+        C_P1["Pass 1<br/>SCR 提取 + 缺口分析"]
+        C_REGEN["Skill Regenerator<br/>insert / replace / prepend / add"]
+        C_P2["Pass 2<br/>环境绑定"]
+        C_P3["Pass 3<br/>并发提取 + DAG"]
+        C_P1 --> C_REGEN --> C_P2 --> C_P3
+        C_P1 --> C_REGEN
+    end
+
+    subgraph Runtime["运行时"]
+        R_ADAPTER["Agent Adapter<br/>bare-agent / OpenCode / OpenClaw / Hermes"]
+        R_HOOK["Runtime Hooks<br/>JIT-Boost 钩子"]
+        R_JIT_B["JIT-Boost<br/>代码加固"]
+        R_JIT_O["JIT-Optimize<br/>技能改写"]
+        R_ADAPTER --> R_HOOK --> R_JIT_B
+        R_JIT_O --> R_ADAPTER
+    end
+
+    subgraph Provider["LLM Provider"]
+        PR_ANTHROPIC["Anthropic<br/>原生 SDK + tool_use"]
+        PR_OPENROUTER["OpenRouter<br/>100+ 模型路由"]
+    end
+
+    subgraph Eval["评估框架"]
+        EV_SCRIPT["script<br/>Shell 脚本退出码"]
+        EV_FILE["file-check<br/>文件内容校验"]
+        EV_LLM["llm-judge<br/>LLM 评委打分"]
+        EV_CUSTOM["custom<br/>自定义评估函数"]
+    end
+
+    P_TCP --> C_P1
+    Runtime --> Eval
+    Provider --> Runtime
+
+    style Profiler fill:#e1f5fe
+    style Compiler fill:#fff9c4
+    style Runtime fill:#c8e6c9
+    style Provider fill:#fce4ec
+    style Eval fill:#f3e5f5
+`}/>
+
+### 6.2 Agent 适配器体系
+
+SkVM 通过 `AgentAdapter` 接口支持多种 Agent 框架：
+
+| 适配器 | 框架 | 说明 |
+|--------|------|------|
+| `bare-agent` | 内置 | 最小 Agent 循环，5 个工具，用于画像和测试 |
+| `opencode` | OpenCode CLI | 解析 NDJSON 事件流 |
+| `openclaw` | OpenClaw CLI | 管理临时 Agent 实例 |
+| `hermes` | Hermes CLI | 保留完整 token 和成本元数据 |
+| `jiuwenclaw` | Jiuwenclaw CLI | JSON-RPC 通信 |
+
+适配器配置模式：
+- **managed**：SkVM 在沙箱中创建新的最小配置（如新 openclaw agent），干净基线，不依赖宿主状态
+- **native**：SkVM 克隆用户现有框架配置（如 `~/.openclaw/agents/<name>`），需要本地已配置
+
+### 6.3 数据目录结构
+
+```
+~/.skvm/
+├── profiles/           # 缓存的 TCP 能力画像
+│   ├── bare-agent/
+│   └── openclaw/
+├── log/                # 画像/编译/bench/运行时日志
+└── proposals/          # AOT 编译、JIT 优化输出
+    ├── aot-compile/    # 编译变体
+    │   └── <adapter>/<model>/<skill>/<pass>/
+    ├── jit-boost/     # 加固状态
+    └── jit-optimize/  # 优化提案
+        └── <adapter>/<model>/<skill>/<timestamp>/
+
+skvm-data/              # 基准数据集（git 子模块）
+├── skills/             # 108 个技能目录
+├── tasks/              # 216 个任务目录
+└── profiles/           # 预构建 TCP 画像
+```
+
+## 7. 实测效果
+
+### 7.1 核心数据
+
+基于 SkillsBench 基准（108 技能 × 216 任务），跨 8 个不同规模的 LLM 和 3 个 Agent 框架的评测结果：
+
+| 指标 | 效果 |
+|------|------|
+| 任务完成率 | **显著提升**（越弱的模型提升幅度越大） |
+| Token 消耗 | **降低多达 40%** |
+| 执行加速 | **最高 3.2x**（并行提取） |
+| 延迟降低 | **19-50x**（代码加固） |
+
+### 7.2 效果对比图
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph 原始技能["原始技能"]
+        O1["弱模型<br/>完成率: 低"]
+        O2["中模型<br/>完成率: 中"]
+        O3["强模型<br/>完成率: 高"]
+    end
+
+    subgraph SkVM编译后["SkVM 编译 + 优化后"]
+        S1["弱模型<br/>完成率: 大幅提升 ↑↑"]
+        S2["中模型<br/>完成率: 稳步提升 ↑"]
+        S3["强模型<br/>完成率: 保持/微升 →"]
+    end
+
+    原始技能 -->|"SkVM"| SkVM编译后
+
+    style O1 fill:#ffcdd2
+    style O2 fill:#fff9c4
+    style O3 fill:#c8e6c9
+    style S1 fill:#a5d6a7
+    style S2 fill:#a5d6a7
+    style S3 fill:#a5d6a7
+`}/>
+
+关键发现：**越弱的模型，SkVM 带来的提升越大**。因为编译器的补偿和替换策略针对的正是能力缺口，而弱模型有更多缺口。
+
+### 7.3 JIT-Boost 加速效果
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph 无JIT["无 JIT-Boost"]
+        CALL1["LLM调用格式1"]
+        CALL2["LLM调用格式2"]
+        CALL3["LLM调用格式3"]
+        CALL4["LLM调用格式4"]
+        CALL5["LLM调用格式5"]
+    end
+
+    subgraph 有JIT["有 JIT-Boost"]
+        CALL1B["LLM调用<br/>第1次<br/>学习模式"]
+        CALL1S["加固!"]
+        CALL2S["绕过LLM<br/>19-50x 加速"]
+        CALL3S["绕过LLM<br/>19-50x 加速"]
+        CALL4S["绕过LLM<br/>19-50x 加速"]
+        CALL5S["绕过LLM<br/>19-50x 加速"]
+    end
+
+    CALL1B --> CALL1S
+    CALL1S --> CALL2S
+    CALL1S --> CALL3S
+    CALL1S --> CALL4S
+    CALL1S --> CALL5S
+
+    style 无JIT fill:#ffcdd2
+    style 有JIT fill:#c8e6c9
+`}/>
+
+## 8. 实践指南
+
+### 8.1 安装与配置
+
+```bash
+# 一键安装 (macOS / Linux)
+curl -fsSL https://skillvm.ai/install.sh | sh
+
+# 或通过 npm (需 Node 18+)
+npm i -g @ipads-skvm/skvm
+
+# 交互式配置
+skvm config init
+
+# 验证配置
+skvm config doctor
+```
+
+配置文件位于 `~/.skvm/skvm.config.json`，支持多 LLM 提供商路由：
+
+```json
+{
+  "providers": {
+    "routes": [
+      { "match": "anthropic/*", "kind": "anthropic", "apiKeyEnv": "ANTHROPIC_API_KEY" },
+      { "match": "openai/*", "kind": "openai-compatible", "apiKeyEnv": "OPENAI_API_KEY", "baseUrl": "https://api.openai.com/v1" },
+      { "match": "openrouter/*", "kind": "openrouter", "apiKeyEnv": "OPENROUTER_API_KEY" }
+    ]
+  }
+}
+```
+
+### 8.2 完整工作流
+
+<MermaidDiagram chart={`flowchart TD
+    START["开始"] --> PROFILE["Step 1: 能力画像<br/>skvm profile --model=..."]
+    PROFILE --> TCP2["生成 TCP<br/>~/.skvm/profiles/"]
+    TCP2 --> COMPILE["Step 2: AOT 编译<br/>skvm aot-compile --skill=..."]
+    COMPILE --> VARIANT["生成编译变体<br/>~/.skvm/proposals/aot-compile/"]
+    VARIANT --> OPT["Step 3a: JIT 加固<br/>自动运行时提升"]
+    VARIANT --> OPT2["Step 3b: JIT 优化<br/>skvm jit-optimize --task-source=synthetic"]
+    OPT --> BENCH["Step 4: 评测<br/>skvm bench --model=..."]
+    OPT2 --> BENCH
+    BENCH --> REVIEW["Step 5: 审查提案<br/>skvm proposals serve"]
+    REVIEW --> ACCEPT["接受提案<br/>skvm proposals accept <id>"]
+
+    style START fill:#e1f5fe
+    style PROFILE fill:#e1f5fe
+    style COMPILE fill:#fff9c4
+    style OPT fill:#c8e6c9
+    style OPT2 fill:#c8e6c9
+    style BENCH fill:#fce4ec
+    style ACCEPT fill:#a5d6a7
+`}/>
+
+```bash
+# Step 1: 画像目标模型能力
+skvm profile \
+  --model=openrouter/qwen/qwen3.5-35b-a3b
+
+# Step 2: AOT 编译技能
+skvm aot-compile \
+  --skill=path/to/skill-dir \
+  --model=openrouter/qwen/qwen3.5-35b-a3b \
+  --adapter=bare-agent \
+  --pass=1,2,3
+
+# Step 3a: 合成任务自调优
+skvm jit-optimize \
+  --skill=path/to/skill-dir \
+  --task-source=synthetic \
+  --optimizer-model=openrouter/anthropic/claude-sonnet-4.6 \
+  --target-model=openrouter/qwen/qwen3.5-35b-a3b
+
+# Step 3b: 或从已有日志优化
+skvm jit-optimize \
+  --skill=path/to/skill-dir \
+  --task-source=log \
+  --logs=path/to/session.jsonl \
+  --optimizer-model=openrouter/anthropic/claude-sonnet-4.6
+
+# Step 4: 评测
+skvm bench --model=openrouter/qwen/qwen3.5-35b-a3b
+
+# Step 5: 审查 & 部署
+skvm proposals list
+skvm proposals serve      # Web 审查界面
+skvm proposals accept <id>
+```
+
+### 8.3 一步到位：pipeline 命令
+
+```bash
+# 自动画像 + 编译（如果无缓存 TCP 则先画像）
+skvm pipeline \
+  --skill=path/to/skill-dir \
+  --model=openrouter/qwen/qwen3.5-35b-a3b \
+  --adapter=bare-agent
+```
+
+### 8.4 与现有 Agent 集成
+
+```bash
+# 将技能复制到 Agent 的技能目录
+# OpenClaw
+cp -r ~/.local/share/skvm/skills/skvm-jit ~/.openclaw/workspace/skills/
+cp -r ~/.local/share/skvm/skills/skvm-general ~/.openclaw/workspace/skills/
+
+# OpenCode
+cp -r ~/.local/share/skvm/skills/skvm-jit ~/.opencode/skills/
+
+# Hermes
+cp -r ~/.local/share/skvm/skills/skvm-jit ~/.hermes/skills/
+```
+
+## 9. SkVM 与相关工作的对比
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph 传统编译器["传统编译器"]
+        SRC2["源代码"] --> COMP["编译器<br/>(LLVM/GCC)"]
+        COMP --> OBJ["目标代码"]
+        OBJ --> HW["CPU/GPU<br/>(异构处理器)"]
+    end
+
+    subgraph TVM类比["TVM 张量编译器"]
+        MODEL["ML 模型"] --> TVM_COMP["TVM 编译"]
+        TVM_COMP --> TIR["中间表示"]
+        TIR --> ACCEL["异构加速器<br/>(CPU/GPU/TPU)"]
+    end
+
+    subgraph SkVM["SkVM 技能编译器"]
+        SKILL3["Agent 技能"] --> SKVM_COMP["SkVM 编译"]
+        SKVM_COMP --> VARIANT3["技能变体"]
+        VARIANT3 --> LLM3["异构 LLM<br/>(不同模型/框架)"]
+    end
+
+    style 传统编译器 fill:#e1f5fe
+    style TVM类比 fill:#fff9c4
+    style SkVM fill:#c8e6c9
+`}/>
+
+| 类比维度 | 传统编译器 | TVM | SkVM |
+|----------|-----------|-----|------|
+| 源代码 | C/C++ | ML 模型 | Agent 技能 (SKILL.md) |
+| 目标 | x86/ARM 指令 | GPU/TPU kernel | LLM 提示词 |
+| 能力探测 | CPUID | 张量形状/算子 | 26 原语微基准 |
+| AOT 编译 | 优化 Pass | 算子融合/布局转换 | 缺口分析/环境绑定/并发提取 |
+| JIT | 热点编译 | AutoTVM | 代码加固/技能改写 |
+| 结果 | 可执行文件 | 优化后推理图 | 编译后技能变体 |
+
+## 10. 设计哲学与未来展望
+
+### 10.1 核心设计哲学
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph 哲学["SkVM 设计哲学"]
+        P1["技能即代码<br/>Skill as Code"]
+        P2["LLM 即处理器<br/>LLM as Processor"]
+        P3["画像即编译器输入<br/>Profile as Compiler Input"]
+        P4["编译即适配<br/>Compile as Adaptation"]
+        P5["运行即优化<br/>Runtime as Optimization"]
+    end
+
+    P1 --> INS1["技能可版本化、可编译、可测试"]
+    P2 --> INS2["模型差异 → 能力画像 → 编译时补偿"]
+    P3 --> INS3["渐进式测试 → 最小成本画像"]
+    P4 --> INS4["三遍编译 → 系统性适配"]
+    P5 --> INS5["JIT 加固 → 运行时加速"]
+
+    style 哲学 fill:#e1f5fe
+`}/>
+
+### 10.2 局限与挑战
+
+| 挑战 | 说明 |
+|------|------|
+| 画像成本 | 26 原语全量画像约 20 分钟，但有缓存和预构建画像 |
+| 编译器质量 | SCR 提取依赖 LLM，可能遗漏需求 |
+| JIT-Boost 依赖模式频率 | 只有重复出现的代码模式才能被加固 |
+| 适配器覆盖 | 目前支持 5 种框架，更多框架需自行实现适配器 |
+| 评估噪声 | LLM 输出的随机性需要多轮运行平均 |
+
+### 10.3 未来方向
+
+1. **更多原语和更细粒度画像**：从 26 原语扩展到更细的能力维度
+2. **跨技能优化**：多个技能组合时的全局优化
+3. **增量画像**：模型更新后只重测变化的原语
+4. **更多 Agent 框架支持**：扩展适配器生态
+5. **自适应编译**：运行时根据实际表现动态调优编译策略
+
+## 11. 总结
+
+SkVM 是 LLM Agent 技能可移植性领域的里程碑式工作。它借鉴传统编译器和虚拟机的设计智慧，创造性地解决了"同一技能在不同模型上行为不一致"这一核心问题：
+
+- **26 原语画像**：将模糊的"模型能力"量化为可测量的 TCP
+- **三遍 AOT 编译**：从能力缺口分析到环境绑定到并发提取，系统性适配
+- **JIT 加固**：重复模式绕过 LLM，19-50x 延迟降低
+- **JIT 优化**：提案驱动的技能改写，越弱的模型提升越大
+- **40% Token 降低**：通过分层加载和加固减少无效调用
+
+SkVM 证明了一个深刻洞察：**LLM Agent 的技能可移植性问题，本质上是一个编译器问题**。
+
+---
+
+**参考资源：**
+
+- [SkVM GitHub 仓库](https://github.com/SJTU-IPADS/SkVM)
+- [SkVM 论文](https://arxiv.org/abs/2604.03088)
+- [SkVM 官网](https://skillvm.ai)
+- [SkVM 数据集](https://github.com/SJTU-IPADS/SkVM-data)

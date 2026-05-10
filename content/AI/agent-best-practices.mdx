@@ -1,0 +1,696 @@
+---
+title: "Agent 最佳实践全景指南：从规范驱动到自我验证的工程化体系"
+description: "深度拆解 AI Agent 编码的工程化最佳实践——涵盖规范驱动开发、上下文工程、增量实现、测试驱动、质疑驱动、源文档驱动六大核心范式，结合 addyosmani/agent-skills 22 项技能体系，构建 Agent 从 Define 到 Ship 的完整生命周期方法论。"
+date: "2026-05-11"
+tags: ["AI", "Agent", "最佳实践", "SDD", "上下文工程", "TDD", "质疑驱动", "工程化"]
+---
+
+## 1. 为什么 Agent 需要工程化
+
+AI 编码 Agent 天然倾向于走最短路径——跳过规范、跳过测试、跳过安全审查。在没有约束的情况下，Agent 的输出往往看起来合理却暗藏隐患：需求漂移、架构不一致、代码无法追溯。核心矛盾在于：**Agent 的速度与工程纪律之间存在结构性张力**。
+
+<MermaidDiagram chart={`mindmap
+  root((Agent 失控根因))
+    跳过规范["跳过规范"]
+      guess["隐式猜测替代显式确认"]
+      no_spec["无规格文档，凭对话记忆驱动"]
+      drift["需求意图随对话轮次逐步漂移"]
+    上下文垃圾["上下文垃圾"]
+      overload["信息过载导致焦点模糊"]
+      stale["长会话积累过时上下文"]
+      hallucination["缺失上下文引发幻觉"]
+    过度工程["过度工程"]
+      over["100 行能解决的写 1000 行"]
+      premature["过早抽象引入不必要复杂度"]
+      scope["超范围修改相邻代码"]
+    验证缺失["验证缺失"]
+      assume["「看起来正确」即完成"]
+      no_test["跳过测试直接上线"]
+      no_review["自我审查代替交叉验证"]
+`}/>
+
+addyosmani/agent-skills 项目用 22 项结构化技能，系统性地解决了这些问题。本文将其核心思想与更广泛的 Agent 工程实践融合，形成一个完整的最佳实践框架。
+
+### 1.1 Agent 编码的典型失败模式
+
+| 失败模式 | 根因 | 后果 |
+|----------|------|------|
+| 需求意图漂移 | AI 自动"补全"隐含假设 | 实现偏离真实需求 |
+| 架构不一致 | 跨会话无持久化上下文 | 代码风格与技术选型混乱 |
+| 知识断裂 | 决策背景随会话结束丢失 | 新成员无法理解设计理由 |
+| 质量幻觉 | "看起来没问题"代替验证 | 边界条件和竞态问题潜伏 |
+| 沉默假设 | 不暴露不确定性就执行 | 错误方向上的大量返工 |
+
+### 1.2 解法：工程化的六大范式
+
+<MermaidDiagram chart={`flowchart LR
+    SDD["规范驱动<br/>SDD"]
+    CE["上下文工程<br/>Context Eng"]
+    II["增量实现<br/>Incremental"]
+    TDD["测试驱动<br/>TDD"]
+    DDD["质疑驱动<br/>Doubt-Driven"]
+    SrcD["源文档驱动<br/>Source-Driven"]
+    
+    SDD --- CE --- II --- TDD --- DDD --- SrcD
+    
+    style SDD fill:#3B82F6,stroke:#1E40AF,color:#fff
+    style CE fill:#8B5CF6,stroke:#5B21B6,color:#fff
+    style II fill:#10B981,stroke:#047857,color:#fff
+    style TDD fill:#F59E0B,stroke:#B45309,color:#fff
+    style DDD fill:#EF4444,stroke:#B91C1C,color:#fff
+    style SrcD fill:#06B6D4,stroke:#0E7490,color:#fff
+`}/>
+
+---
+
+## 2. 全生命周期框架
+
+Agent Skills 定义了从想法到上线的六个阶段，每个阶段有对应的技能门控：
+
+<MermaidDiagram chart={`flowchart LR
+    DEFINE["🔲 DEFINE<br/>定义"] --> PLAN["📋 PLAN<br/>规划"]
+    PLAN --> BUILD["🔨 BUILD<br/>构建"]
+    BUILD --> VERIFY["✅ VERIFY<br/>验证"]
+    VERIFY --> REVIEW["🔍 REVIEW<br/>审查"]
+    REVIEW --> SHIP["🚀 SHIP<br/>交付"]
+    
+    DEFINE -.-> idrefine["idea-refine"]
+    DEFINE -.-> sdd["spec-driven-dev"]
+    PLAN -.-> ptb["planning &<br/>task-breakdown"]
+    BUILD -.-> ii2["incremental-impl"]
+    BUILD -.-> ce["context-eng"]
+    BUILD -.-> sdd2["source-driven"]
+    BUILD -.-> ddd2["doubt-driven"]
+    VERIFY -.-> tdd2["test-driven"]
+    VERIFY -.-> debug["debugging"]
+    REVIEW -.-> cr["code-review"]
+    REVIEW -.-> sec["security"]
+    REVIEW -.-> perf["performance"]
+    SHIP -.-> git["git-workflow"]
+    SHIP -.-> cicd["CI/CD"]
+    SHIP -.-> launch["launch"]
+    
+    style DEFINE fill:#3B82F6,stroke:#1E40AF,color:#fff
+    style PLAN fill:#8B5CF6,stroke:#5B21B6,color:#fff
+    style BUILD fill:#10B981,stroke:#047857,color:#fff
+    style VERIFY fill:#F59E0B,stroke:#B45309,color:#fff
+    style REVIEW fill:#EF4444,stroke:#B91C1C,color:#fff
+    style SHIP fill:#06B6D4,stroke:#0E7490,color:#fff
+`}/>
+
+每个阶段都有**门控**——不通过就不能前进到下一阶段。这不是官僚主义，而是工程纪律：
+
+- **Define 不完整 → Plan 就是猜**：在需求模糊时做计划，等于在流沙上盖房子
+- **Plan 不清晰 → Build 就是盲写**：没有任务分解的实现必然返工
+- **Build 不测试 → Verify 就是运气**：未经测试的代码不值得信任
+- **Verify 不审查 → Review 就是走过场**：自己审查自己的代码从不可靠
+- **Review 不通过 → Ship 就是冒险**：带病上线是对用户的伤害
+
+---
+
+## 3. 规范驱动开发（Spec-Driven Development）
+
+### 3.1 核心原则
+
+> **写合同，不写想法。**
+
+规范驱动开发的核心是：在写代码之前，先把需求、约束、实现方案写成结构化的规格文档。规格文档不是事后补充的文档——它是**唯一合法的需求来源**。
+
+<MermaidDiagram chart={`flowchart TB
+    SPECIFY["Phase 1: SPECIFY<br/>定义阶段"] --> PLAN["Phase 2: PLAN<br/>规划阶段"]
+    PLAN --> TASKS["Phase 3: TASKS<br/>任务分解"]
+    TASKS --> IMPL["Phase 4: IMPLEMENT<br/>实现阶段"]
+    
+    SPECIFY -->|Human 审查| H1{"✓ 通过?"}
+    PLAN -->|Human 审查| H2{"✓ 通过?"}
+    TASKS -->|Human 审查| H3{"✓ 通过?"}
+    IMPL -->|Human 审查| H4{"✓ 通过?"}
+    
+    H1 -->|No| SPECIFY
+    H2 -->|No| PLAN
+    H3 -->|No| TASKS
+    H4 -->|No| IMPL
+    
+    style SPECIFY fill:#3B82F6,stroke:#1E40AF,color:#fff
+    style PLAN fill:#8B5CF6,stroke:#5B21B6,color:#fff
+    style TASKS fill:#10B981,stroke:#047857,color:#fff
+    style IMPL fill:#06B6D4,stroke:#0E7490,color:#fff
+    style H1 fill:#FCD34D,stroke:#B45309
+    style H2 fill:#FCD34D,stroke:#B45309
+    style H3 fill:#FCD34D,stroke:#B45309
+    style H4 fill:#FCD34D,stroke:#B45309
+`}/>
+
+### 3.2 规格文档的六个必要组成部分
+
+| 组成部分 | 核心问题 | 典型错误 |
+|----------|---------|---------|
+| **Objective** | 我们在做什么、为谁做、成功标准是什么 | 目标模糊，没有可衡量的成功标准 |
+| **Commands** | 构建、测试、lint、启动的完整命令 | 只写工具名不写完整命令 |
+| **Project Structure** | 源码、测试、文档的目录布局 | 不指定，让 Agent 自行猜测 |
+| **Code Style** | 命名约定、格式规则，附一段真实风格样例 | 三段文字描述不如一行代码样例 |
+| **Testing Strategy** | 测试框架、位置、覆盖率要求 | 不明确测试层级（单元/集成/E2E） |
+| **Boundaries** | 必做/先问/绝不 三级行为边界 | 只说做什么不说不能做什么 |
+
+### 3.3 边界系统：三级约束
+
+Boundaries 是 Agent 约束中最被低估的部分。它定义了 Agent **不能做什么**：
+
+```
+Always do（必做）:
+  - 提交前运行测试
+  - 遵循命名约定
+  - 验证所有用户输入
+
+Ask first（先问）:
+  - 修改数据库 schema
+  - 添加新依赖
+  - 修改 CI 配置
+
+Never do（绝不）:
+  - 提交密钥或 .env 文件
+  - 修改 vendor 目录
+  - 删除失败的测试而不修复
+```
+
+### 3.4 假设必须显式暴露
+
+在写任何规格内容之前，**列出所有你在做的假设**：
+
+```
+ASSUMPTIONS I'M MAKING:
+1. 这是一个 Web 应用（不是原生移动端）
+2. 认证使用基于 Session 的 Cookie（不是 JWT）
+3. 数据库是 PostgreSQL（基于现有 Prisma schema）
+4. 只适配现代浏览器（不支持 IE11）
+→ 立即纠正，否则我将按这些假设继续。
+```
+
+最常见的失败不是做错了事情，而是基于**未验证的假设**做了正确的事情。
+
+---
+
+## 4. 上下文工程（Context Engineering）
+
+### 4.1 为什么上下文工程是排名第一的杠杆
+
+上下文是 Agent 输出质量的**最大单一杠杆**。太少——Agent 幻觉；太多——Agent 失焦。上下文工程就是精心设计 Agent 在什么时间、看到什么信息、以什么结构呈现。
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph 五层上下文["上下文五层金字塔"]
+        direction TB
+        L1["Level 1: Rules Files<br/>CLAUDE.md / AGENTS.md<br/>─────────<br/>始终加载，项目级持久化"]
+        L2["Level 2: Spec / Architecture Docs<br/>─────────<br/>按需加载，每个功能/会话"]
+        L3["Level 3: Relevant Source Files<br/>─────────<br/>每个任务加载相关源码"]
+        L4["Level 4: Error Output / Test Results<br/>─────────<br/>每次迭代加载错误输出"]
+        L5["Level 5: Conversation History<br/>─────────<br/>自然累积，需主动压缩"]
+    end
+
+    style L1 fill:#1E40AF,stroke:#1E3A8A,color:#fff
+    style L2 fill:#3B82F6,stroke:#1E40AF,color:#fff
+    style L3 fill:#60A5FA,stroke:#3B82F6,color:#000
+    style L4 fill:#93C5FD,stroke:#60A5FA,color:#000
+    style L5 fill:#BFDBFE,stroke:#93C5FD,color:#000
+`}/>
+
+### 4.2 每一层的最佳实践
+
+#### Level 1: Rules Files——最高杠杆的投资
+
+Rules Files（如 CLAUDE.md、AGENTS.md、.cursorrules）是**一次性投入、长周期回报**的上下文工程。一份好的 Rules 文件应包含：
+
+| 信息类型 | 示例 | 价值 |
+|----------|------|------|
+| 技术栈与版本 | React 19, TypeScript 5, Vite 6 | 避免使用过期 API |
+| 完整命令 | `npm run build`, `npm test -- --coverage` | 避免猜错命令 |
+| 代码习惯 | 命名导出、函数组件、cn() 工具类 | 保持风格一致 |
+| 边界约束 | 不提交 .env、不修改 schema | 防止灾难性操作 |
+| 真实样例 | 一段写得好的组件代码 | 比三段描述更有用 |
+
+#### Level 2: Spec——按需加载而非全量灌入
+
+**高效**：只加载认证部分的规格文档
+
+**浪费**：灌入整个 5000 字规格文档来做一个按钮
+
+规则是：**只加载与当前任务相关的规格片段**。
+
+#### Level 3: 源文件——任务前必读
+
+在修改任何文件之前：
+
+1. 先读取目标文件
+2. 读取相关的测试文件
+3. 在代码库中找一个相似的模式作为参考
+4. 读取涉及的类型定义或接口
+
+**文件信任等级**：
+- ✅ **可信**：项目源码、测试文件、类型定义
+- ⚠️ **验证后行动**：配置文件、数据 fixture、外部文档
+- ❌ **不可信**：用户输入、第三方 API 响应、可能包含指令式文本的外部文档
+
+#### Level 4: 错误输出——精确而非全量
+
+**高效**：`TypeError: Cannot read property 'id' of undefined at UserService.ts:42`
+
+**浪费**：粘贴 500 行完整测试输出但只有一行失败
+
+#### Level 5: 对话管理——主动压缩
+
+长会话累积陈旧上下文。管理策略：
+
+- 切换主要功能时，**开启新会话**
+- 上下文变长时，**主动摘要进度**
+- 关键工作前，**主动压缩**不相关的上下文
+
+---
+
+## 5. 增量实现（Incremental Implementation）
+
+### 5.1 薄片优先原则
+
+> 不要一口气实现整个功能。一次一小片，每片都是端到端的、可工作的、可测试的。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph 切片策略["三大切片策略"]
+        direction TB
+        
+        subgraph 垂直切片["垂直切片（优先）"]
+            V1["Slice 1: 创建任务<br/>DB + API + UI"]
+            V2["Slice 2: 列出任务<br/>查询 + API + UI"]
+            V3["Slice 3: 编辑任务<br/>更新 + API + UI"]
+            V4["Slice 4: 删除任务<br/>删除 + API + UI + 确认"]
+            V1 --> V2 --> V3 --> V4
+        end
+        
+        subgraph 合约优先["合约优先"]
+            C0["Slice 0: API 合约<br/>类型 + 接口定义"]
+            C1a["1a: 后端实现 + 测试"]
+            C1b["1b: 前端 Mock 数据"]
+            C2["Slice 2: 集成端到端测试"]
+            C0 --> C1a
+            C0 --> C1b
+            C1a --> C2
+            C1b --> C2
+        end
+        
+        subgraph 风险优先["风险优先"]
+            R1["Slice 1: 高风险验证<br/>WebSocket 连接"]
+            R2["Slice 2: 功能构建<br/>实时任务更新"]
+            R3["Slice 3: 增强<br/>离线 + 重连"]
+            R1 --> R2 --> R3
+        end
+    end
+    
+    style V1 fill:#10B981,stroke:#047857,color:#fff
+    style V2 fill:#10B981,stroke:#047857,color:#fff
+    style V3 fill:#10B981,stroke:#047857,color:#fff
+    style V4 fill:#10B981,stroke:#047857,color:#fff
+    style C0 fill:#8B5CF6,stroke:#5B21B6,color:#fff
+    style C1a fill:#8B5CF6,stroke:#5B21B6,color:#fff
+    style C1b fill:#8B5CF6,stroke:#5B21B6,color:#fff
+    style C2 fill:#8B5CF6,stroke:#5B21B6,color:#fff
+    style R1 fill:#EF4444,stroke:#B91C1C,color:#fff
+    style R2 fill:#F59E0B,stroke:#B45309,color:#fff
+    style R3 fill:#10B981,stroke:#047857,color:#fff
+`}/>
+
+### 5.2 增量循环
+
+每个切片遵循固定的循环：
+
+```
+Implement → Test → Verify → Commit → 下一片
+     ▲                              │
+     └──────────────────────────────┘
+```
+
+关键纪律：
+
+1. **实现**最小的完整功能片段
+2. **测试**——运行测试套件（没有就先写一个）
+3. **验证**——确认切片正常工作（测试通过、构建成功、手动验证）
+4. **提交**——用描述性消息保存进度
+5. **继续**——不要回头重新开始，向前推进
+
+### 5.3 简约第一原则
+
+在写代码之前，问自己："能工作的最简单方案是什么？"
+
+写完之后，再审视：
+- 这能少几行吗？
+- 这些抽象配得上它们的复杂度吗？
+- 高级工程师看了会怎么说？
+
+**三类常见过度工程及其简约替代**：
+
+| 过度工程 | 简约方案 |
+|----------|---------|
+| 为一个通知建 Generic EventBus + 中间件管线 | 一个函数调用 |
+| 为两个相似组件建抽象工厂模式 | 两个组件 + 共享工具函数 |
+| 为三个表单建配置驱动的表单构建器 | 三个表单组件 |
+
+**三行相似代码优于一个过早抽象**。先写朴素、明显正确的版本，确认测试通过后再优化。
+
+### 5.4 范围纪律
+
+**只修改任务要求的部分**：
+
+| ❌ 不要做 | ✅ 应该做 |
+|-----------|----------|
+| 删除你看不懂的注释 | 只修改与任务相关的代码 |
+| "顺手"清理相邻代码 | 按需重构，不做无关重构 |
+| 连带重构相邻系统 | 删除前确认代码确实无用 |
+| 添加"可能有用的"功能 | 只实现规格中定义的功能 |
+
+---
+
+## 6. 测试驱动开发（Test-Driven Development）
+
+### 6.1 红-绿-重构循环
+
+<MermaidDiagram chart={`flowchart TB
+    RED["🔴 RED<br/>写一个会失败的测试"] --> GREEN["🟢 GREEN<br/>写最少的代码让测试通过"]
+    GREEN --> REFACTOR["🔵 REFACTOR<br/>在测试保护下清理代码"]
+    REFACTOR --> RED
+    
+    RED -.- RED_NOTE["测试必须失败<br/>立即通过的测试证明不了什么"]
+    GREEN -.- GREEN_NOTE["最简实现<br/>不要过度工程"]
+    REFACTOR -.- REFACTOR_NOTE["重构后测试仍通过<br/>行为不变，代码更好"]
+    
+    style RED fill:#EF4444,stroke:#B91C1C,color:#fff
+    style GREEN fill:#10B981,stroke:#047857,color:#fff
+    style REFACTOR fill:#3B82F6,stroke:#1E40AF,color:#fff
+`}/>
+
+### 6.2 测试金字塔
+
+测试不是越多越好，而是**分布越合理越好**：
+
+```
+        /  E2E Tests (5%)
+       /  端到端：跨系统验证关键路径
+      /─────────────────────
+     /  Integration Tests (15%  
+    /   集成：验证模块间协作
+   /───────────────────────────────
+  /  Unit Tests (80%)
+ /   单元：验证逻辑正确性
+/──────────────────────────────────────────
+```
+
+**关键原则**：
+
+- **80/15/5 比例**：80% 单元测试、15% 集成测试、5% E2E 测试
+- **DAMP 优于 DRY**：测试中描述性（Descriptive）比不重复（Don't Repeat Yourself）更重要。测试的读者是维护者，不是编译器
+- **Beyoncé 规则**：*"如果你喜欢它，就该给它写测试"*——如果有用户依赖某个行为，就应该有测试保护它
+
+### 6.3 Bug 修复的 Prove-It 模式
+
+当 Bug 报告到来时，**不要先修 Bug，先写一个能证明 Bug 存在的测试**：
+
+```
+Bug 报告到达
+      │
+      ▼
+写一个能复现 Bug 的测试
+      │
+      ▼
+测试 FAIL（证明 Bug 确实存在）
+      │
+      ▼
+实现修复
+      │
+      ▼
+测试 PASS（证明修复有效）
+      │
+      ▼
+添加边界测试
+      │
+      ▼
+所有测试 PASS（证明没有引入回归）
+```
+
+---
+
+## 7. 质疑驱动开发（Doubt-Driven Development）
+
+### 7.1 核心洞察
+
+> **自信的答案不等于正确的答案。** 长会话积累的上下文会悄悄把假设变成"事实"，而没有人注意到。
+
+质疑驱动开发是在**非平凡决策**时，强制引入一个全新上下文的对抗性审查者的纪律。它不是 `/review`——review 是对已完成产物的判定；DDD 是在飞行中的姿态，在**纠错成本最低的时候**发现错误。
+
+### 7.2 CLAIM → EXTRACT → DOUBT → RECONCILE → STOP
+
+<MermaidDiagram chart={`flowchart TB
+    CLAIM["Step 1: CLAIM<br/>明确声明你在断言什么<br/>以及为什么它重要"] --> EXTRACT["Step 2: EXTRACT<br/>提取最小可审查单元<br/>（diff 或函数，不是整个文件）"]
+    EXTRACT --> DOUBT["Step 3: DOUBT<br/>用全新上下文的对抗性<br/>审查者挑战这个决策"]
+    DOUBT --> RECONCILE["Step 4: RECONCILE<br/>将每个发现分类：<br/>有效/无效/需修改"]
+    RECONCILE --> STOP{"Step 5: STOP<br/>满足停止条件?"}
+    STOP -->|"发现都是琐碎的"| DONE["✓ 决策成立"]
+    STOP -->|"已 3 轮循环"| DONE
+    STOP -->|"用户明确确认"| DONE
+    STOP -->|"发现需要修改"| CLAIM2["回到 Step 1<br/>修改声明后循环"]
+    
+    style CLAIM fill:#3B82F6,stroke:#1E40AF,color:#fff
+    style EXTRACT fill:#8B5CF6,stroke:#5B21B6,color:#fff
+    style DOUBT fill:#EF4444,stroke:#B91C1C,color:#fff
+    style RECONCILE fill:#F59E0B,stroke:#B45309,color:#fff
+    style STOP fill:#06B6D4,stroke:#0E7490,color:#fff
+    style DONE fill:#10B981,stroke:#047857,color:#fff
+`}/>
+
+### 7.3 对抗性审查提示模板
+
+审查者必须收到**对抗性提示**，而不是验证性提示：
+
+```
+对抗性审查。找出这个产物的错误。
+假设作者是过度自信的。寻找：
+- 未声明的假设
+- 未处理的边界情况
+- 隐藏的耦合或共享状态
+- 合约可能被违反的方式
+- 可能破坏的既有约定
+- 意外输入下的失败模式
+
+不要验证。不要总结。找出问题，
+或在彻底审视后明确说明找不到任何问题。
+
+产物：<粘贴产物>
+合约：<粘贴合约>
+```
+
+**关键纪律**：只传递产物和合约，**不传递你的结论**。把结论交给审查者只会得到对你结论的验证。
+
+### 7.4 何时使用 DDD
+
+| 场景 | 是否使用 DDD |
+|------|-------------|
+| 引入或修改分支逻辑 | ✅ 是 |
+| 跨越模块或服务边界 | ✅ 是 |
+| 断言类型系统无法验证的属性 | ✅ 是 |
+| 影响范围不可逆（生产部署、数据迁移、公共 API 变更） | ✅ 是 |
+| 重命名变量、格式化、文件移动 | ❌ 否 |
+| 明确无歧义的用户指令 | ❌ 否 |
+| 一行变更、显而易见的正确性 | ❌ 否 |
+
+**原则**：如果你对每个按键都质疑，你什么都不交付。DDD 只适用于非平凡决策。
+
+---
+
+## 8. 源文档驱动开发（Source-Driven Development）
+
+### 8.1 为什么不能依赖记忆
+
+AI 训练数据会过时。API 会被弃用。最佳实践会演变。从记忆中实现框架特定代码是最常见的"看起来正确实际已过时"的来源。
+
+源文档驱动的核心流程：
+
+```
+DETECT → FETCH → IMPLEMENT → CITE
+  │         │         │          │
+  ▼         ▼         ▼          ▼
+检测栈    获取官方   遵循文档   展示你的
+和版本    文档       模式       来源
+```
+
+### 8.2 来源权威等级
+
+| 优先级 | 来源 | 示例 |
+|--------|------|------|
+| 🔴 1 | 官方文档 | react.dev, docs.djangoproject.com |
+| 🟡 2 | 官方博客/变更日志 | react.dev/blog, nextjs.org/blog |
+| 🟢 3 | Web 标准参考 | MDN, web.dev, html.spec.whatwg.org |
+| 🔵 4 | 浏览器/运行时兼容性 | caniuse.com, node.green |
+
+**永远不要作为主要来源引用的**：
+
+- Stack Overflow 回答
+- 博客文章或教程（即使很流行）
+- AI 生成的文档或摘要
+- 你自己的训练数据（这正是需要验证的东西）
+
+### 8.3 当官方来源冲突时
+
+当官方来源内部矛盾（如迁移指南与 API 参考不一致），必须：
+
+1. **明确暴露矛盾**给用户
+2. **对照检测到的实际版本验证**哪种模式真正有效
+3. **不要猜测**——版本决定哪种模式是正确的
+
+---
+
+## 9. 代码审查的五轴模型
+
+代码审查不是"看一下"——它是系统性的五维评估：
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph 五轴审查["五轴代码审查"]
+        direction LR
+        
+        CORRECT["✓ 正确性<br/>代码做了它声称的事吗？<br/>=================================================<br/>• 匹配规格/任务需求？<br/>• 边界情况处理了？（null/空/极值）<br/>• 错误路径处理了？<br/>• 测试是否测试正确的事？"]
+        
+        READABLE["📖 可读性<br/>另一个工程师能看懂吗？<br/>=================================================<br/>• 命名描述性且一致？<br/>• 控制流直观？<br/>• 能不能更短？<br/>• 抽象配得上复杂度吗？"]
+        
+        ARCH["🏗️ 架构<br/>变更符合系统设计吗？<br/>=================================================<br/>• 遵循现有模式？<br/>• 模块边界清晰？<br/>• 依赖方向正确？<br/>• 抽象层级恰当？"]
+        
+        SEC["🔒 安全性<br/>变更引入漏洞了吗？<br/>=================================================<br/>• 用户输入验证？<br/>• 密钥不泄露？<br/>• 认证/授权检查？<br/>• SQL 参数化？"]
+        
+        PERF["⚡ 性能<br/>变更引入性能问题了吗？<br/>=================================================<br/>• N+1 查询？<br/>• 无界循环？<br/>• 不必要的重渲染？<br/>• 缺少分页？"]
+    end
+    
+    style CORRECT fill:#10B981,stroke:#047857,color:#fff
+    style READABLE fill:#3B82F6,stroke:#1E40AF,color:#fff
+    style ARCH fill:#8B5CF6,stroke:#5B21B6,color:#fff
+    style SEC fill:#EF4444,stroke:#B91C1C,color:#fff
+    style PERF fill:#F59E0B,stroke:#B45309,color:#fff
+`}/>
+
+### 9.1 变更尺寸控制
+
+```
+~100 行变更  → 好。一次坐可以审完。
+~300 行变更  → 可接受，如果是一个逻辑变更。
+~1000 行变更 → 太大。拆分它。
+```
+
+一个"变更"应是一个自包含的修改，解决一个问题，包含相关测试，提交后系统仍然正常工作。
+
+### 9.2 严重性标签
+
+| 标签 | 含义 | 示例 |
+|------|------|------|
+| **Nit** | 纯风格偏好，不影响正确性 | 括号位置、变量名偏好 |
+| **Optional** | 建议改进，但不阻塞合并 | 可选的类型收紧、更好的错误消息 |
+| **FYI** | 信息性备注，无需修改 | 指出相关代码位置、提及相关 PR |
+| **Blocking** | 必须修改后才能合并 | 安全漏洞、逻辑错误、测试缺失 |
+
+---
+
+## 10. Agent 核心行为规范
+
+从六大范式中提炼出的、适用于所有 Agent 交互的核心行为规范：
+
+### 10.1 必须暴露假设
+
+在实现非平凡任务之前，**显式声明你的假设**。最危险的失败模式是在错误的假设上正确地执行。
+
+### 10.2 主动管理困惑
+
+当遇到不一致、矛盾、模糊时：
+
+1. **停止**。不要猜测然后继续。
+2. 说出具体的困惑。
+3. 呈现权衡或提出澄清问题。
+4. 等待解决后继续。
+
+**差的**：自行选择一种理解然后"希望没错"。
+
+**好的**："我在规格中看到 X，但现有代码是 Y。哪个优先？"
+
+### 10.3 合理反驳
+
+Agent 不是应声虫。当方案有明确问题时：
+
+- 直接指出问题
+- 解释具体的负面影响（用数据量化：*"这会增加约 200ms 延迟"*，而不是 *"这可能更慢"*）
+- 提出替代方案
+- 如果人类在充分信息后仍然坚持决定，接受执行
+
+**谄媚是失败模式**。"当然可以！" 然后执行一个坏方案对任何人都没有帮助。
+
+### 10.4 强制简约
+
+Agent 天然倾向于过度复杂化。在完成任何实现之前自问：
+
+- 这能更短吗？
+- 这些抽象配得上它们的复杂度吗？
+- 高级工程师看了会怎么说？
+
+**如果你写了 1000 行代码而 100 行就够了，你就失败了。** 选择无聊但显而易见的方案。聪明是昂贵的。
+
+### 10.5 验证不可妥协
+
+> **"看起来正确"永远不够。** 必须有证据——通过的测试、构建输出、运行时数据。
+
+每个技能都包含验证步骤。任务完成的定义不是"我写完了"，而是"验证通过了"。
+
+---
+
+## 11. 最佳实践全景总结
+
+<MermaidDiagram chart={`mindmap
+  root((Agent 最佳实践))
+    定义阶段["定义阶段"]
+      显式假设["暴露假设"]
+      spec["先规格再代码"]
+      boundaries["三级边界约束"]
+      success_criteria["可测试的成功标准"]
+    构建阶段["构建阶段"]
+      vertical_slice["垂直切片优先"]
+      simplicity["简约第一"]
+      scope_discipline["范围纪律"]
+      incremental["实现→测试→验证→提交循环"]
+    验证阶段["验证阶段"]
+      tdd_cycle["红绿重构循环"]
+      pyramid["测试金字塔 80/15/5"]
+      prove_it["Bug修复: Prove-It模式"]
+      doubt["质疑驱动: CLAIM→EXTRACT→DOUBT→RECONCILE→STOP"]
+    上下文管理["上下文管理"]
+      rules_files["Rules Files 持久化"]
+      on_demand["规格按需加载"]
+      pre_read["修改前必读源文件"]
+      compact["主动压缩对话"]
+    审查交付["审查交付"]
+      five_axis["五轴审查"]
+      change_size["变更约100行"]
+      source_cite["源文档驱动, 引用优先级"]
+      ship_gate["交付门控: 全部验证通过"]
+`}/>
+
+### 速查表：Agent 交互黄金规则
+
+| # | 规则 | 反模式 |
+|---|------|--------|
+| 1 | 规格先行，代码在后 | 先写代码再补文档 |
+| 2 | 暴露假设，不要静默填充 | 隐式假设→静默错误 |
+| 3 | 上下文按需，金字塔分层 | 全量灌入→信息过载 |
+| 4 | 垂直切片，增量推进 | 一次实现完整功能 |
+| 5 | 红-绿-重构，测试为证 | "看起来没问题" |
+| 6 | 质疑非平凡决策 | 对自信输出不加验证 |
+| 7 | 源文档验证，而非记忆 | 从训练数据实现框架代码 |
+| 8 | 五轴审查，不要"扫一眼" | 只检查正确性 |
+| 9 | 变更约 100 行，拆分大 PR | 一次提交整个功能 |
+| 10 | 验证不可妥协 | 跳过门控直接交付 |
+
+---
+
+## 参考资源
+
+- [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) — 22 项生产级 Agent 编码技能
+- [Software Engineering at Google](https://abseil.io/resources/swe-book) — Google 工程实践的思想源头
+- [Google Engineering Practices Guide](https://google.github.io/eng-practices/) — 代码审查和测试的最佳实践
+- Hyrum's Law — API 设计中的隐式契约定律
+- Beyoncé Rule — *"If you like it, you should test it"*

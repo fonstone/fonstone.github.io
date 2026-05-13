@@ -14,7 +14,7 @@ LLM Wiki 提出了一种不同的范式：LLM 不是在查询时从原始文档�
 关键差异在于：**wiki 是一个持久的、可复利的制品。** 交叉引用已经建立，矛盾已经标注，综合已经反映了你读过的所有内容。每添加一个新来源、每提出一个新问题，wiki 都会变得更加丰富。
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 传统RAG
+    subgraph TraditionalRAG["传统RAG"]
         A1["原始文档"] --> B1["向量检索"]
         B1 --> C1["LLM 生成回答"]
         C1 --> D1["🚫 回答消失<br/>无积累"]

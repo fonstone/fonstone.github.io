@@ -42,7 +42,7 @@ AI Agent 的能力受制于上下文质量。传统 RAG 把所有内容压扁成
 ## 2. 核心设计理念：文件系统范式
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 传统RAG["传统 RAG"]
+    subgraph TraditionalRAG["传统 RAG"]
         DOC1["文档"] --> CHUNK["切片 → 向量化"]
         CHUNK --> VDB["向量数据库"]
         VDB --> RET["相似度检索"]
@@ -63,7 +63,7 @@ AI Agent 的能力受制于上下文质量。传统 RAG 把所有内容压扁成
         HR --> LLM2["LLM"]
     end
 
-    style 传统RAG fill:#ffcdd2
+    style TraditionalRAG fill:#ffcdd2
     style OpenViking fill:#c8e6c9
 `}/>
 
@@ -108,7 +108,7 @@ viking://
 ### 3.1 系统架构图
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 客户端["客户端层"]
+    subgraph ClientLayer["客户端层"]
         CLI["ov CLI<br/>Rust 编写"]
         SDK["Python SDK<br/>openviking 包"]
         MCP["MCP 端点<br/>OpenCode/Claude 集成"]
@@ -116,7 +116,7 @@ viking://
         HTTP["HTTP API<br/>REST 端点"]
     end
 
-    subgraph 服务端["OpenViking Server (Python)"]
+    subgraph ServerLayer["OpenViking Server (Python)"]
         API["REST API Layer"]
         AUTH["鉴权 & 多租户"]
         
@@ -126,27 +126,27 @@ viking://
             SYNC["一致性维护<br/>文件变更↔索引同步"]
         end
         
-        subgraph 检索引擎["检索引擎"]
+        subgraph SearchEngine["检索引擎"]
             HR2["HierarchicalRetriever<br/>目录递归检索"]
             VEC["向量搜索"]
             RERANK["Rerank 重排"]
             HOT["Hotness 融合"]
         end
         
-        subgraph 上下文处理["上下文处理器"]
+        subgraph ContextProcessor["上下文处理器"]
             PARSER["Parser<br/>文档/Media 解析"]
             SUMM["Summarizer<br/>L0/L1 生成"]
             IDX["Indexer<br/>向量化 upsert"]
         end
 
-        subgraph 会话管理["会话管理器"]
+        subgraph SessionManager["会话管理器"]
             EXTRACT["记忆提取<br/>偏好/经验/实体"]
             COMPRESS["会话压缩"]
             ITERATE["自迭代循环"]
         end
     end
 
-    subgraph 存储后端["存储后端"]
+    subgraph StorageBackend["存储后端"]
         subgraph AGFS_RAGFS["AGFS/RAGFS (Rust)"]
             MEMFS["memfs<br/>内存文件系统"]
             SQLFS["sqlfs<br/>SQLite 持久化"]
@@ -160,21 +160,21 @@ viking://
 
     客户端 --> API
     API --> AUTH --> VikingFS
-    VikingFS --> 检索引擎
-    VikingFS --> 上下文处理
-    VikingFS --> 会话管理
+    VikingFS --> SearchEngine
+    VikingFS --> ContextProcessor
+    VikingFS --> SessionManager
     VikingFS --> AGFS_RAGFS
     检索引擎 --> VDB2
     检索引擎 --> MODELS
     上下文处理 --> MODELS
     上下文处理 --> VDB2
 
-    style 客户端 fill:#e1f5fe
+    style ClientLayer fill:#e1f5fe
     style VikingFS fill:#e8f5e9
-    style 检索引擎 fill:#fff9c4
-    style 上下文处理 fill:#fce4ec
-    style 会话管理 fill:#ede7f6
-    style 存储后端 fill:#f3e5f5
+    style SearchEngine fill:#fff9c4
+    style ContextProcessor fill:#fce4ec
+    style SessionManager fill:#ede7f6
+    style StorageBackend fill:#f3e5f5
 `}/>
 
 ### 3.2 五大核心组件
@@ -192,7 +192,7 @@ viking://
 <MermaidDiagram chart={`flowchart TD
     INPUT["外部输入"] --> PARSE["解析/下载"]
     
-    subgraph 导入流程["导入流程"]
+    subgraph ImportFlow["导入流程"]
         PARSE --> TEMP["临时区"]
         TEMP --> TREE["TreeBuilder<br/>目录树生成"]
         TREE --> AGFS["写入 AGFS/RAGFS<br/>持久文件系统"]
@@ -200,7 +200,7 @@ viking://
         AGFS --> EMB["Indexer<br/>向量化 + upsert"]
     end
 
-    subgraph 检索流程["检索流程"]
+    subgraph RetrieveFlow["检索流程"]
         QUERY["用户查询"] --> INTENT["意图分析"]
         INTENT --> GLOBAL["全局向量搜索<br/>定位起点目录"]
         GLOBAL --> RECURSE["目录递归<br/>逐层下钻"]
@@ -209,7 +209,7 @@ viking://
         RERANK2 --> RESULT["结构化结果<br/>含 L0/L1/L2"]
     end
 
-    subgraph 会话流程["会话流程"]
+    subgraph SessionFlow["会话流程"]
         SESSION["Agent 会话"] --> CONTEXT["上下文提取"]
         CONTEXT --> USER_MEM["用户记忆更新"]
         CONTEXT --> AGENT_MEM["Agent 经验沉淀"]
@@ -217,14 +217,14 @@ viking://
         AGENT_MEM --> VIKING3["viking://agent/memories/"]
     end
 
-    L0L1 --> 检索流程
-    EMB --> 检索流程
-    VIKING2 --> 检索流程
-    VIKING3 --> 检索流程
+    L0L1 --> RetrieveFlow
+    EMB --> RetrieveFlow
+    VIKING2 --> RetrieveFlow
+    VIKING3 --> RetrieveFlow
 
-    style 导入流程 fill:#c8e6c9
-    style 检索流程 fill:#bbdefb
-    style 会话流程 fill:#fff9c4
+    style ImportFlow fill:#c8e6c9
+    style RetrieveFlow fill:#bbdefb
+    style SessionFlow fill:#fff9c4
 `}/>
 
 ## 4. L0/L1/L2：分层上下文加载
@@ -232,10 +232,10 @@ viking://
 ### 4.1 三层结构
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 文件树["viking://resources/my_project/"]
+    subgraph FileTree["viking://resources/my_project/"]
         ABSTRACT[".abstract<br/>L0 层: 一句话摘要<br/>约 100 tokens"]
         OVERVIEW[".overview<br/>L1 层: 核心概览<br/>约 2K tokens"]
-        subgraph 子目录["docs/"]
+        subgraph SubDir["docs/"]
             AB2[".abstract"]
             OV2[".overview"]
             AUTH["auth.md<br/>L2 层: 全文内容"]
@@ -265,13 +265,13 @@ viking://
 ### 4.2 分层加载如何节省 Token
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 传统RAG["传统扁平 RAG"]
+    subgraph TraditionalFlat["传统扁平 RAG"]
         FLAT_Q["查询"] --> FLAT_R["全量召回 Top-K"]
         FLAT_R --> FLAT_P["所有内容塞入 Prompt"]
         FLAT_P --> LLM_OLD["LLM 生成"]
     end
 
-    subgraph 分层加载["OpenViking L0/L1/L2"]
+    subgraph LayeredLoading["OpenViking L0/L1/L2"]
         LV0["查询"] --> LV1["扫描所有 L0"]
         LV1 --> LV2["定位相关目录"]
         LV2 --> LV3["读取 L1 概览"]
@@ -279,8 +279,8 @@ viking://
         LV4 --> LLM_NEW["LLM 生成"]
     end
 
-    style 传统RAG fill:#ffcdd2
-    style 分层加载 fill:#c8e6c9
+    style TraditionalFlat fill:#ffcdd2
+    style LayeredLoading fill:#c8e6c9
 `}/>
 
 实测效果（基于 LoCoMo 长对话评测，1540 个用例；数据来自 OpenViking README_CN 的评测结果汇总）：
@@ -626,7 +626,7 @@ ov memcommit
 ### 8.5 与 Agent 框架集成
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 集成方式["三种集成方式"]
+    subgraph IntegrationMethods["三种集成方式"]
         MCP["MCP 协议<br/>OpenCode / Claude Code"]
         SDK["Python SDK<br/>openviking 包"]
         BOT["VikingBot<br/>内置 Agent 框架"]
@@ -640,7 +640,7 @@ ov memcommit
     SDK --> APP2["自定义 Agent<br/>任意上下文应用"]
     BOT --> APP3["对话 Agent<br/>内置技能 + 记忆"]
 
-    style 集成方式 fill:#e1f5fe
+    style IntegrationMethods fill:#e1f5fe
     style OV fill:#e8f5e9
 `}/>
 
@@ -685,7 +685,7 @@ OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的�
     ROUTER --> S3["s3fs<br/>对象存储<br/>大规模部署"]
     ROUTER --> QUEUE["queuefs<br/>队列存储<br/>异步任务"]
 
-    subgraph 索引["向量索引"]
+    subgraph Index["向量索引"]
         LANCE["LanceDB<br/>内置轻量"]
         MILVUS["Milvus<br/>大规模部署"]
     end
@@ -694,7 +694,7 @@ OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的�
     S3 --> MILVUS
 
     style VikingFS fill:#e8f5e9
-    style 索引 fill:#fff9c4
+    style Index fill:#fff9c4
 `}/>
 
 各后端的适用场景：
@@ -743,7 +743,7 @@ OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的�
 ## 11. 设计哲学总结
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 核心理念["OpenViking 设计哲学"]
+    subgraph CorePhilosophy["OpenViking 设计哲学"]
         D1["文件系统范式<br/>→ 统一管理"]
         D2["分层加载<br/>→ 降低成本"]
         D3["目录递归检索<br/>→ 提高精度"]
@@ -757,7 +757,7 @@ OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的�
     D4 --> OUT4["检索链路可调试"]
     D5 --> OUT5["Agent 越用越聪明"]
 
-    style 核心理念 fill:#e1f5fe
+    style CorePhilosophy fill:#e1f5fe
 `}/>
 
 OpenViking 把 Agent 的上下文管理从"散装 RAG"升级为"可运营的基础设施"。五个核心设计对应五个核心问题：

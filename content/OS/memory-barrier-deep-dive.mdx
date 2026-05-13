@@ -236,11 +236,11 @@ void write_device_regs(struct device *dev, u32 reg, u32 val) {
 不使用 `wmb()` 的后果：
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 不正确["不正确顺序"]
+    subgraph Incorrect["不正确顺序"]
         D1["写数据"] --> C1["触发命令"]
     end
     
-    subgraph 正确["正确顺序"]
+    subgraph Correct["正确顺序"]
         D2["写数据"] --> MB["wmb()"] --> C2["触发命令"]
     end
     

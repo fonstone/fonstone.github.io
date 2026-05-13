@@ -50,7 +50,7 @@ tags: ["操作系统", "LLM", "AIOS", "Agent", "内核", "调度", "个性化", 
 ### 2.2 架构设计
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph Agent应用层["Agent 应用层"]
+    subgraph AgentAppLayer["Agent 应用层"]
         A1["Agent 1<br/>代码生成"]
         A2["Agent 2<br/>数据分析"]
         A3["Agent N<br/>网络搜索"]
@@ -62,7 +62,7 @@ tags: ["操作系统", "LLM", "AIOS", "Agent", "内核", "调度", "个性化", 
         SDK_LIB["Agent 库函数"]
     end
 
-    subgraph AIOS内核["AIOS Kernel"]
+    subgraph AIOSKernel["AIOS Kernel"]
         SCHED["Agent 调度器<br/>公平调度 & 优先级"]
         CTX["上下文管理器<br/>上下文隔离 & 切换"]
         MEM["内存管理器<br/>短期 & 长期记忆"]
@@ -71,19 +71,19 @@ tags: ["操作系统", "LLM", "AIOS", "Agent", "内核", "调度", "个性化", 
         TOOL["工具管理器<br/>工具注册 & 分配"]
     end
 
-    subgraph LLM层["LLM 服务层"]
+    subgraph LLMLayer["LLM 服务层"]
         LLM1["LLM API<br/>GPT-4 / Claude / ..."]
         LLM2["本地模型<br/>LLaMA / Mistral / ..."]
     end
 
-    Agent应用层 --> AIOS_SDK
-    AIOS_SDK --> AIOS内核
-    AIOS内核 --> LLM层
+    AgentAppLayer --> AIOS_SDK
+    AIOS_SDK --> AIOSKernel
+    AIOSKernel --> LLMLayer
 
-    style Agent应用层 fill:#e1f5fe
+    style AgentAppLayer fill:#e1f5fe
     style AIOS_SDK fill:#fff9c4
-    style AIOS内核 fill:#c8e6c9
-    style LLM层 fill:#fce4ec
+    style AIOSKernel fill:#c8e6c9
+    style LLMLayer fill:#fce4ec
 `}/>
 
 AIOS 将传统 OS 的内核概念映射到 LLM Agent 管理：
@@ -101,7 +101,7 @@ AIOS 将传统 OS 的内核概念映射到 LLM Agent 管理：
 ### 2.3 Agent 调度机制
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph Agent队列["Agent 请求队列"]
+    subgraph AgentQueue["Agent 请求队列"]
         Q1["Agent A: 代码审查"]
         Q2["Agent B: 数据分析"]
         Q3["Agent C: 文件搜索"]
@@ -122,7 +122,7 @@ AIOS 将传统 OS 的内核概念映射到 LLM Agent 管理：
     EXEC2 --> LLM_POOL["LLM 资源池"]
     LLM_POOL --> RESULTS["执行结果"]
 
-    Agent队列 --> SCHED2
+    AgentQueue --> SCHED2
 
     style SCHED2 fill:#fff9c4
     style LLM_POOL fill:#c8e6c9
@@ -154,24 +154,24 @@ AIOS 在管理 ~2000 并发 Agent 时实现 **2.1x 吞吐提升**，同时保持
 ### 3.2 PEROS 架构
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 用户层["自然语言交互层"]
+    subgraph UserLayer["自然语言交互层"]
         USER["用户意图<br/>'帮我整理工作邮件'"]
         NLU["LLM 意图理解"]
     end
 
-    subgraph 个性化层["个性化引擎"]
+    subgraph PersonalizationLayer["个性化引擎"]
         PROFILE["用户画像<br/>偏好/习惯/权限"]
         ADAPT["自适应引擎<br/>动态内核策略"]
         PRIV["隐私保护<br/>Databox 隔离"]
     end
 
-    subgraph 内核层["自适应微内核"]
+    subgraph KernelLayer["自适应微内核"]
         MICRO["微内核<br/>最小核心服务"]
         MODULE["可插拔模块<br/>调度/内存/IO 策略"]
         CLOUD["云后端<br/>弹性扩缩"]
     end
 
-    subgraph 硬件层["硬件抽象"]
+    subgraph HardwareLayer["硬件抽象"]
         CPU["CPU 调度策略"]
         MEM2["内存分配策略"]
         IO["IO 优先级"]
@@ -184,13 +184,13 @@ AIOS 在管理 ~2000 并发 Agent 时实现 **2.1x 吞吐提升**，同时保持
     ADAPT --> MODULE
     PRIV --> PROFILE
     MICRO --> MODULE
-    MODULE --> 硬件层
+    MODULE --> HardwareLayer
     CLOUD --> MICRO
 
-    style 用户层 fill:#e1f5fe
-    style 个性化层 fill:#c8e6c9
-    style 内核层 fill:#fff9c4
-    style 硬件层 fill:#fce4ec
+    style UserLayer fill:#e1f5fe
+    style PersonalizationLayer fill:#c8e6c9
+    style KernelLayer fill:#fff9c4
+    style HardwareLayer fill:#fce4ec
 `}/>
 
 PEROS 的三层架构：
@@ -228,7 +228,7 @@ PEROS 允许用户用自然语言配置内核策略——例如"我正在做视�
         ENCRYPT["加密传输<br/>仅发送脱敏结果"]
     end
 
-    subgraph 云端["云后端"]
+    subgraph CloudBackend["云后端"]
         MODEL["LLM 模型"]
         AGGREGATE["聚合分析<br/>联邦学习"]
     end
@@ -238,7 +238,7 @@ PEROS 允许用户用自然语言配置内核策略——例如"我正在做视�
     AGGREGATE -->|"匿名统计"| FEEDBACK["反馈更新"]
 
     style Databox fill:#c8e6c9
-    style 云端 fill:#fff9c4
+    style CloudBackend fill:#fff9c4
 `}/>
 
 PEROS 的 Databox 机制确保用户数据在本地沙箱内处理，只有脱敏和加密后的结果发送到云端，实现个性化与隐私的平衡。
@@ -263,19 +263,19 @@ LLM 有固定的上下文窗口（如 128K tokens），但操作系统需要维�
 ### 4.2 架构设计
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 输入["系统与用户历史"]
+    subgraph SystemInput["系统与用户历史"]
         SYS_HIST["系统历史<br/>日志/状态/配置变更"]
         USR_HIST["用户历史<br/>偏好/操作/对话"]
         CUR["当前上下文<br/>即时意图"]
     end
 
-    subgraph 压缩阶段["Compressor 压缩阶段"]
+    subgraph CompressionPhase["Compressor 压缩阶段"]
         EMBED["嵌入编码<br/>将历史转为向量"]
         COMPRESS["压缩算法<br/>提取关键信息"]
         STORE["存入可扩展记忆仓库<br/>Expanding Memory Repository"]
     end
 
-    subgraph 检索阶段["Retriever 检索阶段"]
+    subgraph RetrievalPhase["Retriever 检索阶段"]
         QUERY["当前查询"]
         SPARSE["稀疏检索<br/>从仓库中定位相关记忆"]
         ATTN["注意力机制<br/>对相关记忆加权"]
@@ -286,15 +286,15 @@ LLM 有固定的上下文窗口（如 128K tokens），但操作系统需要维�
         OUTPUT["推理输出<br/>保持~75%准确率"]
     end
 
-    SYS_HIST --> 压缩阶段
-    USR_HIST --> 压缩阶段
+    SYS_HIST --> CompressionPhase
+    USR_HIST --> CompressionPhase
     CUR --> MERGE
     STORE --> SPARSE
     QUERY --> SPARSE
     SPARSE --> ATTN --> MERGE --> LLM2 --> OUTPUT
 
-    style 压缩阶段 fill:#e1f5fe
-    style 检索阶段 fill:#fff9c4
+    style CompressionPhase fill:#e1f5fe
+    style RetrievalPhase fill:#fff9c4
     style LLM2 fill:#c8e6c9
 `}/>
 
@@ -343,7 +343,7 @@ LLM 有固定的上下文窗口（如 128K tokens），但操作系统需要维�
 Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备特性，自动完成内存分配、任务调度和数据放置。
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 硬件层2["异构硬件"]
+    subgraph HardwareLayer2["异构硬件"]
         CPU2["CPU<br/>通用计算"]
         GPU2["GPU<br/>并行计算"]
         TPU2["TPU/NPU<br/>矩阵加速"]
@@ -351,35 +351,35 @@ Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备�
         ACCEL["专用加速器<br/>视频/AI/加密"]
     end
 
-    subgraph 描述层["语义描述层"]
+    subgraph DescriptionLayer["语义描述层"]
         NL["自然语言描述<br/>'该设备拥有16GB显存<br/>擅长矩阵运算<br/>延迟低于2ms'"]
         EMB["嵌入编码<br/>设备特性→向量"]
     end
 
-    subgraph LLM内核["LLM 决策内核"]
+    subgraph LLMKernel["LLM 决策内核"]
         ALLOC["内存分配决策<br/>根据设备特性分配"]
         SCHED3["任务调度决策<br/>匹配任务与设备"]
         PLACE["数据放置决策<br/>数据放哪最优"]
     end
 
-    subgraph 传统方式["传统 OS 驱动"]
+    subgraph TraditionalWay["传统 OS 驱动"]
         MANUAL["手动编写驱动"]
         STATIC["静态配置表"]
         HARD_CODE["硬编码策略"]
     end
 
-    硬件层2 --> NL --> EMB
-    EMB --> LLM内核
-    LLM内核 --> ALLOC
-    LLM内核 --> SCHED3
-    LLM内核 --> PLACE
+    HardwareLayer2 --> NL --> EMB
+    EMB --> LLMKernel
+    LLMKernel --> ALLOC
+    LLMKernel --> SCHED3
+    LLMKernel --> PLACE
 
-    传统方式 -.->|"对比"| LLM内核
+    TraditionalWay -.->|"对比"| LLMKernel
 
-    style 硬件层2 fill:#e1f5fe
-    style 描述层 fill:#fff9c4
-    style LLM内核 fill:#c8e6c9
-    style 传统方式 fill:#ffcdd2
+    style HardwareLayer2 fill:#e1f5fe
+    style DescriptionLayer fill:#fff9c4
+    style LLMKernel fill:#c8e6c9
+    style TraditionalWay fill:#ffcdd2
 `}/>
 
 ### 5.3 工作流详述
@@ -473,13 +473,13 @@ Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备�
 ## 7. LLM+OS 的统一架构愿景
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 用户空间["用户空间"]
+    subgraph UserSpace["用户空间"]
         USER_INT["自然语言接口层"]
         APP_AGENT["Agent 应用<br/>代码助手/数据分析师/..."]
         APP_USER["传统应用<br/>浏览器/编辑器/..."]
     end
 
-    subgraph 系统服务层["OS 系统服务层"]
+    subgraph SystemServiceLayer["OS 系统服务层"]
         subgraph AIOS_K["Agent OS 内核"]
             SCHED_K["Agent 调度器"]
             CTX_K["上下文/记忆管理"]
@@ -505,7 +505,7 @@ Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备�
         end
     end
 
-    subgraph 内核层["传统内核层"]
+    subgraph TraditionalKernel["传统内核层"]
         PROC_K["进程/线程管理"]
         MEM_K["内存管理"]
         FS_K["文件系统"]
@@ -513,7 +513,7 @@ Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备�
         DEV_K["设备驱动"]
     end
 
-    subgraph 硬件2["硬件"]
+    subgraph Hardware2["硬件"]
         CPU_K["CPU"]
         GPU_K["GPU"]
         ACCEL_K["加速器"]
@@ -523,16 +523,16 @@ Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备�
     USER_INT --> AIOS_K
     USER_INT --> PEROS_K
     APP_AGENT --> AIOS_K
-    AIOS_K --> 内核层
-    PEROS_K --> 内核层
+    AIOS_K --> TraditionalKernel
+    PEROS_K --> TraditionalKernel
     COMP_K --> AIOS_K
-    HERD_K --> 内核层
-    内核层 --> 硬件2
+    HERD_K --> TraditionalKernel
+    TraditionalKernel --> Hardware2
 
-    style 用户空间 fill:#e1f5fe
-    style 系统服务层 fill:#fff9c4
-    style 内核层 fill:#c8e6c9
-    style 硬件2 fill:#f3e5f5
+    style UserSpace fill:#e1f5fe
+    style SystemServiceLayer fill:#fff9c4
+    style TraditionalKernel fill:#c8e6c9
+    style Hardware2 fill:#f3e5f5
 `}/>
 
 四大框架互补组合的统一架构可能包含：
@@ -547,22 +547,22 @@ Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备�
 ### 8.1 交互子系统
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 传统交互["传统 OS 交互"]
+    subgraph TraditionalInteraction["传统 OS 交互"]
         SHELL["Shell / GUI"]
         CMD["精确命令<br/>ls -la / mkdir"]
         MANUAL["手动配置<br/>编辑配置文件"]
     end
 
-    subgraph LLM交互["LLM+OS 交互"]
+    subgraph LLMInteraction["LLM+OS 交互"]
         NL_INT["自然语言接口"]
         INTENT["意图理解<br/>'帮我整理工作文件'"]
         AUTO_CONFIG["自动配置<br/>LLM 翻译为系统操作"]
     end
 
-    传统交互 -->|"演进"| LLM交互
+    TraditionalInteraction -->|"演进"| LLMInteraction
 
-    style 传统交互 fill:#ffcdd2
-    style LLM交互 fill:#c8e6c9
+    style TraditionalInteraction fill:#ffcdd2
+    style LLMInteraction fill:#c8e6c9
 `}/>
 
 | 传统 OS | LLM+OS | 变革 |
@@ -583,22 +583,22 @@ Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备�
 ### 8.3 内存/上下文管理
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 传统内存["传统 OS 内存管理"]
+    subgraph TraditionalMemory["传统 OS 内存管理"]
         PM["物理内存管理"]
         VM["虚拟内存<br/>页表/换页"]
         CACHE["页缓存<br/>LRU"]
     end
 
-    subgraph LLM上下文["LLM+OS 上下文管理"]
+    subgraph LLMContext["LLM+OS 上下文管理"]
         CTX_SHORT["短期上下文<br/>当前对话窗口"]
         CTX_LONG["长期记忆<br/>Compressor-Retriever"]
         CTX_ISOLATE["上下文隔离<br/>Agent 间不污染"]
     end
 
-    传统内存 -.->|"类比"| LLM上下文
+    TraditionalMemory -.->|"类比"| LLMContext
 
-    style 传统内存 fill:#e1f5fe
-    style LLM上下文 fill:#c8e6c9
+    style TraditionalMemory fill:#e1f5fe
+    style LLMContext fill:#c8e6c9
 `}/>
 
 | 传统 OS 内存 | LLM+OS 上下文 | 映射关系 |
@@ -622,14 +622,14 @@ Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备�
 ### 8.5 安全子系统
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 安全挑战["LLM+OS 安全挑战"]
+    subgraph SecurityChallenges["LLM+OS 安全挑战"]
         HALL["幻觉风险<br/>模型生成不存在的操作"]
         INJECT["提示注入<br/>恶意指令误导系统"]
         PRIV["隐私泄露<br/>用户数据通过 LLM 外泄"]
         EXPLAIN["决策不可解释<br/>用户无法理解系统行为"]
     end
 
-    subgraph 应对策略["应对策略"]
+    subgraph Countermeasures["应对策略"]
         SANDBOX["沙箱执行<br/>Agent 隔离 (AIOS)"]
         DATABOX2["Databox<br/>本地处理 (PEROS)"]
         VERIFY["结果校验<br/>关键操作二次确认"]
@@ -641,8 +641,8 @@ Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备�
     PRIV --> DATABOX2
     EXPLAIN --> XBRAIN
 
-    style 安全挑战 fill:#ffcdd2
-    style 应对策略 fill:#c8e6c9
+    style SecurityChallenges fill:#ffcdd2
+    style Countermeasures fill:#c8e6c9
 `}/>
 
 | 安全威胁 | 具体风险 | 框架应对 |

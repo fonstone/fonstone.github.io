@@ -35,7 +35,7 @@ LLM Agent 越来越多地将**技能（Skill）**作为可复用的组合单元�
 ## 2. 总体架构
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 输入["输入"]
+    subgraph Input["输入"]
         SKILL["技能目录<br/>SKILL.md + 配置文件"]
     end
 
@@ -90,7 +90,7 @@ SkVM 的四大部分：
 ### 3.1 26 原语分类
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 代码生成["代码生成 gen.code.*"]
+    subgraph CodeGen["代码生成 gen.code.*"]
         GC_W["write<br/>文件写入"]
         GC_E["edit<br/>文件编辑"]
         GC_D["debug<br/>调试修复"]
@@ -99,7 +99,7 @@ SkVM 的四大部分：
         GC_M["更多..."]
     end
 
-    subgraph 工具使用["工具使用 tool.*"]
+    subgraph ToolUse["工具使用 tool.*"]
         T_FR["file.read<br/>文件读取"]
         T_FW["file.write<br/>文件写入"]
         T_EX["exec<br/>命令执行"]
@@ -107,14 +107,14 @@ SkVM 的四大部分：
         T_M["更多..."]
     end
 
-    subgraph 推理["推理 reason.*"]
+    subgraph Reasoning["推理 reason.*"]
         R_P["plan<br/>规划"]
         R_DC["decompose<br/>分解"]
         R_DG["diagnose<br/>诊断"]
         R_A["analyze<br/>分析"]
     end
 
-    subgraph 指令遵循["指令遵循 follow.*"]
+    subgraph Follow["指令遵循 follow.*"]
         F_FMT["format<br/>格式遵循"]
         F_CST["constraint<br/>约束遵循"]
         F_MS["multi-step<br/>多步执行"]
@@ -249,7 +249,7 @@ Pass 3 分析技能的工作流结构，识别并行执行机会：
     EXEC --> HOOK["运行时钩子<br/>监控 LLM 调用"]
     HOOK --> MATCH{"匹配已知签名?"}
     MATCH -->|"否"| LLM["调用 LLM<br/>正常路径"]
-    MATCH -->|"是: 连续 N 次"|"提升候选为已加固"
+    MATCH -->|"是: 连续 N 次"| PROMOTE
     
     CANDIDATES --> PROMOTE["加固模式提升"]
     PROMOTE --> BYPASS["绕过 LLM<br/>直接执行模板<br/>零 LLM 调用"]
@@ -304,7 +304,7 @@ JIT-Optimize 是**提案驱动的编辑循环**，不是原地突变。三种证
 ### 5.3 Autotune：自闭环优化
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph Autotune循环["Autotune 自闭环"]
+    subgraph AutotuneLoop["Autotune 自闭环"]
         GEN["合成任务生成<br/>从技能描述派生"]
         GEN --> EXEC2["执行任务"]
         EXEC2 --> SCORE2["评分"]
@@ -317,7 +317,7 @@ JIT-Optimize 是**提案驱动的编辑循环**，不是原地突变。三种证
     CONV -->|"否"| EXEC2
     CONV -->|"是"| DEPLOY["部署最佳轮次"]
 
-    style Autotune循环 fill:#fff9c4
+    style AutotuneLoop fill:#fff9c4
     style DEPLOY fill:#c8e6c9
 `}/>
 
@@ -428,19 +428,19 @@ skvm-data/              # 基准数据集（git 子模块）
 ### 7.2 效果对比图
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 原始技能["原始技能"]
+    subgraph OriginalSkill["原始技能"]
         O1["弱模型<br/>完成率: 低"]
         O2["中模型<br/>完成率: 中"]
         O3["强模型<br/>完成率: 高"]
     end
 
-    subgraph SkVM编译后["SkVM 编译 + 优化后"]
+    subgraph SkVMCompiled["SkVM 编译 + 优化后"]
         S1["弱模型<br/>完成率: 大幅提升 ↑↑"]
         S2["中模型<br/>完成率: 稳步提升 ↑"]
         S3["强模型<br/>完成率: 保持/微升 →"]
     end
 
-    原始技能 -->|"SkVM"| SkVM编译后
+    OriginalSkill -->|"SkVM"| SkVMCompiled
 
     style O1 fill:#ffcdd2
     style O2 fill:#fff9c4
@@ -455,7 +455,7 @@ skvm-data/              # 基准数据集（git 子模块）
 ### 7.3 JIT-Boost 加速效果
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 无JIT["无 JIT-Boost"]
+    subgraph NoJIT["无 JIT-Boost"]
         CALL1["LLM调用格式1"]
         CALL2["LLM调用格式2"]
         CALL3["LLM调用格式3"]
@@ -463,7 +463,7 @@ skvm-data/              # 基准数据集（git 子模块）
         CALL5["LLM调用格式5"]
     end
 
-    subgraph 有JIT["有 JIT-Boost"]
+    subgraph WithJIT["有 JIT-Boost"]
         CALL1B["LLM调用<br/>第1次<br/>学习模式"]
         CALL1S["加固!"]
         CALL2S["绕过LLM<br/>19-50x 加速"]
@@ -478,8 +478,8 @@ skvm-data/              # 基准数据集（git 子模块）
     CALL1S --> CALL4S
     CALL1S --> CALL5S
 
-    style 无JIT fill:#ffcdd2
-    style 有JIT fill:#c8e6c9
+    style NoJIT fill:#ffcdd2
+    style WithJIT fill:#c8e6c9
 `}/>
 
 ## 8. 实践指南
@@ -600,13 +600,13 @@ cp -r ~/.local/share/skvm/skills/skvm-jit ~/.hermes/skills/
 ## 9. SkVM 与相关工作的对比
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 传统编译器["传统编译器"]
+    subgraph TraditionalCompiler["传统编译器"]
         SRC2["源代码"] --> COMP["编译器<br/>(LLVM/GCC)"]
         COMP --> OBJ["目标代码"]
         OBJ --> HW["CPU/GPU<br/>(异构处理器)"]
     end
 
-    subgraph TVM类比["TVM 张量编译器"]
+    subgraph TVMAnalogy["TVM 张量编译器"]
         MODEL["ML 模型"] --> TVM_COMP["TVM 编译"]
         TVM_COMP --> TIR["中间表示"]
         TIR --> ACCEL["异构加速器<br/>(CPU/GPU/TPU)"]
@@ -618,8 +618,8 @@ cp -r ~/.local/share/skvm/skills/skvm-jit ~/.hermes/skills/
         VARIANT3 --> LLM3["异构 LLM<br/>(不同模型/框架)"]
     end
 
-    style 传统编译器 fill:#e1f5fe
-    style TVM类比 fill:#fff9c4
+    style TraditionalCompiler fill:#e1f5fe
+    style TVMAnalogy fill:#fff9c4
     style SkVM fill:#c8e6c9
 `}/>
 
@@ -637,7 +637,7 @@ cp -r ~/.local/share/skvm/skills/skvm-jit ~/.hermes/skills/
 ### 10.1 核心设计哲学
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 哲学["SkVM 设计哲学"]
+    subgraph Philosophy["SkVM 设计哲学"]
         P1["技能即代码<br/>Skill as Code"]
         P2["LLM 即处理器<br/>LLM as Processor"]
         P3["画像即编译器输入<br/>Profile as Compiler Input"]
@@ -651,7 +651,7 @@ cp -r ~/.local/share/skvm/skills/skvm-jit ~/.hermes/skills/
     P4 --> INS4["三遍编译 → 系统性适配"]
     P5 --> INS5["JIT 加固 → 运行时加速"]
 
-    style 哲学 fill:#e1f5fe
+    style Philosophy fill:#e1f5fe
 `}/>
 
 ### 10.2 局限与挑战

@@ -197,7 +197,7 @@ ASSUMPTIONS I'M MAKING:
 上下文是 Agent 输出质量的**最大单一杠杆**。太少——Agent 幻觉；太多——Agent 失焦。上下文工程就是精心设计 Agent 在什么时间、看到什么信息、以什么结构呈现。
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 五层上下文["上下文五层金字塔"]
+    subgraph ContextPyramid["上下文五层金字塔"]
         direction TB
         L1["Level 1: Rules Files<br/>CLAUDE.md / AGENTS.md<br/>─────────<br/>始终加载，项目级持久化"]
         L2["Level 2: Spec / Architecture Docs<br/>─────────<br/>按需加载，每个功能/会话"]
@@ -272,10 +272,10 @@ Rules Files（如 CLAUDE.md、AGENTS.md、.cursorrules）是**一次性投入、
 > 不要一口气实现整个功能。一次一小片，每片都是端到端的、可工作的、可测试的。
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 切片策略["三大切片策略"]
+    subgraph SliceStrategies["三大切片策略"]
         direction TB
         
-        subgraph 垂直切片["垂直切片（优先）"]
+        subgraph VerticalSlices["垂直切片（优先）"]
             V1["Slice 1: 创建任务<br/>DB + API + UI"]
             V2["Slice 2: 列出任务<br/>查询 + API + UI"]
             V3["Slice 3: 编辑任务<br/>更新 + API + UI"]
@@ -283,7 +283,7 @@ Rules Files（如 CLAUDE.md、AGENTS.md、.cursorrules）是**一次性投入、
             V1 --> V2 --> V3 --> V4
         end
         
-        subgraph 合约优先["合约优先"]
+        subgraph ContractFirst["合约优先"]
             C0["Slice 0: API 合约<br/>类型 + 接口定义"]
             C1a["1a: 后端实现 + 测试"]
             C1b["1b: 前端 Mock 数据"]
@@ -294,7 +294,7 @@ Rules Files（如 CLAUDE.md、AGENTS.md、.cursorrules）是**一次性投入、
             C1b --> C2
         end
         
-        subgraph 风险优先["风险优先"]
+        subgraph RiskFirst["风险优先"]
             R1["Slice 1: 高风险验证<br/>WebSocket 连接"]
             R2["Slice 2: 功能构建<br/>实时任务更新"]
             R3["Slice 3: 增强<br/>离线 + 重连"]
@@ -547,7 +547,7 @@ DETECT → FETCH → IMPLEMENT → CITE
 代码审查不是"看一下"——它是系统性的五维评估：
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 五轴审查["五轴代码审查"]
+    subgraph FiveAxisReview["五轴代码审查"]
         direction LR
         
         CORRECT["✓ 正确性<br/>代码做了它声称的事吗？<br/>=================================================<br/>• 匹配规格/任务需求？<br/>• 边界情况处理了？（null/空/极值）<br/>• 错误路径处理了？<br/>• 测试是否测试正确的事？"]

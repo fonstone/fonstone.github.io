@@ -14,7 +14,7 @@ Vib-OS 正是这一范式的标志性产物——自称"World's First Vibecoded 
 ### 1.1 传统 OS 开发 vs Vibe Coding OS 开发
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 传统开发
+    subgraph TraditionalDev["传统开发"]
         A1["手动编写引导代码"] --> A2["逐行调试内核"]
         A2 --> A3["查阅手册写驱动"]
         A3 --> A4["数月实现基础功能"]
@@ -296,7 +296,7 @@ while (1) {
 ### 4.1 分层架构图
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph 用户空间["用户空间 (EL0 / Ring 3)"]
+    subgraph UserSpace["用户空间 (EL0 / Ring 3)"]
         direction LR
         APP1["终端 / Shell"]
         APP2["文件管理器"]
@@ -313,22 +313,22 @@ while (1) {
         RWFN["read/write/open/close"]
     end
 
-    subgraph 内核空间["内核空间 (EL1 / Ring 0)"]
+    subgraph KernelSpace["内核空间 (EL1 / Ring 0)"]
         direction TB
-        subgraph 核心子系统["核心子系统"]
+        subgraph CoreSubsystem["核心子系统"]
             SCHED2["进程调度器<br/>优先级抢占"]
             VM2["内存管理<br/>PMM + VMM + kmalloc"]
             FS2["文件系统<br/>VFS → RamFS/EXT4/APFS"]
             NET2["网络栈<br/>ETH→ARP→IP→TCP/UDP"]
             IPC2["IPC<br/>信号/管道"]
         end
-        subgraph 安全层["安全层"]
+        subgraph SecurityLayer["安全层"]
             SL["Spinlock"]
             SB["媒体沙箱"]
             ASLR2["ASLR"]
             NX["NX 保护"]
         end
-        subgraph 驱动层["驱动层"]
+        subgraph DriverLayer["驱动层"]
             VNET["Virtio-Net"]
             VINPUT["Virtio Input"]
             VGPU["ramfb / VESA"]
@@ -346,13 +346,13 @@ while (1) {
     APP4 --> SYSCALL
     APP5 --> SYSCALL
     APP6 --> SYSCALL
-    SYSCALL --> 核心子系统
-    核心子系统 --> 驱动层
+    SYSCALL --> CoreSubsystem
+    CoreSubsystem --> DriverLayer
     安全层 --> VM2
     驱动层 --> HW
 
-    style 用户空间 fill:#e3f2fd
-    style 内核空间 fill:#fff8e1
+    style UserSpace fill:#e3f2fd
+    style KernelSpace fill:#fff8e1
     style HW fill:#f3e5f5
 `}/>
 
@@ -361,7 +361,7 @@ while (1) {
 Vib-OS 最出色的架构设计之一是**架构抽象层**，它使得同一套内核代码能跑在 ARM64、x86_64 和 x86 上：
 
 <MermaidDiagram chart={`flowchart TD
-    subgraph 通用代码["通用内核代码"]
+    subgraph CommonCode["通用内核代码"]
         CORE2["core/main.c"]
         SCHED3["sched/"]
         FS3["fs/vfs.c, ramfs.c"]
@@ -370,7 +370,7 @@ Vib-OS 最出色的架构设计之一是**架构抽象层**，它使得同一套
         MEDIA3["media/"]
     end
 
-    subgraph 抽象接口["arch/arch.h 抽象接口"]
+    subgraph ArchInterface["arch/arch.h 抽象接口"]
         ARCH_INIT["arch_irq_init()"]
         ARCH_TIMER2["arch_timer_init()"]
         ARCH_ENABLE["arch_irq_enable()"]
@@ -403,13 +403,13 @@ Vib-OS 最出色的架构设计之一是**架构抽象层**，它使得同一套
         X86_PG["2级页表"]
     end
 
-    通用代码 --> 抽象接口
-    抽象接口 --> ARM64
-    抽象接口 --> X8664
-    抽象接口 --> X86
+    CommonCode --> ArchInterface
+    ArchInterface --> ARM64
+    ArchInterface --> X8664
+    ArchInterface --> X86
 
-    style 通用代码 fill:#e8f5e9
-    style 抽象接口 fill:#fff9c4
+    style CommonCode fill:#e8f5e9
+    style ArchInterface fill:#fff9c4
     style ARM64 fill:#e1f5fe
     style X8664 fill:#fce4ec
     style X86 fill:#f3e5f5
@@ -534,7 +534,7 @@ extern const unsigned int login_bin_len;
 ### 5.3 各子系统的 Vibe Coding 可行性评级
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 高可行["🟢 高度适合 Vibe Coding"]
+    subgraph HighFeasibility["🟢 高度适合 Vibe Coding"]
         VFS2["VFS / RamFS"]
         GUI2["GUI 窗口管理"]
         SHELL2["Shell 命令"]
@@ -542,14 +542,14 @@ extern const unsigned int login_bin_len;
         DRIVER_T["驱动模板"]
     end
     
-    subgraph 中可行["🟡 中等可行 需人工校验"]
+    subgraph MedFeasibility["🟡 中等可行 需人工校验"]
         SCHED2["调度器"]
         MMU2["MMU/页表"]
         SYSCALL2["系统调用"]
         EXT42["EXT4 读写"]
     end
     
-    subgraph 低可行["🔴 难以 Vibe Coding"]
+    subgraph LowFeasibility["🔴 难以 Vibe Coding"]
         BOOT_ASM["引导汇编"]
         CTX_SW["上下文切换"]
         IRQ_LAT["中断延迟优化"]
@@ -557,9 +557,9 @@ extern const unsigned int login_bin_len;
         LOCK2["无锁同步"]
     end
     
-    style 高可行 fill:#c8e6c9
-    style 中可行 fill:#fff9c4
-    style 低可行 fill:#ffcdd2
+    style HighFeasibility fill:#c8e6c9
+    style MedFeasibility fill:#fff9c4
+    style LowFeasibility fill:#ffcdd2
 `}/>
 
 评级依据：
@@ -607,7 +607,7 @@ extern const unsigned int login_bin_len;
     RENDER --> DOUBLE_BUF["双缓冲合成<br/>离屏 → 帧缓冲"]
     DOUBLE_BUF --> FB["帧缓冲<br/>ramfb / VESA"]
     
-    subgraph 窗口系统["窗口管理器"]
+    subgraph WindowManager["窗口管理器"]
         WM["窗口管理"]
         ZORD["Z-Order 排序"]
         FOCUS2["焦点管理"]
@@ -615,7 +615,7 @@ extern const unsigned int login_bin_len;
         MENUBAR["菜单栏"]
     end
     
-    subgraph 应用窗口["应用窗口"]
+    subgraph AppWindows["应用窗口"]
         TERM["终端窗口<br/>VT100 兼容"]
         FM["文件管理器<br/>图标网格"]
         IV["图片查看器<br/>JPEG 缩放"]
@@ -709,28 +709,28 @@ extern void gui_draw_cursor(void);
     LV2 -->|需人工主导| LV3
     LV3 -->|需专家审查| LV4
     
-    subgraph L1内容["Level 1 特征"]
+    subgraph L1Content["Level 1 特征"]
         L1A["GUI 能展示"]
         L1B["多架构启动"]
         L1C["基础文件系统"]
         L1D["简单网络"]
     end
     
-    subgraph L2内容["Level 2 特征"]
+    subgraph L2Content["Level 2 特征"]
         L2A["用户态进程隔离"]
         L2B["EXT4 读写"]
         L2C["多用户登录"]
         L2D["USB 支持"]
     end
     
-    subgraph L3内容["Level 3 特征"]
+    subgraph L3Content["Level 3 特征"]
         L3A["沙箱移至用户态"]
         L3B["权限模型"]
         L3C["安全审计"]
         L3D["内核态最小化"]
     end
     
-    subgraph L4内容["Level 4 特征"]
+    subgraph L4Content["Level 4 特征"]
         L4A["完整驱动生态"]
         L4B["SMP 真正可用"]
         L4C["实时性保证"]

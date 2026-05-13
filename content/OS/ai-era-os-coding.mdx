@@ -356,16 +356,16 @@ static long my_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 在内核开发中，这份"规格"可以是：
 
 <MermaidDiagram chart={`flowchart LR
-    subgraph 规格层["SDD 规格层"]
+    subgraph SpecLayer["SDD 规格层"]
         A["接口定义<br/>头文件 + 函数签名"] --> B["约束声明<br/>锁要求 / 内存域 / 上下文"]
         B --> C["测试规约<br/>KUnit / kselftest"]
     end
 
-    subgraph AI层["AI 实现层"]
+    subgraph AILayer["AI 实现层"]
         D["代码生成<br/>基于规格填充实现"] --> E["补丁验证<br/>编译 + 静态分析"]
     end
 
-    subgraph 审查层["人类审查层"]
+    subgraph ReviewLayer["人类审查层"]
         F["代码审查<br/>并发 / 安全 / 性能"] --> G["集成测试<br/>qemu / 硬件验证"]
     end
 
@@ -373,9 +373,9 @@ static long my_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     E --> F
     G -->|"缺陷反馈"| A
 
-    style 规格层 fill:#e1f5fe
-    style AI层 fill:#fff3e0
-    style 审查层 fill:#e8f5e9
+    style SpecLayer fill:#e1f5fe
+    style AILayer fill:#fff3e0
+    style ReviewLayer fill:#e8f5e9
 `}/>
 
 **实践示例：编写一个字符设备驱动的规格**

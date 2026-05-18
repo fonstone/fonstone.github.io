@@ -19,7 +19,7 @@ Vib-OS 正是这一范式的标志性产物——自称"World's First Vibecoded 
         A2 --> A3["查阅手册写驱动"]
         A3 --> A4["数月实现基础功能"]
     end
-    subgraph Vibe Coding
+    subgraph VibeCoding["Vibe Coding"]
         B1["自然语言描述意图"] --> B2["AI 生成初版代码"]
         B2 --> B3["快速验证/微调"]
         B3 --> B4["迭代完成子系统"]
@@ -348,8 +348,8 @@ while (1) {
     APP6 --> SYSCALL
     SYSCALL --> CoreSubsystem
     CoreSubsystem --> DriverLayer
-    安全层 --> VM2
-    驱动层 --> HW
+    SecurityLayer --> VM2
+    DriverLayer --> HW
 
     style UserSpace fill:#e3f2fd
     style KernelSpace fill:#fff8e1
@@ -582,16 +582,16 @@ extern const unsigned int login_bin_len;
 
 <MermaidDiagram chart={`flowchart TD
     INPUT["输入设备<br/>Virtio-Keyboard/Tablet"]
-    INPUT POLL["input_poll()<br/>轮询输入事件"]
+    INPUT_POLL["input_poll()<br/>轮询输入事件"]
     KB["键盘事件<br/>uart_getc_nonblock()"]
     MOUSE["鼠标事件<br/>mouse_get_position()"]
     
-    INPUT --> INPUT POLL
+    INPUT --> INPUT_POLL
     UART["UART 串口"] --> KB
     VIRTIO_IN["Virtio Input"] --> MOUSE
     
-    INPUT POLL --> KB
-    INPUT POLL --> MOUSE
+    INPUT_POLL --> KB
+    INPUT_POLL --> MOUSE
     
     KB --> GUI_KEY["gui_handle_key_event()"]
     MOUSE --> GUI_MOUSE["gui_handle_mouse_event()"]

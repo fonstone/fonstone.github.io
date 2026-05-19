@@ -42,8 +42,7 @@ tags: ["车载以太网", "SOME/IP", "AUTOSAR", "SOA", "服务发现", "序列�
 
 要理解 SOME/IP 在整个车载通信体系中的位置，必须建立 OSI 七层模型、AUTOSAR 分层架构与具体模块实现的三维映射：
 
-```mermaid
-flowchart TB
+<MermaidDiagram chart={`flowchart TB
     subgraph OSI["OSI 七层模型"]
         direction TB
         L7["应用层 (Layer 7)"]
@@ -99,7 +98,7 @@ flowchart TB
     style TCPIPM fill:#ffcdd2
     style ETHIF fill:#f3e5f5
     style ETHDRV fill:#e0e0e0
-```
+`}/>
 
 各模块职责解析：
 
@@ -121,8 +120,7 @@ flowchart TB
 
 以下是 16 字节头部的字节级排布图：
 
-```mermaid
-flowchart TD
+<MermaidDiagram chart={`flowchart TD
     subgraph Header["SOME/IP Header — 16 Bytes (128 Bits)"]
         direction TB
         ROW0["│<  Message ID (4 Bytes)  >│<    Length (4 Bytes)     >│"]
@@ -142,7 +140,7 @@ flowchart TD
 
     style Header fill:#e8f5e9
     style BYTE_MAP fill:#fff9c4
-```
+`}/>
 
 上图中各行的精确字段定义如下表：
 
@@ -322,8 +320,7 @@ Notification 模式使用 NOTIFICATION（Message Type = 0x02），由服务端�
 
 以下时序图完整展示了三种通信模式在 Client 与 Server 之间的动态交互：
 
-```mermaid
-sequenceDiagram
+<MermaidDiagram chart={`sequenceDiagram
     participant C as Client
     participant S as Server
 
@@ -350,7 +347,7 @@ sequenceDiagram
         Note over S: 下一个周期
         S->>C: NOTIFICATION (MT=0x02)<br/>SessionID=0x0002 (递增)
     end
-```
+`}/>
 
 时序图中的关键细节：
 
@@ -704,8 +701,7 @@ Entry 只描述"什么服务/事件组"，**Option 则描述"怎么到达"**。�
 
 SOME/IP-SD 定义了严格的三阶段状态机，用于控制服务端和客户端在启动后的报文发送时序，以**最小化网络风暴**同时**保证快速发现**。
 
-```mermaid
-flowchart TD
+<MermaidDiagram chart={`flowchart TD
     subgraph ServerPhase["服务端生命周期"]
         S_INIT["Initial Phase<br/>发送 1 次 OfferService<br/>Initial Delay 随机退避"]
         S_REP["Repetition Phase<br/>重复发送 OfferService<br/>指数退避间隔<br/>Repetition Max 次数上限"]
@@ -733,7 +729,7 @@ flowchart TD
     style C_REP fill:#fff9c4
     style C_MAIN fill:#c8e6c9
     style C_FOUND fill:#a5d6a7
-```
+`}/>
 
 #### Initial Phase（初始阶段）
 
@@ -805,8 +801,7 @@ REQUEST_RESPONSE_DELAY_MAX 典型值 = 500 ms
 
 以下时序图展示了一个完整的服务发现与事件组订阅流程：
 
-```mermaid
-sequenceDiagram
+<MermaidDiagram chart={`sequenceDiagram
     participant C as Client ECU
     participant S as Server ECU
     participant SD as SOME/IP-SD<br/>(Multicast UDP)
@@ -848,7 +843,7 @@ sequenceDiagram
         S->>SD: StopOfferService (TTL=0)<br/>主动撤回服务
         SD-->>C: 清除本地服务表 Entry
     end
-```
+`}/>
 
 ### 5.8 关键定时器参数配置参考
 
@@ -964,8 +959,7 @@ SoAdSocketConnectionGroup (TCP Port 30500)
 
 ### 6.3 发送路径（Tx Flow）：从 PDU 到 Socket
 
-```mermaid
-flowchart TD
+<MermaidDiagram chart={`flowchart TD
     APP["SWC / RTE<br/>调用 VSomeIpIntf_Send()"]
     SOMEIP_TX["SOME/IP 模块<br/>序列化 Payload<br/>组装 SOME/IP Header"]
     PDU_R_TX["PduR<br/>PduR_IfTransmit(PduId, &PduInfo)"]
@@ -1001,7 +995,7 @@ flowchart TD
     style SOAD_CONN fill:#ffcdd2
     style TCPIP_TX fill:#f3e5f5
     style ETHIF_TX fill:#e0e0e0
-```
+`}/>
 
 发送路径的关键步骤解析：
 
@@ -1017,8 +1011,7 @@ flowchart TD
 
 ### 6.4 接收路径（Rx Flow）：从 Socket 到 PDU
 
-```mermaid
-flowchart TD
+<MermaidDiagram chart={`flowchart TD
     ETHDRV_RX["Eth Driver<br/>接收以太网帧"]
     ETHIF_RX["EthIf<br/>帧校验与分发"]
     TCPIP_RX["TcpIp 模块<br/>TCP 重组 / UDP 解封<br/>Socket 数据缓冲"]
@@ -1055,7 +1048,7 @@ flowchart TD
     style SOAD_FILTER fill:#ffcdd2
     style SOMEIP_RX fill:#c8e6c9
     style APP_RX fill:#e3f2fd
-```
+`}/>
 
 接收路径的关键步骤解析：
 
@@ -1196,8 +1189,7 @@ Server → Client (已订阅 Eventgroup):
 
 现代智能汽车的电子电气架构从分布式向域集中式乃至中央计算+区域控制器演进，SOME/IP 服务不可避免地需要跨域、跨网关通信。以下拓扑图展示了一个典型的多域架构下服务路由的物理与逻辑视图：
 
-```mermaid
-flowchart TB
+<MermaidDiagram chart={`flowchart TB
     subgraph CentralCompute["中央计算平台"]
         direction LR
         ADS_SVC["自动驾驶服务<br/>Service 0x1000<br/>ADAS Domain"]
@@ -1264,7 +1256,7 @@ flowchart TB
     style ETH_SW1 fill:#e0e0e0
     style ETH_SW2 fill:#e0e0e0
     style ETH_SW3 fill:#e0e0e0
-```
+`}/>
 
 ### 7.4 跨域服务路由的核心问题
 

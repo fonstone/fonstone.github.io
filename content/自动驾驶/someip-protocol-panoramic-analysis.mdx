@@ -122,25 +122,38 @@ tags: ["车载以太网", "SOME/IP", "AUTOSAR", "SOA", "服务发现", "序列�
 
 <MermaidDiagram chart={`flowchart TD
     subgraph Header["SOME/IP Header — 16 Bytes (128 Bits)"]
-        direction TB
-        ROW0["│<  Message ID (4 Bytes)  >│<    Length (4 Bytes)     >│"]
-        ROW1["│<  Request ID (4 Bytes)   >│<  Protocol V │ IF V │ MT │ RC │"]
-        ROW2["│  Service ID │ Method/Event ID  │   Length = 8 + Payload Size   │"]
-        ROW3["│  Client ID  │  Session ID      │  PV=0x01 │ IV │ MT │ RC │"]
+        direction LR
+        MSG_ID["Message ID<br/>4 Bytes<br/>Byte 0-3"]
+        LEN["Length<br/>4 Bytes<br/>Byte 4-7"]
+        REQ_ID["Request ID<br/>4 Bytes<br/>Byte 8-11"]
+        FIXED["Protocol Ver<br/>1 Byte<br/>Byte 12"]
+        IF_VER["Interface Ver<br/>1 Byte<br/>Byte 13"]
+        MSG_TYPE["Message Type<br/>1 Byte<br/>Byte 14"]
+        RET_CODE["Return Code<br/>1 Byte<br/>Byte 15"]
     end
 
-    BYTE_MAP["Byte  0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15\n" +
-             "     ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤\n" +
-             "     │   Service ID   │  Method/Event  │         Length          │\n" +
-             "     ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤\n" +
-             "     │   Client ID    │  Session ID     │ PV  │ IV  │ MT  │ RC  │\n" +
-             "     ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┤"]
+    MSG_ID --- LEN --- REQ_ID --- FIXED --- IF_VER --- MSG_TYPE --- RET_CODE
 
-    Header --> BYTE_MAP
-
-    style Header fill:#e8f5e9
-    style BYTE_MAP fill:#fff9c4
+    style MSG_ID fill:#c8e6c9
+    style LEN fill:#bbdefb
+    style REQ_ID fill:#fff9c4
+    style FIXED fill:#ffe0b2
+    style IF_VER fill:#ffe0b2
+    style MSG_TYPE fill:#ffcdd2
+    style RET_CODE fill:#f3e5f5
 `}/>
+
+字节级排布详图：
+
+```
+Byte   0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15
+     ┌───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┐
+     │  Service ID   │Method/Event ID│         Length               │
+     ├───────┼───────┼───────┼───────┼───────┼───────┼──────┼──────┤
+     │  Client ID    │  Session ID   │  PV   │  IV   │  MT  │  RC  │
+     └───────┴───────┴───────┴───────┴───────┴───────┴──────┴──────┘
+     ├──── Message ID ────┤├──── Length ────┤├── Request ID ──┤├ Fixed ─┤
+```
 
 上图中各行的精确字段定义如下表：
 

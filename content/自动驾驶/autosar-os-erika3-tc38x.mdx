@@ -1,0 +1,1411 @@
+---
+title: "AUTOSAR OS 深度解析：基于 ERIKA3 与 Infineon AURIX TC38x 的实现"
+description: "从AUTOSAR OS规范出发，逐层深入ERIKA Enterprise v3在Infineon AURIX TC38x平台上的具体实现，涵盖任务调度、报警机制、资源管理、事件同步、中断处理、多核扩展等核心机制，并结合实战案例进行全链路解析。"
+date: "2026-05-23"
+tags: ["AUTOSAR", "RTOS", "ERIKA3", "TriCore", "TC38x", "车载OS", "任务调度", "中断管理", "多核"]
+---
+
+> 本文基于开源项目 [erika3-tc38x](https://github.com/wentasah/erika3-tc38x)，从 AUTOSAR OS 规范出发，逐层深入到 ERIKA Enterprise v3 在 Infineon AURIX TC38x 平台上的具体实现，涵盖任务调度、报警机制、资源管理、事件同步、中断处理、多核扩展等核心机制，并结合实战案例进行全链路解析。
+
+相关阅读：[深入浅出车载以太网核心：SOME/IP协议全景解析](/knowledge/autonomous-driving/someip-protocol-panoramic-analysis)
+
+## 1. AUTOSAR OS 规范概览
+
+### 1.1 AUTOSAR OS 的定位
+
+AUTOSAR（AUTomotive Open System ARchitecture）OS 是 AUTOSAR 经典平台（Classic Platform）的基础软件层，其核心规范来自 OSEK/VDX 标准，并在此基础上扩展了多核、调度表（Schedule Table）、自旋锁等特性。
+
+<MermaidDiagram chart={`graph TB
+    subgraph AUTOSAR CP
+        SWC[应用软件组件<br>Software Component]
+        RTE[RTE<br>运行时环境]
+        BSW[基础软件层<br>Basic Software]
+        OS[AUTOSAR OS]
+        MCU[MCU 抽象层]
+        HW[硬件]
+    end
+    SWC --> RTE --> BSW --> OS --> MCU --> HW
+`} />
+
+AUTOSAR OS 在整个软件栈中的职责：
+
+| 职责 | 说明 |
+|------|------|
+| 任务调度 | 基于优先级的抢占式/非抢占式调度 |
+| 中断管理 | ISR Category 1 和 Category 2 分离 |
+| 资源同步 | 优先级 Ceiling 协议防止优先级反转 |
+| 事件同步 | 扩展任务间的事件通知机制 |
+| 报警机制 | 基于计数器的周期性/单次报警 |
+| 调度表 | 精确的周期性动作调度（AUTOSAR 扩展） |
+| 多核支持 | 跨核任务激活、自旋锁、核间同步 |
+
+### 1.2 一致性类（Conformance Classes）
+
+AUTOSAR OS 定义了四种一致性类，从简单到复杂递增：
+
+<MermaidDiagram chart={`graph LR
+    BCC1 -->|+多激活| BCC2
+    BCC1 -->|+扩展任务| ECC1
+    BCC2 -->|+扩展任务| ECC2
+    BCC1[BCC1<br>基本任务 1激活/任务]
+    BCC2[BCC2<br>基本任务 多激活/任务]
+    ECC1[ECC1<br>扩展任务 1激活/任务]
+    ECC2[ECC2<br>扩展任务 多激活/任务]
+`} />
+
+| 一致性类 | 基本任务 | 扩展任务 | 每任务最大激活数 |
+|----------|---------|---------|-----------------|
+| BCC1 | 1激活/任务 | 不支持 | 1 |
+| BCC2 | 多激活/任务 | 不支持 | 多次 |
+| ECC1 | 1激活/任务 | 支持（1激活） | 1 |
+| ECC2 | 多激活/任务 | 支持（多激活） | 多次 |
+
+**选择原则**：
+- 简单事件驱动场景选 BCC1（最小 ROM/RAM 开销）
+- 需要等待事件的场景选 ECC1/ECC2
+- 需要多激活场景（如报警周期激活同一任务）选 BCC2/ECC2
+
+### 1.3 核心服务 API 一览
+
+| 服务类别 | API | 功能 |
+|---------|-----|------|
+| 任务管理 | `ActivateTask`, `TerminateTask`, `ChainTask`, `Schedule`, `GetTaskID`, `GetTaskState` | 激活、终止、链式调度任务 |
+| 中断管理 | `DisableAllInterrupts`, `EnableAllInterrupts`, `SuspendAllInterrupts`, `ResumeAllInterrupts`, `SuspendOSInterrupts`, `ResumeOSInterrupts` | 中断全局控制 |
+| 资源管理 | `GetResource`, `ReleaseResource` | 互斥访问共享资源 |
+| 事件管理 | `SetEvent`, `ClearEvent`, `GetEvent`, `WaitEvent` | 扩展任务间事件通知 |
+| 报警管理 | `SetRelAlarm`, `SetAbsAlarm`, `GetAlarm`, `GetAlarmBase`, `CancelAlarm` | 基于计数器的报警设置 |
+| 计数器 | `IncrementCounter`, `GetCounterValue`, `GetElapsedValue` | 软件/硬件计数器 |
+| 调度表 | `StartScheduleTableRel`, `StartScheduleTableAbs`, `StopScheduleTable`, `NextScheduleTable`, `SyncScheduleTable` | 周期性调度表 |
+| 多核 | `GetCoreID`, `StartCore`, `ShutdownAllCores` | 多核管理与同步 |
+| 自旋锁 | `GetSpinlock`, `ReleaseSpinlock`, `TryToGetSpinlock` | 多核互斥 |
+
+---
+
+## 2. ERIKA3 整体架构设计
+
+### 2.1 ERIKA3 项目概述
+
+[ERIKA Enterprise v3](https://github.com/wentasah/erika3-tc38x) 是由 Evidence Srl 开发的开源 RTOS，实现了 AUTOSAR OS 和 OSEK/VDX API 规范，广泛应用于汽车电子和白电领域。`erika3-tc38x` 是其针对 Infineon AURIX TC38x 处理器的适配分支。
+
+**关键特性**：
+- 双许可：GPL + 商业许可
+- 支持 AUTOSAR OS 一致性类 BCC1/BCC2/ECC1/ECC2
+- 多架构：TriCore、ARM Cortex-R/M、AArch64、RISC-V 等
+- 多核支持（Partitioned / Global 调度策略）
+- OSEK OIL 配置语言 + 动态 API
+- 与 Infineon ISAR MCAL 集成
+
+### 2.2 分层架构
+
+<MermaidDiagram chart={`graph TB
+    subgraph 应用层
+        APP[应用任务<br>Task1 / Task2 / ISR2]
+    end
+    subgraph OS内核层
+        API[OSEK/AUTOSAR API<br>ee_oo_api_osek.c]
+        KERN[内核核心<br>ee_oo_kernel.c / ee_oo_scheduler.c]
+        SCHED[调度器<br>ee_scheduler.c]
+    end
+    subgraph HAL层
+        HAL_INT[HAL 接口<br>ee_hal.h]
+        HAL_IMPL[TriCore HAL<br>ee_tc_ctx.c / ee_tc_hal.c]
+    end
+    subgraph 硬件层
+        TRICORE[AURIX TC38x<br>TriCore CPU + CSA]
+        PERIPH[外设<br>STM / SRC / PMU]
+    end
+
+    APP --> API --> KERN --> SCHED --> HAL_INT --> HAL_IMPL --> TRICORE
+    APP -. ISR2 .-> HAL_IMPL
+    KERN -. Alarm/Counter .-> PERIPH
+    TRICORE --- PERIPH
+`} />
+
+### 2.3 代码目录结构
+
+```
+erika3-tc38x/
+├── pkg/                          # 核心包
+│   ├── kernel/oo/                # OS 内核实现
+│   │   ├── ee_api.h             # API 总头文件
+│   │   ├── ee_api_types.h       # 类型定义
+│   │   ├── ee_oo_api_osek.h    # OSEK API 声明
+│   │   ├── ee_kernel_types.h    # 内核数据结构
+│   │   ├── ee_kernel.h          # 内核内部接口
+│   │   ├── ee_scheduler.h       # 调度器接口
+│   │   ├── ee_oo_api_osek.c     # API 实现
+│   │   ├── ee_oo_kernel.c       # 内核核心
+│   │   ├── ee_oo_scheduler.c    # 调度器实现
+│   │   ├── ee_oo_alarm.c        # 报警管理
+│   │   ├── ee_oo_counter.c      # 计数器管理
+│   │   └── ee_ar_sched_table.c  # 调度表管理
+│   └── arch/tricore/            # TriCore 架构适配
+│       ├── ee_hal.h             # HAL 公共接口
+│       ├── ee_hal_internal.h    # HAL 内部接口
+│       ├── ee_tc_ctx.c          # 上下文切换
+│       ├── ee_tc_hal.c          # HAL 实现
+│       ├── ee_tc_intvec.c       # 中断向量表
+│       └── no_iLLD/             # 独立于 iLLD 的启动代码
+│           └── tc3nx/           # TC3nx 特定支持
+├── contrib/                      # 第三方/平台集成
+│   ├── infineon/                # Infineon ISAR MCAL 集成
+│   │   ├── examples/            # MCAL 示例（CAN, ADC, DIO等）
+│   │   └── ISAR/                # ISAR MCAL 头文件和源码
+│   └── ...
+├── mk/                           # 构建系统
+├── doc/                          # 文档
+└── utils/                        # 工具
+```
+
+### 2.4 核心数据结构关系图
+
+<MermaidDiagram chart={`classDiagram
+    class OsEE_KDB {
+        +p_kcb: OsEE_KCB*
+        +p_tdb_array: OsEE_TDB**
+        +p_rdb_array: OsEE_RDB**
+        +p_counter_db_array: OsEE_CounterDB**
+        +p_alarm_db_array: OsEE_AlarmDB**
+        +p_st_db_array: OsEE_SchedTabDB**
+        +n_cores: CoreNumType
+    }
+
+    class OsEE_CDB {
+        +p_ccb: OsEE_CCB*
+        +core_id: CoreIdType
+        +p_idle_hook: TaskFunc
+        +p_sys_counter_db: OsEE_CounterDB*
+    }
+
+    class OsEE_TDB {
+        +hdb: OsEE_HDB
+        +p_tcb: OsEE_TCB*
+        +tid: TaskType
+        +task_type: OsEE_task_type
+        +task_func: TaskFunc
+        +ready_prio: TaskPrio
+        +dispatch_prio: TaskPrio
+        +max_num_of_act: TaskActivation
+    }
+
+    class OsEE_TCB {
+        +current_num_of_act: int
+        +current_prio: TaskPrio
+        +status: TaskStateType
+        +p_last_m: OsEE_MCB*
+        +wait_mask: EventMaskType
+        +event_mask: EventMaskType
+        +p_own_sn: OsEE_SN*
+    }
+
+    class OsEE_CCB {
+        +p_curr: OsEE_TDB*
+        +os_status: OsEE_kernel_status
+        +os_context: OsEE_os_context
+        +rq: OsEE_RQ
+    }
+
+    class OsEE_CounterDB {
+        +p_counter_cb: OsEE_CounterCB*
+        +info: AlarmBaseType
+        +p_counter_hard: OsEE_CounterDB*
+        +core_id: CoreIdType
+    }
+
+    class OsEE_TriggerDB {
+        +p_trigger_cb: OsEE_TriggerCB*
+        +p_counter_db: OsEE_CounterDB*
+        +action: OsEE_action
+    }
+
+    OsEE_KDB --> OsEE_CDB : per-core
+    OsEE_CDB --> OsEE_CCB : control block
+    OsEE_TDB --> OsEE_TCB : task state
+    OsEE_CDB --> OsEE_CounterDB : system counter
+    OsEE_CounterDB --> OsEE_TriggerDB : triggers/alarms
+`} />
+
+**设计理念**：
+- **DB/CB 分离**：Descriptor Block（只读配置）与 Control Block（运行时可变）分离，支持 ROM 常量优化
+- **Per-core 分区**：`OsEE_CDB/CCB` 每核独立，减少多核竞争
+- **全局 DB**：`OsEE_KDB/KCB` 管理跨核调度和同步
+
+---
+
+## 3. 内核机制深度解析
+
+### 3.1 任务管理与调度
+
+#### 3.1.1 规范要求
+
+AUTOSAR OS 定义了两种任务类型：
+
+| 特性 | 基本任务（Basic Task） | 扩展任务（Extended Task） |
+|------|----------------------|------------------------|
+| 等待事件 | 不支持 | 支持 `WaitEvent()` |
+| 状态 | SUSPENDED → READY → RUNNING | SUSPENDED → READY → RUNNING → WAITING |
+| 释放资源 | 只能由自身或报警激活 | 可由事件唤醒 |
+| 开销 | 较小（无事件掩码） | 较大（需要事件掩码和等待队列） |
+
+任务状态机：
+
+<MermaidDiagram chart={`stateDiagram-v2
+    [*] --> SUSPENDED : 系统启动
+    SUSPENDED --> READY : ActivateTask()
+    READY --> RUNNING : 调度器选中
+    RUNNING --> READY : 被高优先级抢占
+    RUNNING --> WAITING : WaitEvent()<br>(仅扩展任务)
+    WAITING --> READY : SetEvent() 唤醒
+    RUNNING --> SUSPENDED : TerminateTask()
+    RUNNING --> SUSPENDED : ChainTask()
+`} />
+
+#### 3.1.2 ERIKA3 实现
+
+**任务类型定义**（`pkg/kernel/oo/ee_api_types.h`）：
+
+```c
+typedef enum {
+  OSEE_TASK_TYPE_BASIC,    /* 基本任务 */
+  OSEE_TASK_TYPE_EXTENDED, /* 扩展任务 */
+  OSEE_TASK_TYPE_ISR2,    /* ISR Category 2 */
+  OSEE_TASK_TYPE_IDLE     /* 空闲任务 */
+} OsEE_task_type;
+
+typedef enum {
+  OSEE_TASK_SUSPENDED,      /* 未激活/已终止 */
+  OSEE_TASK_READY,          /* 就绪等待运行 */
+  OSEE_TASK_READY_STACKED,  /* 多激活就绪 */
+  OSEE_TASK_WAITING,        /* 等待事件(扩展任务) */
+  OSEE_TASK_RUNNING,        /* 正在运行 */
+  OSEE_TASK_CHAINED          /* ChainTask 后等待终止 */
+} OsEE_task_status;
+```
+
+**任务描述符块（TDB）与控制块（TCB）**（`pkg/kernel/oo/ee_kernel_types.h`）：
+
+```c
+/* 任务描述符块 - ROM 常量配置 */
+struct OsEE_TDB_tag {
+  OsEE_HDB          hdb;            /* HAL 描述符块（包含上下文信息） */
+  OsEE_TCB *         p_tcb;         /* 指向运行时可变 TCB */
+  TaskType           tid;           /* 任务 ID */
+  OsEE_task_type     task_type;     /* 基本任务/扩展任务/ISR2/空闲 */
+  TaskFunc           task_func;     /* 任务入口函数 */
+  TaskPrio           ready_prio;    /* 任务就绪优先级 */
+  TaskPrio           dispatch_prio; /* 调度优先级(获取资源时可能提升) */
+  TaskActivation     max_num_of_act;/* 最大激活次数 */
+#if defined(OSEE_CORE_ID_ATTRIBUTE)
+  CoreIdType          orig_core_id;  /* 任务所属核心 */
+#endif
+};
+
+/* 任务控制块 - 运行时可变状态 */
+struct OsEE_TCB_tag {
+  TaskActivation     current_num_of_act;  /* 当前激活计数 */
+  TaskPrio           current_prio;        /* 当前动态优先级 */
+  TaskStateType      status;              /* 任务状态 */
+  OsEE_MCB *         p_last_m;            /* 最后持有的互斥锁(资源/自旋锁) */
+#if defined(OSEE_HAS_EVENTS)
+  EventMaskType       wait_mask;          /* 等待的事件掩码 */
+  EventMaskType       event_mask;          /* 已设置的事件掩码 */
+#endif
+  OsEE_SN *          p_own_sn;            /* 当前占有的调度节点 */
+};
+```
+
+#### 3.1.3 调度器实现
+
+ERIKA3 支持两种就绪队列实现：
+
+**链表就绪队列（OSEE_RQ_LL）**：
+
+<MermaidDiagram chart={`graph LR
+    subgraph 优先级排序链表
+        SN3[SN:prio=5<br>Task_A] --> SN1[SN:prio=3<br>Task_B] --> SN2[SN:prio=1<br>Task_C]
+    end
+    RQ_HEAD[Ready Queue Head] --> SN3
+`} />
+
+**多队列就绪队列（OSEE_RQ_MULTIPLEQUEUE）**：
+
+<MermaidDiagram chart={`graph LR
+    subgraph 优先级位图
+        BM[位图: 10101000<br>prio 5,3,1]
+    end
+    BM --> Q5[Queue[5]<br>Task_A]
+    BM --> Q3[Queue[3]<br>Task_B]
+    BM --> Q1[Queue[1]<br>Task_C]
+`} />
+
+多队列实现使用优先级位图加速查找最高优先级就绪任务，时间复杂度 O(1)：
+
+```c
+/* 调度节点插入 - 优先级排序 */
+OsEE_SN * osEE_sn_priority_insert(OsEE_SN *p_head, OsEE_SN *p_sn) {
+  OsEE_SN * p_prev;
+  OsEE_SN * p_curr;
+  p_sn->p_next = NULL;
+  if (p_head == NULL) {
+    return p_sn;  /* 空队列，直接插入 */
+  }
+  if (p_head->p_tdb->ready_prio < p_sn->p_tdb->ready_prio) {
+    p_sn->p_next = p_head;  /* 新节点优先级最高，插入队首 */
+    return p_sn;
+  }
+  /* 扫描链表，找到合适位置 */
+  p_prev = p_head;
+  p_curr = p_head->p_next;
+  while (p_curr != NULL) {
+    if (p_curr->p_tdb->ready_prio < p_sn->p_tdb->ready_prio) {
+      break;
+    }
+    p_prev = p_curr;
+    p_curr = p_curr->p_next;
+  }
+  p_prev->p_next = p_sn;
+  p_sn->p_next = p_curr;
+  return p_head;
+}
+```
+
+**调度核心流程**（`ee_oo_scheduler.c`）：
+
+<MermaidDiagram chart={`flowchart TD
+    A[任务激活/事件设置<br>ActivateTask/SetEvent] --> B{当前运行任务<br>优先级 vs 新任务优先级?}
+    B -->|新任务优先级更高| C[保存当前任务上下文]
+    C --> D[将当前任务放入就绪队列]
+    D --> E[切换到新任务]
+    B -->|当前任务优先级更高| F[新任务进入就绪队列等待]
+    E --> G[新任务运行]
+    G --> H[TerminateTask/ChainTask]
+    H --> I[从就绪队列取出最高优先级任务]
+    I --> J[切换到该任务]
+
+    style A fill:#4CAF50,color:white
+    style G fill:#2196F3,color:white
+    style H fill:#FF9800,color:white
+`} />
+
+**任务激活的完整调用链**：
+
+```c
+/* 用户调用 */
+StatusType ActivateTask(TaskType TaskID) {
+  /* ee_oo_api_osek.c 实现 */
+  /* 1. 参数校验 */
+  /* 2. 激活计数检查 */
+  /* 3. 调用内核激活函数 */
+}
+
+/* 内核层 */
+StatusType osEE_task_activated(OsEE_TDB *p_tdb) {
+  /* 1. 增加激活计数 */
+  /* 2. 如果任务处于 SUSPENDED 状态，转为 READY */
+  /* 3. 调用调度器 */
+  osEE_scheduler_task_activated(p_tdb);
+}
+
+/* 调度器层 */
+void osEE_scheduler_task_activated(OsEE_TDB *p_tdb) {
+  /* 1. 分配调度节点(SN) */
+  /* 2. 插入就绪队列 */
+  /* 3. 触发调度点检查 */
+  osEE_scheduler_task_preemption_point();
+}
+
+/* 调度点 */
+void osEE_scheduler_task_preemption_point() {
+  /* 1. 比较当前运行任务与新最高优先级任务 */
+  /* 2. 如果需要抢占，执行上下文切换 */
+  osEE_hal_save_ctx_and_restore_ctx(p_curr, p_next);
+}
+```
+
+### 3.2 报警与计数器
+
+#### 3.2.1 规范要求
+
+报警（Alarm）是 AUTOSAR OS 中基于计数器的时间触发机制。每个报警必须关联一个计数器，当计数器值达到设定值时触发指定动作。
+
+<MermaidDiagram chart={`graph LR
+    CNT[计数器 Counter] -->|递增| ALM[报警 Alarm]
+    ALM -->|动作类型| ACT_TASK[激活任务<br>ACTIVATETASK]
+    ALM -->|动作类型| ACT_EVT[设置事件<br>SETEVENT]
+    ALM -->|动作类型| ACT_CB[回调函数<br>ALARMCALLBACK]
+    ALM -->|动作类型| ACT_INC[递增计数器<br>INCREMENTCOUNTER]
+`} />
+
+#### 3.2.2 ERIKA3 实现
+
+**计数器数据结构**（`pkg/kernel/oo/ee_kernel_types.h`）：
+
+```c
+/* 计数器控制块 - 运行时可变 */
+struct OsEE_CounterCB_tag {
+  OsEE_TriggerCB *  p_first;   /* 触发器链表(按到期时间排序) */
+  TickType           value;      /* 当前计数值 */
+  TickType           prescaler;  /* 预分频器 */
+};
+
+/* 计数器描述符块 - ROM 配置 */
+struct OsEE_CounterDB_tag {
+  OsEE_CounterCB *  p_counter_cb;  /* 指向控制块 */
+  AlarmBaseType      info;          /* maxallowedvalue, mincycle, ticksperbase */
+  OsEE_CounterDB *  p_counter_hard; /* 硬件计数器指针(用于软件计数器) */
+  CoreIdType         core_id;       /* 所属核心 */
+};
+
+/* 触发器控制块 - 报警和调度表的底层机制 */
+struct OsEE_TriggerCB_tag {
+  OsEE_TriggerCB *  p_next;     /* 链表下一个触发器 */
+  TickType           when;        /* 到期时间(绝对) */
+  OsEE_trigger_status status;    /* INACTIVE/CANCELED/ACTIVE/EXPIRED/REENABLED */
+  union {
+    OsEE_AlarmCB *  p_alarm_cb;          /* 报警控制块 */
+    OsEE_SchedTabCB *p_schedtab_cb;      /* 调度表控制块 */
+  };
+};
+
+/* 报警动作类型 */
+typedef enum {
+  OSEE_ACTION_TASK,     /* 激活任务 */
+  OSEE_ACTION_EVENT,    /* 设置事件 */
+  OSEE_ACTION_COUNTER,  /* 递增计数器 */
+  OSEE_ACTION_CALLBACK  /* 回调函数 */
+} OsEE_action_type;
+```
+
+**报警设置流程**（`ee_oo_alarm.c`）：
+
+<MermaidDiagram chart={`sequenceDiagram
+    participant App as 应用
+    participant API as SetRelAlarm()
+    participant Kern as 内核
+    participant Cnt as 计数器
+    participant Trig as 触发器队列
+
+    App->>API: SetRelAlarm(AlarmID, increment, cycle)
+    API->>API: 参数校验(alarm未使用, 值合法)
+    API->>Kern: osEE_alarm_set_rel(alarm_db, increment, cycle)
+    Kern->>Kern: 计算绝对到期时间: when = counter.value + increment
+    Kern->>Trig: osEE_counter_insert_abs_trigger(counter_db, trigger)
+    Trig->>Trig: 按到期时间插入有序链表
+    Note over Trig: 最近的触发器在链表头部
+    
+    Note over Cnt: 当硬件定时器中断递增计数器
+    Cnt->>Kern: osEE_counter_increment(counter_db)
+    loop 检查并触发到期的报警
+        Kern->>Kern: 比较当前计数器值与触发器到期时间
+        Kern->>Kern: 执行报警动作(ActivateTask/SetEvent/...)
+        Kern->>Trig: 如果是周期报警,重新插入(cycle)时间段
+    end
+`} />
+
+**关键实现细节**：
+
+```c
+/* osEE_counter_insert_abs_trigger - 按绝对时间插入触发器 */
+void osEE_counter_insert_abs_trigger(
+  OsEE_CounterDB *p_counter_db,
+  OsEE_TriggerDB *p_trigger_db,
+  TickType         when
+) {
+  OsEE_CounterCB *p_cb = p_counter_db->p_counter_cb;
+  OsEE_TriggerCB *p_prev = NULL;
+  OsEE_TriggerCB *p_curr = p_cb->p_first;
+
+  /* 设置到期时间和状态 */
+  p_trigger_db->p_trigger_cb->when   = when;
+  p_trigger_db->p_trigger_cb->status  = OSEE_TRIGGER_ACTIVE;
+
+  /* 按到期时间升序插入链表 */
+  while (p_curr != NULL) {
+    if (osEE_counter_eval_when(p_counter_db, when, p_curr->when) < 0) {
+      /* 'when' 比 p_curr->when 更早到期 */
+      break;
+    }
+    p_prev = p_curr;
+    p_curr = p_curr->p_next;
+  }
+
+  if (p_prev == NULL) {
+    /* 插入链表头部 - 最早到期 */
+    p_trigger_db->p_trigger_cb->p_next = p_cb->p_first;
+    p_cb->p_first = &p_trigger_db->p_trigger_cb;
+  } else {
+    p_trigger_db->p_trigger_cb->p_next = p_curr;
+    p_prev->p_next = &p_trigger_db->p_trigger_cb;
+  }
+}
+```
+
+### 3.3 资源管理与优先级 Ceiling 协议
+
+#### 3.3.1 规范要求
+
+AUTOSAR OS 的资源（Resource）机制用于保护共享数据，采用 **优先级 Ceiling 协议（IPCP）** 防止优先级反转：
+
+- 每个资源有一个 Ceiling 优先级，等于所有可能访问该资源的任务中最高优先级加一
+- `GetResource()` 将任务优先级提升到 Ceiling 优先级
+- `ReleaseResource()` 恢复原始优先级
+- 资源必须以 LIFO（后进先出）顺序释放
+- ISR2 也可以获取资源
+
+#### 3.3.2 ERIKA3 实现
+
+```c
+/* 互斥锁控制块 - 统一管理资源和自旋锁 */
+struct OsEE_MCB_tag {
+  OsEE_MCB *   p_next;    /* 下一个持有的互斥锁(LIFO链) */
+  TaskPrio      prev_prio; /* 获取前保存的优先级 */
+  OsEE_TDB *    p_owner;   /* 当前持有者 */
+};
+
+/* 互斥锁描述符块 */
+struct OsEE_MDB_tag {
+#if defined(OSEE_HAS_RESOURCES) && defined(OSEE_HAS_SPINLOCKS)
+  OsEE_m_type    m_type;  /* OSEE_M_RESOURCE 或 OSEE_M_SPINLOCK */
+#endif
+  OsEE_MCB       mcb;     /* 控制块（内嵌） */
+  TaskPrio        ceiling_prio; /* Ceiling 优先级 */
+#if defined(OSEE_HAS_SPINLOCKS)
+  CoreMaskType    core_mask;    /* 允许访问的核心掩码 */
+#endif
+};
+```
+
+**GetResource 流程**：
+
+<MermaidDiagram chart={`flowchart TD
+    A[GetResource ResID] --> B{ResID 有效?}
+    B -->|否| E1[返回 E_OS_ID]
+    B -->|是| C{资源空闲?}
+    C -->|否| D{调用者是持有者?}
+    D -->|是| E1[返回 E_OS_ACCESS<br>违反IPCP]
+    D -->|否| E2[返回 E_OS_RESOURCE<br>资源已被占用]
+    C -->|是| F[保存当前优先级到 mcb.prev_prio]
+    F --> G[提升优先级到 ceiling_prio]
+    G --> H[将 MCB 加入任务的锁链<br>p_last_m = &mcb]
+    H --> I[设置 mcb.p_owner = 当前TDB]
+    I --> J[返回 E_OK]
+
+    style E1 fill:#f44336,color:white
+    style E2 fill:#f44336,color:white
+    style J fill:#4CAF50,color:white
+`} />
+
+**ReleaseResource 流程**：
+
+```c
+/* ReleaseResource 核心逻辑 */
+StatusType ReleaseResource(ResourceType ResID) {
+  /* 1. 校验：必须是最后获取的资源（LIFO） */
+  if (p_tcb->p_last_m != &mdb[ResID].mcb) {
+    return E_OS_RESOURCE;  /* 违反LIFO顺序 */
+  }
+
+  /* 2. 恢复原始优先级 */
+  p_tdb->p_tcb->current_prio = p_tcb->p_last_m->prev_prio;
+
+  /* 3. 从锁链中移除 */
+  p_tcb->p_last_m = p_tcb->p_last_m->p_next;
+
+  /* 4. 清空持有者 */
+  mdb[ResID].mcb.p_owner = NULL;
+
+  /* 5. 重新调度（可能需要让出CPU） */
+  Schedule();
+  return E_OK;
+}
+```
+
+**锁链示意图**：
+
+<MermaidDiagram chart={`graph LR
+    subgraph 任务 TCB 锁链
+        MCB1[MCB: Resource_A<br>prev_prio=2<br>ceiling=5] --> MCB2[MCB: Resource_B<br>prev_prio=5<br>ceiling=7] --> NULL[NULL]
+    end
+    TCB[p_last_m] --> MCB1
+
+    style MCB1 fill:#E3F2FD
+    style MCB2 fill:#E3F2FD
+`} />
+
+获取资源时，锁链通过 `p_next` 指针形成栈式结构，确保 LIFO 释放顺序（AUTOSAR OS SWS_Os_00801 规范要求）。
+
+### 3.4 事件机制
+
+#### 3.4.1 规范要求
+
+事件（Event）仅适用于扩展任务，用于任务间同步：
+
+- `SetEvent(TaskID, EventMask)` - 设置指定任务的事件
+- `WaitEvent(EventMask)` - 当前任务等待事件（阻塞）
+- `ClearEvent(EventMask)` - 清除当前任务的事件
+- `GetEvent(TaskID, EventMask)` - 获取指定任务的事件状态
+
+#### 3.4.2 ERIKA3 实现
+
+```c
+/* 事件掩码在 TCB 中 */
+struct OsEE_TCB_tag {
+  /* ... */
+#if defined(OSEE_HAS_EVENTS)
+  EventMaskType  wait_mask;    /* WaitEvent 等待的掩码 */
+  EventMaskType   event_mask;   /* 已设置的事件位 */
+#endif
+  /* ... */
+};
+
+/* SetEvent 实现 */
+StatusType SetEvent(TaskType TaskID, EventMaskType Mask) {
+  OsEE_TDB *p_tdb = &tdb_array[TaskID];
+  OsEE_TCB *p_tcb = p_tdb->p_tcb;
+
+  /* 1. 设置事件位 */
+  p_tcb->event_mask |= Mask;
+
+  /* 2. 如果任务在 WAITING 状态且等待的事件已到达 */
+  if (p_tcb->status == OSEE_TASK_WAITING &&
+      (p_tcb->event_mask & p_tcb->wait_mask) != 0) {
+    /* 3. 唤醒任务：转入就绪队列 */
+    p_tcb->status = OSEE_TASK_READY;
+    /* 4. 从等待状态恢复到调度 */
+    osEE_scheduler_task_unblocked(p_tdb);
+  }
+  return E_OK;
+}
+
+/* WaitEvent 实现 */
+StatusType WaitEvent(EventMaskType Mask) {
+  /* 1. 保存等待掩码 */
+  p_tcb->wait_mask = Mask;
+
+  /* 2. 检查事件是否已到达 */
+  if ((p_tcb->event_mask & p_tcb->wait_mask) != 0) {
+    /* 事件已到达，不需阻塞 */
+    return E_OK;
+  }
+
+  /* 3. 阻塞当前任务 */
+  p_tcb->status = OSEE_TASK_WAITING;
+  osEE_scheduler_task_block_current();
+
+  /* 4. 切换到下一个就绪任务 */
+  osEE_hal_save_ctx_and_restore_ctx(...);
+  return E_OK;
+}
+```
+
+**事件同步流程图**：
+
+<MermaidDiagram chart={`sequenceDiagram
+    participant T1 as Task_高优先级
+    participant T2 as Task_低优先级(扩展)
+    participant RQ as 就绪队列
+
+    Note over T2: WaitEvent(Mask_A)
+    T2->>T2: wait_mask = Mask_A
+    T2->>T2: event_mask & wait_mask == 0?
+    T2->>RQ: 任务阻塞,从就绪队列移除
+    T2-->>T2: 状态 = WAITING
+
+    Note over T1: 运行中
+    T1->>T2: SetEvent(T2, Mask_A)
+    T2->>T2: event_mask |= Mask_A
+    T2->>T2: event_mask & wait_mask != 0
+    T2->>RQ: 任务唤醒,加入就绪队列
+    T2-->>T2: 状态 = READY
+
+    Note over T2: 调度器切换回T2执行
+`} />
+
+### 3.5 中断管理（ISR Cat1 / Cat2）
+
+#### 3.5.1 规范要求
+
+AUTOSAR OS 区分两类中断服务程序：
+
+| 特性 | ISR Category 1 | ISR Category 2 |
+|------|---------------|----------------|
+| OS 管理 | 不受 OS 管理 | 受 OS 管理 |
+| 优先级 | 不可被 OS 调度 | 有虚拟优先级 |
+| 资源保护 | 不能使用 OS 服务 | 可使用 OS 服务 |
+| 响应延迟 | 最低（直接硬件向量） | 略高（OS 封装入口/出口） |
+| 用途 | 极端时间关键的外设 | 一般外设中断 |
+
+#### 3.5.2 ERIKA3 的 ISR2 优先级映射
+
+ERIKA3 将 ISR2 的虚拟优先级映射到 TriCore 硬件优先级：
+
+```
+虚拟优先级范围:
+  0           = 空闲任务
+  1..127      = 普通任务
+  128..254    = ISR2 虚拟优先级
+  255         = 特殊（不重新启用中断）
+
+硬件映射:
+  ISR虚拟优先级 → 硬件优先级 = 虚拟优先级 - OSEE_MAX_TASK_PRIO
+  即 ISR2 的虚拟优先级 128..254 映射到硬件优先级 1..127
+```
+
+```c
+/* ee_hal_internal.h - 优先级设置 */
+static inline void osEE_hal_set_ipl(TaskPrio prio) {
+  uint32_t ier_mask;
+  uint32_t icr_val;
+
+  if (prio == 255) {
+    /* 特殊优先级：完全禁用中断 */
+    osEE_hal_disableIRQ();
+    return;
+  }
+
+  if (prio > OSEE_MAX_TASK_PRIO) {
+    /* ISR2 优先级：映射到硬件中断优先级 */
+    icr_val = (uint32_t)(prio - OSEE_MAX_TASK_PRIO);
+  } else {
+    /* 任务优先级：开启所有中断 */
+    icr_val = 0;
+  }
+  /* 写入 ICR.CCPN 寄存器 */
+  osEE_tc_set_icr(icr_val);
+}
+```
+
+#### 3.5.3 ISR2 入口/出口封装
+
+ERIKA3 为每个 ISR2 生成封装函数：
+
+```c
+/* ISR2 声明宏 (pkg/arch/tricore/ee_hal_internal.h) */
+#define OSEE_ISR2_DECLARE(isr_name, isr_prio, isr_handler)  \
+  void isr_name##_entry(void) {                              \
+    osEE_isr2_entry(isr_prio);                               \
+    isr_handler();                                            \
+    osEE_isr2_exit(isr_prio);                                \
+  }
+
+/* ISR2 入口 */
+void osEE_isr2_entry(TaskPrio isr_prio) {
+  OsEE_CCB *p_ccb = osEE_get_curr_core()->p_ccb;
+  /* 1. 保存当前中断嵌套计数 */
+  p_ccb->isr_nesting++;
+  /* 2. 设置 ISR2 上下文 */
+  p_ccb->os_context = OSEE_TASK_ISR2_CTX;
+  /* 3. 提升当前优先级到 ISR2 的虚拟优先级 */
+  osEE_hal_set_ipl(isr_prio);
+}
+
+/* ISR2 出口 */
+void osEE_isr2_exit(TaskPrio isr_prio) {
+  OsEE_CCB *p_ccb = osEE_get_curr_core()->p_ccb;
+  /* 1. 恢复中断嵌套计数 */
+  p_ccb->isr_nesting--;
+  /* 2. 恢复上一个上下文 */
+  p_ccb->os_context = /* 之前保存的上下文 */;
+  /* 3. 恢复优先级 */ 
+  osEE_hal_set_ipl(/* 之前保存的优先级 */);
+  /* 4. 检查是否需要重新调度 */
+  osEE_scheduler_task_preemption_point();
+}
+```
+
+### 3.6 Schedule Table
+
+#### 3.6.1 规范要求
+
+Schedule Table 是 AUTOSAR OS 对 OSEK 的扩展，提供精确定时的周期性动作调度：
+
+- 由若干 **Expiry Point** 组成，每个 Expiry Point 有一个偏移量
+- 每个 Expiry Point 可以触发多个动作（ActivateTask / SetEvent）
+- 支持三种同步方式：无同步、隐式同步、显式同步
+- 支持 NextScheduleTable 实现无缝切换
+
+<MermaidDiagram chart={`graph LR
+    subgraph ScheduleTable_ST[调度表 ST_1]
+        EP1[EP@10ms<br>ActivateTask(T1)]
+        EP2[EP@20ms<br>ActivateTask(T2)]
+        EP3[EP@30ms<br>SetEvent(T3, EV1)]
+        EP4[EP@40ms<br>ActivateTask(T1)]
+    end
+    CNT[Counter<br>SystemTimer] -->|驱动| EP1 --> EP2 --> EP3 --> EP4
+    EP4 -->|周期=40ms<br>重新开始| EP1
+`} />
+
+#### 3.6.2 ERIKA3 实现
+
+```c
+/* 调度表描述符块 */
+struct OsEE_SchedTabDB_tag {
+  OsEE_SchedTabCB *  p_schedtab_cb;      /* 控制块 */
+  OsEE_CounterDB *   p_counter_db;       /* 关联计数器 */
+  OsEE_action *      p_action_array;     /* 动作数组 */
+  TickType *          p_offset_array;     /* 各到期点偏移 */
+  TickType             length;             /* 调度表总长度 */
+  OsEE_st_sync_t      sync_strategy;      /* NONE/IMPLICIT/EXPLICIT */
+  TickType             precision;          /* 同步精度容差 */
+};
+
+/* 调度表控制块 */
+struct OsEE_SchedTabCB_tag {
+  OsEE_trigger_status status;     /* 当前状态 */
+  TickType            expiry_point;/* 当前到期点 */
+  TickType            deviation;   /* 同步偏差(显式同步) */
+};
+```
+
+---
+
+## 4. TriCore TC38x 平台适配
+
+### 4.1 TriCore 架构特性
+
+Infineon AURIX TC38x 是一款多核汽车级 MCU，具有以下关键特性：
+
+| 特性 | 描述 |
+|------|------|
+| 架构 | 32-bit TriCore (V1.6E) |
+| 核心数 | 3 个 TriCore + 1 个 Checker Core |
+| 主频 | 最高 300 MHz |
+| CSA | 硬件上下文保存区（Context Save Area） |
+| 中断 | SRC（Service Request Node）架构，每外设独立中断请求节点 |
+| 保护 | 优先级 Ceiling + MPU + Watchdog |
+| 存储 | 3.5MB SRAM + 16MB Flash |
+
+**TriCore 关键寄存器**：
+
+| 寄存器 | 功能 | ERIKA3 用途 |
+|--------|------|-------------|
+| `ICR` (Interrupt Control) | 全局中断控制 | 中断优先级管理、中断禁用/启用 |
+| `PCXI` (Previous Context Info) | 指向上级上下文 | CSA 链式管理 |
+| `FCX` (Free Context List Head) | 空闲 CSA 链表头 | 上下文空间分配 |
+| `SRC` (Service Request Node) | 外设中断请求 | ISR2 中断路由 |
+| `CSFR` (Core Special Function Reg) | 核心特殊功能 | 系统配置和控制 |
+| `PSW` (Program Status Word) | 程序状态 | 调用深度计数、中断使能 |
+
+### 4.2 CSA 上下文保存与恢复
+
+TriCore 使用硬件 CSA（Context Save Area）机制进行上下文保存：
+
+<MermaidDiagram chart={`graph TD
+    subgraph CSA链式结构
+        CSA1[CSA: 上层上下文<br>D0-D7, A2-A7, A11, PCXI, PSW] -->|PCXI指向| CSA2[CSA: 中层上下文<br>D8-D15, A8-A15, A10, A12-A15]
+    end
+    subgraph TriCore寄存器
+        PCXI[PCXI: 指向当前上下文]
+        FCX[FCX: 空闲CSA链表头]
+    end
+    PCXI --> CSA1
+    FCX --> FREE[空闲CSA链表]
+
+    style CSA1 fill:#E3F2FD
+    style CSA2 fill:#E8F5E9
+`} />
+
+**ERIKA3 的 CSA 管理**（`pkg/arch/tricore/ee_tc_ctx.c`）：
+
+```c
+/* 分配上下文空间 */
+void osEE_tc_alloca_ctx(OsEE_TDB *p_tdb) {
+  OsEE_SCB *p_scb = &p_tdb->hdb.scb;
+  /* 在 CSA 链表中分配新的上下文节点 */
+  p_scb->p_csa_link = osEE_tc_csa_alloc();
+  p_scb->p_csa_link->pcxi = 0;  /* 终止链 */
+}
+
+/* 保存当前上下文 */
+void osEE_tc_save_ctx(OsEE_TDB *p_from, OsEE_TDB *p_to) {
+  OsEE_SCB *p_from_scb = &p_from->hdb.scb;
+  /* 保存当前 PCXI 和返回地址到新 CSA */
+  p_from_scb->p_csa_link->pcxi = osEE_tc_csa_get_pcxi();
+  p_from_scb->p_csa_link->ra    = p_from_scb->ra_save;
+}
+
+/* 恢复上下文 */
+void osEE_hal_restore_ctx(OsEE_TDB *p_tdb) {
+  OsEE_SCB *p_scb = &p_tdb->hdb.scb;
+  /* 设置 PCXI 指向恢复目标的 CSA */
+  osEE_tc_csa_set_pcxi(p_scb->p_csa_link->pcxi);
+  /* 设置返回地址 */
+  p_scb->ra = p_scb->p_csa_link->ra;
+}
+```
+
+**上下文切换完整流程**：
+
+<MermaidDiagram chart={`sequenceDiagram
+    participant TaskA as Task_A(低优先级)
+    participant HAL as HAL
+    participant TaskB as Task_B(高优先级)
+
+    Note over TaskA: 正在运行
+    TaskA->>HAL: 中断产生<br>osEE_hal_save_ctx_and_restore_ctx()
+    HAL->>HAL: 1. 保存 Task_A CSA 链
+    HAL->>HAL: 2. 调用svlcx保存上层上下文
+    HAL->>HAL: 3. 为 Task_A 分配新 SN
+    HAL->>HAL: 4. 将 Task_A 设为 READY
+    HAL->>HAL: 5. 从就绪队列取出 Task_B
+    HAL->>TaskB: 6. 恢复 Task_B 上下文
+    Note over TaskB: 开始运行
+
+    TaskB->>HAL: TerminateTask()
+    HAL->>HAL: 1. 释放 Task_B 的 CSA
+    HAL->>HAL: 2. 调度器选择就绪队列最高优先级
+    HAL->>TaskA: 3. 恢复 Task_A 上下文
+    Note over TaskA: 继续运行
+`} />
+
+### 4.3 中断控制与 SRC 配置
+
+**Service Request Node (SRC) 配置**：
+
+TC38x 的每个中断源都有独立的 SRC 寄存器：
+
+```c
+/* SRC 基地址 */
+#define OSEE_TC_SRC_BASE  0xF0038000U
+
+/* SRC 寄存器宏 (ee_hal_internal.h) */
+#define OSEE_TC_SRC_REG(base, offset)  (*(volatile uint32_t *)((base) + (offset)))
+
+/* 设置 SRC 优先级 */
+#define OSEE_TC_SRC_SET_PRIO(src, prio)   \
+  ((src) = ((src) & ~0xFF00U) | ((prio) << 8U))
+
+/* 使能/禁用 SRC */
+#define OSEE_TC_SRC_ENABLE(src)   ((src) |= (1U << 11U))
+#define OSEE_TC_SRC_DISABLE(src)  ((src) &= ~(1U << 11U))
+
+/* 设置 SRC 服务请求目标核心 (TOS) - TC3nx 3-bit vs TC2x 2-bit */
+#define OSEE_TC_SRC_SET_TOS(src, tos)  \
+  ((src) = ((src) & ~(0x7U << 12U)) | ((tos) << 12U))
+
+/* 设置/清除/读取 SRC 挂起标志 */
+#define OSEE_TC_SRC_SET_REQUEST(src) ((src) |= (1U))
+#define OSEE_TC_SRC_CLEAR_REQUEST(src) ((src) &= ~(1U))
+```
+
+**OIL 配置中的 ISR2 声明**：
+
+```
+ISR Can0_Tx {
+  CATEGORY  = 2;                    /* ISR Category 2 */
+  SOURCE    = "CANINT0";            /* SRC 中断源名称 */
+  HANDLER   = "CANSR0_ISR";        /* 中断处理函数名 */
+  PRIORITY  = 3;                    /* ISR2 虚拟优先级 */
+};
+```
+
+### 4.4 多核 HAL 适配
+
+**核心间同步**（`pkg/arch/tricore/ee_tc_hal_mc.c`）：
+
+```c
+/* 多核启动 */
+void osEE_cpu_startos(CoreIdType core_id) {
+  /* 1. 核间同步屏障 */
+  osEE_barrier_wait(&osEE_kernel_barrier, osEE_get_core_mask(core_id));
+  /* 2. 初始化本核的 CCB */
+  osEE_ccb_init(core_id);
+  /* 3. 通知主核本核就绪 */
+  osEE_intercore_notify(core_id);
+}
+
+/* 多核关机 */
+void osEE_shutdown_os(StatusType error) {
+  /* 1. 关闭本核中断 */
+  osEE_hal_disableIRQ();
+  /* 2. 设置关机状态 */
+  osEE_get_ccb()->os_status = KERNEL_SHUTDOWN;
+  /* 3. 通知所有核关机 */
+  osEE_intercore_broadcast_shutdown();
+  /* 4. 等待所有核确认 */
+  osEE_barrier_wait(&osEE_shutdown_barrier, OSEE_CORE_MASK_ALL);
+}
+```
+
+---
+
+## 5. 实战：从 OIL 配置到任务运行
+
+### 5.1 OIL 配置文件（conf.oil）
+
+以下完整示例来自 ERIKA3 TC38x 的 CAN MCAL 示例，展示了如何配置一个完整的 AUTOSAR OS 应用：
+
+```
+CPU mySystem {
+  OS myOs {
+    /* 编译选项 */
+    EE_OPT = "OS_EE_APPL_BUILD_DEBUG";
+    EE_OPT = "OSEE_DEBUG";
+    EE_OPT = "OSEE_BYPASS_CLOCK_CONFIGURATION";
+
+    /* 链接选项 */
+    LDFLAGS = "-Wl,--gc-sections";
+
+    /* 调度配置 */
+    USERESSCHEDULER = FALSE;         /* 使用优先级调度，非用户调度 */
+
+    CPU_DATA = TRICORE {
+      MULTI_STACK = TRUE;             /* 多栈支持（扩展任务必需） */
+      COMPILER = GCC { MINIMAL_OPTS = TRUE; };
+      IDLEHOOK = TRUE { HOOKNAME = "idle_hook"; };  /* 空闲钩子 */
+      CPU_CLOCK = 80.0;              /* 80 MHz CPU 时钟 */
+    };
+
+    MCU_DATA = TC27X {
+      DERIVATIVE = "tc277tf";
+      REVISION = "D";
+    };
+
+    /* 库配置 - ISAR MCAL */
+    LIB = ISAR_MCAL {
+      VERSION = "6.0.0";
+      STAND_ALONE = TRUE;            /* 独立模式(不依赖完整BSW) */
+      MCU_DRIVER = TRUE;             /* MCU 驱动 */
+      PORT_DRIVER = TRUE;            /* PORT 驱动 */
+      IRQ_DRIVER = TRUE;             /* 中断驱动 */
+      CAN_DRIVER = TRUE;             /* CAN 驱动 */
+      USE_DET = TRUE;                /* 默认错误跟踪 */
+      DIO_DRIVER = TRUE;             /* DIO 驱动(用于LED) */
+    };
+
+    /* 一致性类 */
+    KERNEL_TYPE = OSEK { CLASS = BCC1; };
+  };
+
+  /* 应用代码 */
+  APPDATA myApp {
+    APP_SRC = "code.c";
+    APP_SRC = "CanIf_Cbk.c";
+  };
+
+  /* 硬件计数器 */
+  COUNTER SystemTimer {
+    MINCYCLE = 1;
+    MAXALLOWEDVALUE = 65535;       /* 16-bit 计数值 */
+    TICKSPERBASE = 1;
+    TYPE = HARDWARE {
+      SYSTEM_TIMER = TRUE;          /* 系统定时器 */
+      PRIORITY = 1;                 /* 定时器中断优先级 */
+      DEVICE = "STM_SR0";           /* System Timer Module */
+    };
+    SECONDSPERTICK = 0.001;         /* 1ms tick */
+  };
+
+  /* 报警 - 周期激活任务 */
+  ALARM AlarmTask1 {
+    COUNTER = SystemTimer;
+    ACTION = ACTIVATETASK { TASK = Task1; };
+    AUTOSTART = TRUE { ALARMTIME = 10; CYCLETIME = 10; };
+    /* 10ms 周期激活 Task1 */
+  };
+
+  ALARM AlarmTask2 {
+    COUNTER = SystemTimer;
+    ACTION = ACTIVATETASK { TASK = Task2; };
+    AUTOSTART = TRUE { ALARMTIME = 500; CYCLETIME = 500; };
+    /* 500ms 周期激活 Task2 */
+  };
+
+  /* 基本任务定义 */
+  TASK Task1 {
+    PRIORITY = 1;                   /* 优先级 1 */
+    SCHEDULE = FULL;                /* 全抢占式 */
+  };
+
+  TASK Task2 {
+    PRIORITY = 2;                   /* 优先级 2 */
+    SCHEDULE = FULL;                /* 全抢占式 */
+  };
+
+  /* ISR Category 2 定义 */
+  ISR Can0_Tx {
+    CATEGORY = 2;                   /* ISR Category 2 */
+    SOURCE = "CANINT0";             /* CAN 发送中断源 */
+    HANDLER = "CANSR0_ISR";
+    PRIORITY = 3;                   /* ISR2 优先级 */
+  };
+
+  ISR Can0_Rx {
+    CATEGORY = 2;
+    SOURCE = "CANINT4";             /* CAN 接收中断源 */
+    HANDLER = "CANSR4_ISR";
+    PRIORITY = 4;
+  };
+};
+```
+
+### 5.2 应用代码（code.c）
+
+```c
+#include "ee.h"          /* ERIKA3 主头文件，包含所有 OS API */
+
+/* 任务声明 */
+DeclareTask(Task1);
+DeclareTask(Task2);
+
+/* 全局变量 */
+OsEE_reg volatile task1_fired, task1_ended;
+OsEE_reg volatile task2_fired, task2_ended;
+
+int main(void) {
+  /* === 硬件初始化（在 StartOS 之前） === */
+  Mcu_Init(&Mcu_ConfigRoot[0]);            /* MCU 初始化：时钟、Flash 等待等 */
+  Port_Init(&Port_ConfigRoot[0]);           /* PORT 初始化：引脚复用、方向等 */
+  Dio_Init(&Dio_ConfigRoot[0]);             /* DIO 初始化：LED 等 */
+  Can_17_MCanP_Init(&Can_17_MCanP_ConfigRoot[0]); /* CAN 初始化 */
+
+  Mcu_InitClock(0);                        /* 配置 PLL 锁相环 */
+  while (Mcu_GetPllStatus() != MCU_PLL_LOCKED);    /* 等待 PLL 锁定 */
+  Mcu_DistributePllClock();                 /* 切换到 PLL 时钟 */
+
+  /* === 启动 AUTOSAR OS === */
+  StartOS(OSDEFAULTAPPMODE);
+
+  /* StartOS 不会返回 */
+  return 0;
+}
+
+/* === Task1: CAN 主处理任务（10ms 周期） === */
+TASK(Task1) {
+  ++task1_fired;
+  osEE_test_toggle_dio(OSEE_TEST_DIO_OUT_1);  /* 翻转 LED */
+
+  /* 首次激活时初始化 CAN 控制器 */
+  if (can_init == OSEE_CAN_MODE_NOT_INITIALIZED) {
+    can_init = OSEE_CAN_MODE_INITIALIZED;
+    Can_17_MCanP_SetControllerMode(CanController_0, CAN_T_START);
+    Can_17_MCanP_EnableControllerInterrupts(CanController_0);
+  }
+
+  /* CAN 主处理函数 */
+  Can_17_MCanP_MainFunction_Write();  /* CAN 发送主函数 */
+  Can_17_MCanP_MainFunction_Read();   /* CAN 接收主函数 */
+  Can_17_MCanP_MainFunction_Mode();   /* CAN 模式管理 */
+
+  ++task1_ended;
+  TerminateTask();  /* 标准任务终止 */
+}
+
+/* === Task2: CAN 发送任务（500ms 周期） === */
+TASK(Task2) {
+  static uint8 msg_id = 0;
+  ++task2_fired;
+
+  /* 准备 CAN 报文并发送 */
+  msg_id = (msg_id + 1) % OSEE_TEST_NUMBER_OF_CAN_MESSAGES;
+  Can_17_MCanP_Write(OSEE_TEST_CAN_HWH_TX, &PduInfo_1[msg_id]);
+
+  osEE_test_toggle_dio(OSEE_TEST_DIO_OUT_2);  /* 翻转 LED */
+  ++task2_ended;
+  TerminateTask();
+}
+
+/* === 空闲钩子函数 === */
+void idle_hook(void) {
+  /* 栈监控 - 检测栈溢出 */
+  OsEE_addr volatile curr_sp = osEE_get_SP();
+  static OsEE_addr main_sp = 0;
+  if (main_sp == 0) {
+    main_sp = curr_sp;
+  } else if (main_sp != curr_sp) {
+    OSEE_BREAK_POINT();  /* 栈指针变化异常！ */
+  }
+}
+```
+
+### 5.3 编译与构建流程
+
+<MermaidDiagram chart={`graph LR
+    OIL[conf.oil<br>OIL配置文件] -->|RT-Druid/OIL解析器| GEN[生成的源码<br>ee_kernel_cfg.c/h]
+    APP[code.c<br>应用代码] --> GCC[TriCore GCC<br>交叉编译器]
+    GEN --> GCC
+    KERNEL[ERIKA内核<br>pkg/kernel/] --> GCC
+    ARCH[架构适配<br>pkg/arch/tricore/] --> GCC
+    MCAL[ISAR MCAL<br>contrib/infineon/] --> GCC
+    GCC --> ELF[可执行文件<br>.elf]
+    ELF --> HEX[Hex 文件<br>烧录格式]
+
+    style OIL fill:#FFF9C4
+    style GEN fill:#E8F5E9
+    style ELF fill:#E3F2FD
+    style HEX fill:#FCE4EC
+`} />
+
+**构建命令**：
+
+```bash
+# 设置环境变量
+export EE_REPO=/path/to/erika3-tc38x
+export TRICORE_GCC=/path/to/tricore-gcc
+
+# 进入示例目录
+cd contrib/infineon/examples/tricore_isar_mcal_can
+
+# 构建
+make -f makefile build
+```
+
+### 5.4 运行时调度时序图
+
+以下展示了 TC38x 上 CAN 示例的典型调度时序：
+
+<MermaidDiagram chart={`gantt
+    title ERIKA3 on TC38x - CAN 示例调度时序
+    dateFormat X
+    axisFormat %Lms
+
+    section SystemTimer
+    Counter Increment (1ms)    :0, 1000
+
+    section ISR Can0_Rx
+    CAN 接收中断处理           :crit, 300, 450
+
+    section Task2 (Prio=2)
+    CAN 报文发送               :500, 5500
+
+    section Task1 (Prio=1)
+    CAN 主处理                 :1000, 2500
+    CAN 主处理(下一个周期)      :11000, 12500
+
+    section Idle Hook
+    空闲/栈监控                 :3000, 10000
+`} />
+
+---
+
+## 6. 多核调度与扩展
+
+### 6.1 多核架构
+
+ERIKA3 支持 AUTOSAR OS 的多核扩展：
+
+<MermaidDiagram chart={`graph TB
+    subgraph Core_0[Core 0 - 主核]
+        CDB0[CDB/CCB<br>Per-Core Data]
+        T0[Task_A<br>Prio=5]
+        T1[Task_B<br>Prio=3]
+        RQ0[Ready Queue]
+    end
+
+    subgraph Core_1[Core 1 - 从核]
+        CDB1[CDB/CCB<br>Per-Core Data]
+        T2[Task_C<br>Prio=4]
+        T3[Task_D<br>Prio=2]
+        RQ1[Ready Queue]
+    end
+
+    subgraph KDB[Global Kernel Data]
+        KCB[KCB<br>Global Control]
+        GQ[Global Ready Queue]
+        LOCK[Global Spinlock]
+    end
+
+    CDB0 --> KDB
+    CDB1 --> KDB
+
+    style Core_0 fill:#E3F2FD
+    style Core_1 fill:#E8F5E9
+    style KDB fill:#FFF9C4
+`} />
+
+**两种多核调度策略**：
+
+| 策略 | 描述 | 适用场景 |
+|------|------|---------|
+| **Partitioned** | 每核独立就绪队列，任务绑定到指定核 | 低延迟、可预测性要求高 |
+| **Global** | 全局就绪队列，任务可在核间迁移 | 负载均衡、利用率优先 |
+
+### 6.2 自旋锁（Spinlock）
+
+```c
+/* 自旋锁 API（AUTOSAR OS 多核扩展） */
+StatusType GetSpinlock(SpinlockIdType SpinlockID);
+StatusType ReleaseSpinlock(SpinlockIdType SpinlockID);
+StatusType TryToGetSpinlock(SpinlockIdType SpinlockID, TryToGetSpinlockType *Success);
+
+/* ERIKA3 实现 */
+StatusType GetSpinlock(SpinlockIdType SpinlockID) {
+  OsEE_MDB *p_mdb = &kdb->p_spinlock_mdb_array[SpinlockID];
+  
+  /* 1. 自旋等待直到锁可用 */
+  while (osEE_hal_test_and_set(&p_mdb->mcb.lock) != 0) {
+    /* 自旋 */ 
+  }
+  
+  /* 2. 记录锁持有信息 */
+  p_mdb->mcb.p_owner = osEE_get_curr_tdb();
+  p_mdb->mcb.p_next = p_tcb->p_last_m;
+  p_tcb->p_last_m = &p_mdb->mcb;
+  
+  return E_OK;
+}
+```
+
+### 6.3 核间通信
+
+```c
+/* 启动从核 */
+StatusType StartCore(CoreIdType CoreID) {
+  /* 1. 初始化目标核的 CDB */
+  /* 2. 通过 AURIX Inter-Core 通信机制发送启动信号 */
+  /* 3. 等待目标核确认 */
+  osEE_cpu_startos(CoreID);
+  return E_OK;
+}
+
+/* 关闭所有核 */
+StatusType ShutdownAllCores(void) {
+  /* 1. 通知所有核进入关机 */
+  /* 2. 使用屏障同步等待 */
+  osEE_barrier_wait(&osEE_shutdown_barrier, OSEE_CORE_MASK_ALL);
+}
+```
+
+---
+
+## 7. 总结与参考
+
+### 7.1 ERIKA3 架构优势总结
+
+| 维度 | 特性 | 实现方式 |
+|------|------|---------|
+| **可配置性** | ROM/RAM 开销可裁剪 | DB/CB 分离，`OSEE_HAS_*` 宏控制特性 |
+| **一致性类** | BCC1/BCC2/ECC1/ECC2 | OIL 配置，运行时可通过 `KERNEL_TYPE` 切换 |
+| **多核** | Partitioned + Global 调度 | Per-Core CDB/CCB + Global KDB/KCB |
+| **确定性** | O(1) 调度（多队列位图） | `OSEE_RQ_MULTIPLEQUEUE` 配置 |
+| **平台适配** | CSA 原生上下文管理 | TriCore HAL 充分利用硬件 CSA |
+| **MCAL 集成** | ISAR MCAL 支持 | contrib/infineon 适配层 |
+| **双许可** | GPL + 商业 | 灵活满足不同场景 |
+
+### 7.2 关键文件速查
+
+| 文件 | 路径 | 作用 |
+|------|------|------|
+| `ee_api.h` | `pkg/kernel/oo/` | API 总入口 |
+| `ee_api_types.h` | `pkg/kernel/oo/` | 所有 AUTOSAR OS 类型定义 |
+| `ee_oo_api_osek.h` | `pkg/kernel/oo/` | OSEK/AUTOSAR OS 服务声明 |
+| `ee_kernel_types.h` | `pkg/kernel/oo/` | 内核核心数据结构 |
+| `ee_kernel.h` | `pkg/kernel/oo/` | 内核内部接口 |
+| `ee_oo_api_osek.c` | `pkg/kernel/oo/` | 服务实现 |
+| `ee_oo_kernel.c` | `pkg/kernel/oo/` | 内核核心逻辑 |
+| `ee_oo_scheduler.c` | `pkg/kernel/oo/` | 调度器实现 |
+| `ee_tc_ctx.c` | `pkg/arch/tricore/` | TriCore 上下文切换 |
+| `ee_hal_internal.h` | `pkg/arch/tricore/` | TriCore HAL 内部接口 |
+| `ee_tc_hal.c` | `pkg/arch/tricore/` | TriCore HAL 实现 |
+
+### 7.3 参考资料
+
+- [ERIKA3 仓库 (TC38x)](https://github.com/wentasah/erika3-tc38x) - 本文章主要分析对象
+- [ERIKA Enterprise 官网](http://www.erika-enterprise.com) - ERIKA RTOS 官方网站
+- [AUTOSAR Classic Platform OS Specification](https://www.autosar.org/standards/classic-platform/) - AUTOSAR OS 规范
+- [OSEK/VDX OS Specification](https://www.osek-vdx.org/) - OSEK OS 原始规范
+- [Infineon AURIX TC3xx User Manual](https://www.infineon.com/cms/en/product/microcontrollers/32-bit-tricore-microcontroller/aurix-tc3xx/) - TC38x 硬件手册
+
+---
+
+> 本文基于 ERIKA3-TC38x 开源项目（GPL 许可）源码分析编写，所有代码引用均遵循原项目许可协议。AUTOSAR 是 AUTOSAR Development Partnership 的注册商标。Infineon 和 AURIX 是 Infineon Technologies AG 的商标。TriCore 是 Infineon Technologies AG 的注册商标。

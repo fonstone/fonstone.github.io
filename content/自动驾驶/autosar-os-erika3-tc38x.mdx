@@ -16,13 +16,13 @@ tags: ["AUTOSAR", "RTOS", "ERIKA3", "TriCore", "TC38x", "车载OS", "任务调�
 AUTOSAR（AUTomotive Open System ARchitecture）OS 是 AUTOSAR 经典平台（Classic Platform）的基础软件层，其核心规范来自 OSEK/VDX 标准，并在此基础上扩展了多核、调度表（Schedule Table）、自旋锁等特性。
 
 <MermaidDiagram chart={`graph TB
-    subgraph AUTOSAR CP
-        SWC[应用软件组件<br>Software Component]
-        RTE[RTE<br>运行时环境]
-        BSW[基础软件层<br>Basic Software]
-        OS[AUTOSAR OS]
-        MCU[MCU 抽象层]
-        HW[硬件]
+    subgraph autosar["AUTOSAR CP"]
+        SWC["应用软件组件 Software Component"]
+        RTE["RTE 运行时环境"]
+        BSW["基础软件层 Basic Software"]
+        OS["AUTOSAR OS"]
+        MCU["MCU 抽象层"]
+        HW["硬件"]
     end
     SWC --> RTE --> BSW --> OS --> MCU --> HW
 `} />
@@ -47,10 +47,10 @@ AUTOSAR OS 定义了四种一致性类，从简单到复杂递增：
     BCC1 -->|+多激活| BCC2
     BCC1 -->|+扩展任务| ECC1
     BCC2 -->|+扩展任务| ECC2
-    BCC1[BCC1<br>基本任务 1激活/任务]
-    BCC2[BCC2<br>基本任务 多激活/任务]
-    ECC1[ECC1<br>扩展任务 1激活/任务]
-    ECC2[ECC2<br>扩展任务 多激活/任务]
+    BCC1[BCC1<br/>基本任务 1激活/任务]
+    BCC2[BCC2<br/>基本任务 多激活/任务]
+    ECC1[ECC1<br/>扩展任务 1激活/任务]
+    ECC2[ECC2<br/>扩展任务 多激活/任务]
 `} />
 
 | 一致性类 | 基本任务 | 扩展任务 | 每任务最大激活数 |
@@ -98,26 +98,26 @@ AUTOSAR OS 定义了四种一致性类，从简单到复杂递增：
 ### 2.2 分层架构
 
 <MermaidDiagram chart={`graph TB
-    subgraph 应用层
-        APP[应用任务<br>Task1 / Task2 / ISR2]
+    subgraph app_layer["应用层"]
+        APP["应用任务 Task1 / Task2 / ISR2"]
     end
-    subgraph OS内核层
-        API[OSEK/AUTOSAR API<br>ee_oo_api_osek.c]
-        KERN[内核核心<br>ee_oo_kernel.c / ee_oo_scheduler.c]
-        SCHED[调度器<br>ee_scheduler.c]
+    subgraph os_kernel["OS内核层"]
+        API["OSEK/AUTOSAR API ee_oo_api_osek.c"]
+        KERN["内核核心 ee_oo_kernel.c / ee_oo_scheduler.c"]
+        SCHED["调度器 ee_scheduler.c"]
     end
-    subgraph HAL层
-        HAL_INT[HAL 接口<br>ee_hal.h]
-        HAL_IMPL[TriCore HAL<br>ee_tc_ctx.c / ee_tc_hal.c]
+    subgraph hal_layer["HAL层"]
+        HAL_INT["HAL 接口 ee_hal.h"]
+        HAL_IMPL["TriCore HAL ee_tc_ctx.c / ee_tc_hal.c"]
     end
-    subgraph 硬件层
-        TRICORE[AURIX TC38x<br>TriCore CPU + CSA]
-        PERIPH[外设<br>STM / SRC / PMU]
+    subgraph hw_layer["硬件层"]
+        TRICORE["AURIX TC38x TriCore CPU + CSA"]
+        PERIPH["外设 STM / SRC / PMU"]
     end
 
     APP --> API --> KERN --> SCHED --> HAL_INT --> HAL_IMPL --> TRICORE
-    APP -. ISR2 .-> HAL_IMPL
-    KERN -. Alarm/Counter .-> PERIPH
+    APP -. "ISR2" .-> HAL_IMPL
+    KERN -. "Alarm/Counter" .-> PERIPH
     TRICORE --- PERIPH
 `} />
 
@@ -254,7 +254,7 @@ AUTOSAR OS 定义了两种任务类型：
     SUSPENDED --> READY : ActivateTask()
     READY --> RUNNING : 调度器选中
     RUNNING --> READY : 被高优先级抢占
-    RUNNING --> WAITING : WaitEvent()<br>(仅扩展任务)
+    RUNNING --> WAITING : WaitEvent()<br/>(仅扩展任务)
     WAITING --> READY : SetEvent() 唤醒
     RUNNING --> SUSPENDED : TerminateTask()
     RUNNING --> SUSPENDED : ChainTask()
@@ -321,21 +321,21 @@ ERIKA3 支持两种就绪队列实现：
 **链表就绪队列（OSEE_RQ_LL）**：
 
 <MermaidDiagram chart={`graph LR
-    subgraph 优先级排序链表
-        SN3[SN:prio=5<br>Task_A] --> SN1[SN:prio=3<br>Task_B] --> SN2[SN:prio=1<br>Task_C]
+    subgraph ll["优先级排序链表"]
+        SN3["SN:prio=5&lt;br&gt;Task_A"] --> SN1["SN:prio=3&lt;br&gt;Task_B"] --> SN2["SN:prio=1&lt;br&gt;Task_C"]
     end
-    RQ_HEAD[Ready Queue Head] --> SN3
+    RQ_HEAD["Ready Queue Head"] --> SN3
 `} />
 
 **多队列就绪队列（OSEE_RQ_MULTIPLEQUEUE）**：
 
 <MermaidDiagram chart={`graph LR
-    subgraph 优先级位图
-        BM[位图: 10101000<br>prio 5,3,1]
+    subgraph bm["优先级位图"]
+        BMBIT["位图: 10101000&lt;br&gt;prio 5,3,1"]
     end
-    BM --> Q5[Queue[5]<br>Task_A]
-    BM --> Q3[Queue[3]<br>Task_B]
-    BM --> Q1[Queue[1]<br>Task_C]
+    BMBIT --> Q5["Queue[5]&lt;br&gt;Task_A"]
+    BMBIT --> Q3["Queue[3]&lt;br&gt;Task_B"]
+    BMBIT --> Q1["Queue[1]&lt;br&gt;Task_C"]
 `} />
 
 多队列实现使用优先级位图加速查找最高优先级就绪任务，时间复杂度 O(1)：
@@ -372,7 +372,7 @@ OsEE_SN * osEE_sn_priority_insert(OsEE_SN *p_head, OsEE_SN *p_sn) {
 **调度核心流程**（`ee_oo_scheduler.c`）：
 
 <MermaidDiagram chart={`flowchart TD
-    A[任务激活/事件设置<br>ActivateTask/SetEvent] --> B{当前运行任务<br>优先级 vs 新任务优先级?}
+    A[任务激活/事件设置<br/>ActivateTask/SetEvent] --> B{当前运行任务<br/>优先级 vs 新任务优先级?}
     B -->|新任务优先级更高| C[保存当前任务上下文]
     C --> D[将当前任务放入就绪队列]
     D --> E[切换到新任务]
@@ -430,10 +430,10 @@ void osEE_scheduler_task_preemption_point() {
 
 <MermaidDiagram chart={`graph LR
     CNT[计数器 Counter] -->|递增| ALM[报警 Alarm]
-    ALM -->|动作类型| ACT_TASK[激活任务<br>ACTIVATETASK]
-    ALM -->|动作类型| ACT_EVT[设置事件<br>SETEVENT]
-    ALM -->|动作类型| ACT_CB[回调函数<br>ALARMCALLBACK]
-    ALM -->|动作类型| ACT_INC[递增计数器<br>INCREMENTCOUNTER]
+    ALM -->|动作类型| ACT_TASK[激活任务<br/>ACTIVATETASK]
+    ALM -->|动作类型| ACT_EVT[设置事件<br/>SETEVENT]
+    ALM -->|动作类型| ACT_CB[回调函数<br/>ALARMCALLBACK]
+    ALM -->|动作类型| ACT_INC[递增计数器<br/>INCREMENTCOUNTER]
 `} />
 
 #### 3.2.2 ERIKA3 实现
@@ -582,11 +582,11 @@ struct OsEE_MDB_tag {
     B -->|否| E1[返回 E_OS_ID]
     B -->|是| C{资源空闲?}
     C -->|否| D{调用者是持有者?}
-    D -->|是| E1[返回 E_OS_ACCESS<br>违反IPCP]
-    D -->|否| E2[返回 E_OS_RESOURCE<br>资源已被占用]
+    D -->|是| E1[返回 E_OS_ACCESS<br/>违反IPCP]
+    D -->|否| E2[返回 E_OS_RESOURCE<br/>资源已被占用]
     C -->|是| F[保存当前优先级到 mcb.prev_prio]
     F --> G[提升优先级到 ceiling_prio]
-    G --> H[将 MCB 加入任务的锁链<br>p_last_m = &mcb]
+    G --> H[将 MCB 加入任务的锁链<br/>p_last_m = &mcb]
     H --> I[设置 mcb.p_owner = 当前TDB]
     I --> J[返回 E_OK]
 
@@ -623,10 +623,10 @@ StatusType ReleaseResource(ResourceType ResID) {
 **锁链示意图**：
 
 <MermaidDiagram chart={`graph LR
-    subgraph 任务 TCB 锁链
-        MCB1[MCB: Resource_A<br>prev_prio=2<br>ceiling=5] --> MCB2[MCB: Resource_B<br>prev_prio=5<br>ceiling=7] --> NULL[NULL]
+    subgraph tcb_chain["任务 TCB 锁链"]
+        MCB1["MCB: Resource_A prev_prio=2 ceiling=5"] --> MCB2["MCB: Resource_B prev_prio=5 ceiling=7"] --> NULL["NULL"]
     end
-    TCB[p_last_m] --> MCB1
+    TCB["p_last_m"] --> MCB1
 
     style MCB1 fill:#E3F2FD
     style MCB2 fill:#E3F2FD
@@ -825,14 +825,14 @@ Schedule Table 是 AUTOSAR OS 对 OSEK 的扩展，提供精确定时的周期�
 - 支持 NextScheduleTable 实现无缝切换
 
 <MermaidDiagram chart={`graph LR
-    subgraph ScheduleTable_ST[调度表 ST_1]
-        EP1[EP@10ms<br>ActivateTask(T1)]
-        EP2[EP@20ms<br>ActivateTask(T2)]
-        EP3[EP@30ms<br>SetEvent(T3, EV1)]
-        EP4[EP@40ms<br>ActivateTask(T1)]
+    subgraph ScheduleTable_ST["调度表 ST_1"]
+        EP1["EP@10ms ActivateTask(T1)"]
+        EP2["EP@20ms ActivateTask(T2)"]
+        EP3["EP@30ms SetEvent(T3, EV1)"]
+        EP4["EP@40ms ActivateTask(T1)"]
     end
-    CNT[Counter<br>SystemTimer] -->|驱动| EP1 --> EP2 --> EP3 --> EP4
-    EP4 -->|周期=40ms<br>重新开始| EP1
+    CNT["Counter SystemTimer"] -->|驱动| EP1 --> EP2 --> EP3 --> EP4
+    EP4 -->|周期=40ms 重新开始| EP1
 `} />
 
 #### 3.6.2 ERIKA3 实现
@@ -891,15 +891,15 @@ Infineon AURIX TC38x 是一款多核汽车级 MCU，具有以下关键特性：
 TriCore 使用硬件 CSA（Context Save Area）机制进行上下文保存：
 
 <MermaidDiagram chart={`graph TD
-    subgraph CSA链式结构
-        CSA1[CSA: 上层上下文<br>D0-D7, A2-A7, A11, PCXI, PSW] -->|PCXI指向| CSA2[CSA: 中层上下文<br>D8-D15, A8-A15, A10, A12-A15]
+    subgraph csa_chain["CSA链式结构"]
+        CSA1["CSA: 上层上下文 D0-D7, A2-A7, A11, PCXI, PSW"] -->|PCXI指向| CSA2["CSA: 中层上下文 D8-D15, A8-A15, A10, A12-A15"]
     end
-    subgraph TriCore寄存器
-        PCXI[PCXI: 指向当前上下文]
-        FCX[FCX: 空闲CSA链表头]
+    subgraph tricore_regs["TriCore寄存器"]
+        PCXI["PCXI: 指向当前上下文"]
+        FCX["FCX: 空闲CSA链表头"]
     end
     PCXI --> CSA1
-    FCX --> FREE[空闲CSA链表]
+    FCX --> FREE["空闲CSA链表"]
 
     style CSA1 fill:#E3F2FD
     style CSA2 fill:#E8F5E9
@@ -942,7 +942,7 @@ void osEE_hal_restore_ctx(OsEE_TDB *p_tdb) {
     participant TaskB as Task_B(高优先级)
 
     Note over TaskA: 正在运行
-    TaskA->>HAL: 中断产生<br>osEE_hal_save_ctx_and_restore_ctx()
+    TaskA->>HAL: 中断产生<br/>osEE_hal_save_ctx_and_restore_ctx()
     HAL->>HAL: 1. 保存 Task_A CSA 链
     HAL->>HAL: 2. 调用svlcx保存上层上下文
     HAL->>HAL: 3. 为 Task_A 分配新 SN
@@ -1221,14 +1221,14 @@ void idle_hook(void) {
 ### 5.3 编译与构建流程
 
 <MermaidDiagram chart={`graph LR
-    OIL[conf.oil<br>OIL配置文件] -->|RT-Druid/OIL解析器| GEN[生成的源码<br>ee_kernel_cfg.c/h]
-    APP[code.c<br>应用代码] --> GCC[TriCore GCC<br>交叉编译器]
+    OIL[conf.oil<br/>OIL配置文件] -->|RT-Druid/OIL解析器| GEN[生成的源码<br/>ee_kernel_cfg.c/h]
+    APP[code.c<br/>应用代码] --> GCC[TriCore GCC<br/>交叉编译器]
     GEN --> GCC
-    KERNEL[ERIKA内核<br>pkg/kernel/] --> GCC
-    ARCH[架构适配<br>pkg/arch/tricore/] --> GCC
-    MCAL[ISAR MCAL<br>contrib/infineon/] --> GCC
-    GCC --> ELF[可执行文件<br>.elf]
-    ELF --> HEX[Hex 文件<br>烧录格式]
+    KERNEL[ERIKA内核<br/>pkg/kernel/] --> GCC
+    ARCH[架构适配<br/>pkg/arch/tricore/] --> GCC
+    MCAL[ISAR MCAL<br/>contrib/infineon/] --> GCC
+    GCC --> ELF[可执行文件<br/>.elf]
+    ELF --> HEX[Hex 文件<br/>烧录格式]
 
     style OIL fill:#FFF9C4
     style GEN fill:#E8F5E9
@@ -1285,24 +1285,24 @@ make -f makefile build
 ERIKA3 支持 AUTOSAR OS 的多核扩展：
 
 <MermaidDiagram chart={`graph TB
-    subgraph Core_0[Core 0 - 主核]
-        CDB0[CDB/CCB<br>Per-Core Data]
-        T0[Task_A<br>Prio=5]
-        T1[Task_B<br>Prio=3]
-        RQ0[Ready Queue]
+    subgraph Core_0["Core 0 - 主核"]
+        CDB0["CDB/CCB Per-Core Data"]
+        T0["Task_A Prio=5"]
+        T1["Task_B Prio=3"]
+        RQ0["Ready Queue"]
     end
 
-    subgraph Core_1[Core 1 - 从核]
-        CDB1[CDB/CCB<br>Per-Core Data]
-        T2[Task_C<br>Prio=4]
-        T3[Task_D<br>Prio=2]
-        RQ1[Ready Queue]
+    subgraph Core_1["Core 1 - 从核"]
+        CDB1["CDB/CCB Per-Core Data"]
+        T2["Task_C Prio=4"]
+        T3["Task_D Prio=2"]
+        RQ1["Ready Queue"]
     end
 
-    subgraph KDB[Global Kernel Data]
-        KCB[KCB<br>Global Control]
-        GQ[Global Ready Queue]
-        LOCK[Global Spinlock]
+    subgraph KDB["Global Kernel Data"]
+        KCB["KCB Global Control"]
+        GQ["Global Ready Queue"]
+        LOCK["Global Spinlock"]
     end
 
     CDB0 --> KDB

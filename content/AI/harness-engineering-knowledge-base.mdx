@@ -1,0 +1,567 @@
+---
+title: "Harness Engineering 的下一站：以知识库为根基的 AI 工程实践"
+date: "2026-06-10"
+description: "深度拆解腾讯 AI Team 的 Harness Engineering 知识沉淀体系——从三支柱理论到五层存储架构、三级成熟度模型、团队知识共建机制、工作流与知识的双轮驱动，再到人机交互瓶颈的突破，探讨工作流为何不是终局，知识才是真正的护城河。"
+tags: ["AI", "Harness Engineering", "知识库", "Agent", "上下文工程", "知识管理", "LLM Wiki"]
+image: "/images/harness-engineering/cover.jpg"
+---
+
+> 当 Harness Engineering 成为 2026 年最热门的话题，业界争论"该用多大的模型"还是"该搭多复杂的工作流"时，腾讯 AI Team 团队提出了一个被低估的命题：**构建 Harness 工作流不是最终目的，私域和团队知识的沉淀才是真正的技术护城河**。本文基于腾讯程序员团队发布的实践文章，深度解析其知识分层架构、团队共建机制、工作流-知识双轮驱动模型，并在此基础上延伸思考——知识库该如何从零搭建，才能让 Harness 真正跑出复利效应。
+
+![Harness Engineering 与知识库架构全景](/images/harness-engineering/cover.jpg)
+
+## 一、Harness Engineering 的本质：穿缰绳而非造马
+
+2025 年末至 2026 年初，"Harness Engineering"从技术圈的概念讨论走向了工程实战。这个隐喻源自"harness"（马具）——骑师通过缰绳和马鞍**引导**马的力量走向正确方向，而非增强马本身的体能。映射到 AI 工程领域：**Harness Engineering 强调的是引导和约束 AI 模型的能力，而非提升模型本身。**
+
+来自三大标杆实践的取向各有侧重：
+
+| 实践方 | 核心关注 | 关键动作 |
+|--------|---------|---------|
+| **OpenAI — Codex** | 人机交互协议 | 零手写代码，通过精确指令协议驾驭 Agent |
+| **Cursor — Self-Driving** | 多 Agent 协同 | 背景 Agent 自动检测冲突并运行测试 |
+| **Anthropic — Claude Code** | 长时运行稳定性 | 多层记忆系统 + CLAUDE.md 约束 |
+
+这三条路径确实令人兴奋。但腾讯团队在实践中逐步意识到一个更本质的问题：
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph 表象["表层关注"]
+        A["工作流编排"]
+        B["Agent 协同"]
+        C["工具链选择"]
+    end
+    subgraph 本质["深层本质"]
+        D["领域知识沉淀"]
+        E["团队经验积累"]
+        F["认知资产复利"]
+    end
+    A --> D
+    B --> E
+    C --> F
+    style 表象 fill:#fff3e0
+    style 本质 fill:#e8f5e9
+    style D fill:#c8e6c9
+    style E fill:#c8e6c9
+    style F fill:#c8e6c9
+`} />
+
+**工作流只是管道，知识才是流过管道的活水。** 模型会迭代，工具链会更新，工作流会重构。但团队在一个特定领域积累的领域模型、架构决策、最佳实践、已知陷阱、业务流程——这些知识不会因为模型换代而失效。
+
+正如 Harness 圆桌讨论中的核心论断：
+
+> *"将来的技术护城河不在模型，而在垂直领域知识的沉淀。"*
+
+## 二、三支柱中的知识暗线
+
+Harness Engineering 的理论框架可以归结为三个支柱。但仔细审视，**知识管理本身就是 Harness 的核心能力**，而不是附属品：
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph Harness["Harness Engineering 三支柱"]
+        CE["上下文工程<br/>Context Engineering"]
+        AR["架构约束<br/>Architecture"]
+        GO["持续治理<br/>Governance"]
+    end
+    
+    CE --- CE1["长短期记忆"]
+    CE --- CE2["知识检索注入 ⭐"]
+    CE --- CE3["渐进式披露"]
+    CE --- CE4["上下文防火墙"]
+    
+    AR --- AR1["Agent 编排模式"]
+    AR --- AR2["状态机设计"]
+    AR --- AR3["降级策略"]
+    AR --- AR4["安全边界"]
+    
+    GO --- GO1["质量门禁"]
+    GO --- GO2["知识生命周期 ⭐"]
+    GO --- GO3["自动衰减 ⭐"]
+    GO --- GO4["持续进化"]
+    
+    style CE2 fill:#fff176,stroke:#f9a825
+    style GO2 fill:#fff176,stroke:#f9a825
+    style GO3 fill:#fff176,stroke:#f9a825
+`} />
+
+标注 ⭐ 的条目——知识检索注入、知识生命周期、自动衰减——都与知识管理直接相关。但在当前的热潮中，大家更多关注"工作流怎么编排""Agent 怎么协同"这些更显眼的话题，而忽略了底层的知识基础设施。
+
+这就像大家都在讨论高速公路该修几车道、立交桥该怎么设计，却忘了问：**路上跑的车（知识）从哪来？到哪去？怎么维护？**
+
+## 三、核心论点：为什么知识沉淀比工作流更重要
+
+### 3.1 工作流是"可替换的"，知识是"可累积的"
+
+今天用 16 阶段状态机编排工作流，明天可能用图结构 DAG 编排。Agent 的调度模式从串行到并行到分层级联，变化很快。但团队积累的知识——"广告预算扣减在高并发下会超扣，需用 Redis+Lua 保证原子性"——不管工作流怎么变，都有价值。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph 可替换["工作流 — 可替换"]
+        W1["16阶段状态机"] --> W2["DAG 图编排"]
+        W2 --> W3["自适应调度"]
+    end
+    subgraph 可累积["知识 — 可累积"]
+        K1["架构决策"] --> K2["已知陷阱"]
+        K2 --> K3["最佳实践"]
+        K3 --> K4["业务流程"]
+    end
+    可替换 -.->|"模型换代<br/>工作流重构"| 丢弃["❌ 重新设计"]
+    可累积 -->|"复利增长"| 积累["✅ 越积越多"]
+    style 丢弃 fill:#ffcdd2
+    style 积累 fill:#c8e6c9
+`} />
+
+Anthropic 在 2026 年 4 月发表的 [*Emotion concepts and their function in a large language model*](https://www.anthropic.com/research/emotion-concepts-function) 论文就有类似的指向——未来可能通过 SAE 探针系统实现模型的"情绪"稳定，从根本上去解决 Harness 希望解决的模型认知节省问题。这意味着 Harness 工作流本身会随模型进化而被内化，但领域知识不会。
+
+### 3.2 没有知识沉淀的工作流是"一次性"的
+
+一个典型的反模式：团队搭了很复杂的 Agent 工作流，每次需求都跑一遍全流程，但**每次都从零开始**。上一次踩过的坑下一次照踩不误；上一次做过的架构决策下一次重新推导一遍。
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph 无知识闭环["❌ 无知识闭环的工作流"]
+        R1["需求 1"] --> W1["工作流执行"]
+        W1 --> P1["产物交付"]
+        R2["需求 2"] --> W2["工作流从零开始"]
+        W2 --> P2["产物交付（踩同样的坑）"]
+        R3["需求 3"] --> W3["工作流从零开始"]
+        W3 --> P3["产物交付（再次推导同样的决策）"]
+    end
+    subgraph 有知识闭环["✅ 有知识闭环的工作流"]
+        R4["需求 1"] --> W4["工作流执行"]
+        W4 --> P4["产物交付 + 知识沉淀"]
+        P4 --> KB["知识库"]
+        R5["需求 2"] --> W5["工作流（注入知识）"]
+        KB --> W5
+        W5 --> P5["产物交付 + 新知识沉淀"]
+        P5 --> KB
+    end
+    style 无知识闭环 fill:#fff3e0
+    style 有知识闭环 fill:#e8f5e9
+    style KB fill:#c8e6c9
+`} />
+
+投入了工程成本搭建工具链，却没有让工具链变得越来越聪明——这就是**没有知识闭环的工作流**。
+
+### 3.3 知识是团队的"复利资产"
+
+知识分为三类，越高级越依赖团队实践积累：
+
+| 知识类型 | 定义 | LLM 可获取性 | 示例 |
+|---------|------|-------------|------|
+| **散点型** | 孤立的事实 | ✅ 容易 | "Spring Boot 支持 JDK 17" |
+| **因果型** | A 导致 B 的推理链 | ⚠️ 部分可以 | "高并发下 Redis 缓存穿透导致 DB 压力飙升" |
+| **时空型** | 特定场景和时间窗口下才成立的经验 | ❌ 几乎不能 | "广告系统 QPS 超 10 万时需要对预算扣减做原子化处理" |
+
+当知识库积累到成百上千条 proven（经过多项目验证）条目时，新成员、新项目都能"站在前人肩上"。**这就是知识的复利效应。**
+
+## 四、知识分层架构：五层存储 × 五种类型 × 三级成熟度
+
+这是整个体系最精致的设计——三维正交的知识体系架构：
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph dims["三个正交维度"]
+        D1["📁 存储层 — 知识在哪里？"]
+        D2["🏷️ 类型层 — 知识描述什么？"]
+        D3["📊 成熟度 — 知识多可信？"]
+    end
+    
+    D1 --- L0P["Layer 0-P<br/>个人偏好<br/>纯本地"]
+    D1 --- L0T["Layer 0-T<br/>团队约定<br/>Git 共享"]
+    D1 --- L1["Layer 1<br/>技术知识<br/>跨项目"]
+    D1 --- L2["Layer 2<br/>业务知识<br/>按领域"]
+    D1 --- L3["Layer 3<br/>项目知识<br/>随项目走"]
+    
+    D2 --- T1["model<br/>实体定义"]
+    D2 --- T2["decision<br/>架构决策"]
+    D2 --- T3["guideline<br/>推荐/禁止做法"]
+    D2 --- T4["pitfall<br/>已知风险"]
+    D2 --- T5["process<br/>业务流程"]
+    
+    D3 --- M1["draft<br/>单一来源"]
+    D3 --- M2["verified<br/>单项目验证"]
+    D3 --- M3["proven<br/>多项目验证"]
+
+    style D1 fill:#e3f2fd
+    style D2 fill:#f3e5f5
+    style D3 fill:#fff3e0
+    style L3 fill:#bbdefb
+    style L1 fill:#c8e6c9
+    style M3 fill:#fff176
+`} />
+
+### 4.1 五层存储架构
+
+| 层级 | 位置 | 范围 | 示例 |
+|-----|------|------|------|
+| **Layer 0-P** | `~/.ai-team/` | 个人偏好，纯本地 | 缩进风格、编程范式偏好 |
+| **Layer 0-T** | `team-conventions/` | 团队约定，Git 共享 | 代码规范、Commit 规范、Review 标准 |
+| **Layer 1** | `tech-wiki/` | 技术知识，跨项目 | "Optional 依赖传递陷阱"、"Spring Boot 多租户拦截器模式" |
+| **Layer 2** | `biz-wiki/{domain}/` | 业务知识，按领域 | "广告审核流程：提交→机审→人审→上线" |
+| **Layer 3** | `docs/knowledge-base/` | 项目知识，随项目走 | "本项目数据库用的是 TencentDB for MySQL 8.0" |
+
+关键设计：**知识可以"向上提升"**。Layer 3 的项目知识如果被判定为跨项目通用，会自动提升到 Layer 1 或 Layer 2。
+
+<MermaidDiagram chart={`flowchart TD
+    L3["Layer 3：项目知识<br/>maturity = draft"] --> Q1{"是否项目特有？"}
+    Q1 -->|"是"| Stay["留在 Layer 3"]
+    Q1 -->|"否"| Q2{"是否通用技术？"}
+    Q2 -->|"是"| Up1["⬆️ 提升到 Layer 1<br/>tech-wiki/"]
+    Q2 -->|"否"| Q3{"是否通用业务？"}
+    Q3 -->|"是"| Up2["⬆️ 提升到 Layer 2<br/>biz-wiki/"]
+    
+    style L3 fill:#bbdefb
+    style Up1 fill:#c8e6c9
+    style Up2 fill:#fff9c4
+    style Stay fill:#e0e0e0
+`} />
+
+### 4.2 五种知识类型
+
+遵循 MECE（互斥且完全穷尽）原则：
+
+| 类型 | 定义 | 示例 |
+|-----|------|------|
+| **model** | 实体定义、数据结构、关系图 | "广告计划包含预算/出价/投放时段三个核心字段" |
+| **decision** | 技术选型、架构决策及理由 | "选择事件驱动而非 RPC，因为广告状态变更需要解耦" |
+| **guideline** | 推荐做法(recommend) 或禁止做法(avoid) | "公共模块变更后的兼容性检查清单" |
+| **pitfall** | 已知风险、故障模式、排查步骤 | "广告预算扣减在高并发下会超扣" |
+| **process** | 业务流程、状态机、操作步骤 | "广告审核：提交→机审→人审→上线" |
+
+### 4.3 三级成熟度与自动衰减
+
+知识有生命周期，不是"写完就完了"：
+
+<MermaidDiagram chart={`flowchart LR
+    Draft["📖 draft<br/>新提取<br/>单一来源"] -->|"1个工作流<br/>成功引用"| Verified["✅ verified<br/>单项目验证"] -->|"≥2个项目<br/>验证"| Proven["🏆 proven<br/>成熟可信赖"]
+    
+    Proven -->|"12月未引用"| Verified
+    Verified -->|"6月未引用"| Draft
+    Draft -->|"持续未引用<br/>+ Lint标记"| Archived["📦 归档<br/>移出活跃索引"]
+    
+    style Draft fill:#fff3e0
+    style Verified fill:#e8f5e9
+    style Proven fill:#c8e6c9
+    style Archived fill:#e0e0e0
+`} />
+
+自动衰减机制确保知识库不会堆积过时信息——一条三年前的"最佳实践"可能因框架版本升级已经不再适用。与其让过时知识误导 Agent，不如让它自然衰减退出活跃库。这个设计借鉴了 Karpathy 在 LLM Wiki 概念中提出的 **Lint 操作**——定期识别矛盾、孤儿页、缺失交叉引用和数据缺口。
+
+## 五、团队知识库：独立 Git 仓库与共建机制
+
+### 5.1 独立仓库——知识的"单一事实来源"
+
+团队知识库是一个**独立 Git 仓库**，不寄生于任何业务项目：
+
+```
+team-knowledge.git                         ← 独立 Git 仓库
+├── knowledge-catalog.md                   ← 全景目录（Agent 查询入口）
+├── .knowledge-config.yaml                 ← 团队配置（成员、冲突策略）
+├── team-conventions/                      ← Layer 0-T: 团队约定
+│   ├── coding-standards.md
+│   └── commit-conventions.md
+├── tech-wiki/                             ← Layer 1: 技术知识
+│   ├── catalog.md                         ← 分类清单
+│   ├── patterns/TK-PAT-001.md
+│   └── anti-patterns/TK-AP-001.md
+├── biz-wiki/                              ← Layer 2: 业务知识
+│   └── {domain}/
+│       ├── catalog.md
+│       ├── entities/BK-AD-E001.md
+│       └── pitfalls/BK-AD-P001.md
+├── project-profiles/                      ← 项目画像
+└── contributions/                         ← 贡献暂存区
+    ├── pending/
+    └── conflicts/
+```
+
+为什么要独立仓库？三个理由：
+
+1. **跨项目共享**：项目 A 沉淀的知识，项目 B 自动受益
+2. **生命周期独立**：业务项目可能归档，但知识不应跟着消失
+3. **权限独立**：知识库的贡献和消费权限可以独立于代码仓库管理
+
+### 5.2 三种角色与贡献模式
+
+| 角色 | 权限 | 适用人群 |
+|-----|------|---------|
+| **maintainer** | 裁决内容冲突、审批 proven 提升 | 团队负责人、资深工程师 |
+| **contributor** | 通过工作流自动贡献（创建/验证/标记矛盾） | 正式团队成员 |
+| **reader** | 只查询/注入，不贡献 | 新成员试用期 |
+
+贡献模式借鉴了区块链的三个核心思想，以 Git 为载体：
+
+| 区块链思想 | AI Team 实现 | 机制 |
+|-----------|-------------|------|
+| 不可篡改的追加日志 | `log.md` 只追加不修改 | 每条变更记录贡献者、时间、会话哈希 |
+| 贡献可溯源 | `evidence.contributors[]` | 类似 Git blame，粒度为知识条目级 |
+| 共识机制 | maturity 多人验证提升 | draft→verified: 1 人验证; verified→proven: ≥2 人 + ≥2 项目 |
+
+### 5.3 冲突解决策略
+
+| 冲突类型 | 处理方式 |
+|---------|---------|
+| 纯新增（不同条目） | 自动合并，两条都保留 |
+| 证据追加（同条目验证） | 自动合并，evidence 数组合并去重 |
+| 成熟度提升 | 自动合并 |
+| 内容矛盾 | 写入 `contributions/conflicts/`，通知 maintainer 裁决 |
+| 成熟度冲突（一升一降） | 保留较低成熟度 + 标记 contradiction |
+
+设计理念：大多数情况可以自动处理，只有真正的内容矛盾才需要人工介入，让共建过程尽可能低摩擦。
+
+## 六、工作流如何服务于知识沉淀
+
+### 6.1 知识的完整生命周期：三通道
+
+在 AI Team 的 16 阶段状态机中，每一个阶段都与知识的流动紧密关联：
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph 冷启动["/flow-import（一次性）"]
+        I1["@doc-collector<br/>多源资料收集"] --> I2["@codebase-profiler<br/>代码画像"]
+        I2 --> I3["@knowledge-builder<br/>知识标准化"]
+        I3 --> KR["知识写入团队仓库<br/>maturity = draft"]
+    end
+    
+    subgraph 工作流["/flow-run（每次需求）"]
+        INIT["INIT: git pull<br/>知识仓库"] --> INJECT["注入查询入口<br/>三级渐进式索引"]
+        INJECT --> CONSUME["各阶段按需查询<br/>Agent 在决策点消费知识"]
+        CONSUME --> ARCHIVE["ARCHIVE: 知识提取<br/>提升判定"]
+        ARCHIVE --> L3OUT["Layer 3: 项目知识"]
+        ARCHIVE --> L1OUT["Layer 1: tech-wiki<br/>git push"]
+        ARCHIVE --> L2OUT["Layer 2: biz-wiki<br/>git push"]
+    end
+    
+    冷启动 --> 工作流
+    L1OUT & L2OUT -->|"下一个人的<br/>/flow-run 自动受益"| INIT
+    
+    style 冷启动 fill:#e1f5fe
+    style 工作流 fill:#e8f5e9
+    style ARCHIVE fill:#fff9c4
+    style KR fill:#c8e6c9
+`} />
+
+三个关键时刻：
+
+1. **INIT 阶段（知识注入）**：`git pull` 团队知识仓库，将知识全景目录注入 Agent 查询入口。新工作流自动站在前人肩上。
+2. **各阶段执行中（知识消费）**：Agent 在决策点按需查询知识库，每个阶段有独立的查询预算。
+3. **ARCHIVE 阶段（知识提取）**：`@archiver` 从全流程产物中提取知识条目——架构决策变 `decision`，踩过的坑变 `pitfall`，经验变 `guideline`。
+
+### 6.2 各阶段的知识消费
+
+| 阶段 | 查询焦点 | 重点知识类型 |
+|-----|---------|------------|
+| **ANALYSE_PRODUCT** | 业务知识 (Layer 2) + 历史需求 | model, process, pitfall |
+| **ANALYSE_TECH** | 技术知识 (Layer 1) + 归档索引 | decision, guideline(avoid), pitfall |
+| **ARCHITECT** | 架构模式 + 实体关系 | decision, model |
+| **IMPLEMENT** | 编码实践 + 团队约定 | guideline, pitfall |
+| **BUILD_VERIFY** | 反模式库 | pitfall, guideline(avoid) |
+
+为什么要限制查询预算？因为 Agent 如果无限制地读取知识库，会导致上下文膨胀——这恰恰是 Harness Engineering 要解决的核心问题之一。**精准消费而非贪婪消费。**
+
+## 七、三级渐进式索引：解决上下文膨胀
+
+传统做法是在 Agent 启动时把一堆知识"推送"给它，导致信息过载和不精准。AI Team 的设计转向**主动按需查询**：
+
+<MermaidDiagram chart={`flowchart LR
+    A["Step 1: 全景目录<br/>~50 行<br/>零成本"] --> B["Step 2: 分类清单<br/>~100-300 行<br/>低成本"]
+    B --> C["Step 3: 完整条目<br/>~50-200 行/条<br/>按需"]
+    C --> D["Step 4: 原始产物<br/>深度追溯<br/>可选"]
+    
+    A -.- A1["知识库有什么分类？<br/>每类多少条？"]
+    B -.- B1["每条知识一行摘要<br/>按 tags/applicable_phases 过滤"]
+    C -.- C1["完整知识内容<br/>背景+适用场景"]
+    D -.- D1["沿 source_references<br/>追溯原始推导"]
+    
+    style A fill:#c8e6c9
+    style B fill:#c8e6c9
+    style C fill:#fff9c4
+    style D fill:#ffe0b2
+`} />
+
+对比"一次性推送 50 条完整知识"（可能 5000-10000 行），三级索引让 Agent 用 **~50 行的成本**了解知识库全貌，上下文效率提升了一个数量级。
+
+知识引用追踪形成自动化闭环——Agent 查询知识后在输出产物中记录引用，ARCHIVE 阶段批量更新 `evidence.last_referenced`，被引用的知识 maturity 会自动提升，长期未引用的会自动衰减。
+
+## 八、突破人机交互瓶颈
+
+### 8.1 工作流的"在场依赖"问题
+
+16 阶段状态机设计得再精密，如果 Agent 在执行过程中需要人工确认——而你恰好在开会、通勤、或者吃饭——工作流就卡住了。一个典型工作日中，真正能"坐在工位操控 Agent"的时间可能不到 4 小时。
+
+<MermaidDiagram chart={`gantt
+    title 一个典型工作日 vs 改进后
+    dateFormat HH:mm
+    axisFormat %H:%M
+    
+    section 传统模式
+    站会(无法响应)          :09, 1h
+    工位操作(可用)          :10, 1.5h
+    技术评审(无法响应)      :11.5, 1h
+    午饭(无法响应)          :12.5, 1h
+    工位操作(可用)          :13.5, 2h
+    跨团队沟通(无法响应)    :15.5, 1.5h
+    通勤(无法响应)          :19, 1h
+    
+    section 改进后
+    手机扫进展              :crit, 09, 0.2h
+    工位深度操作             :10, 1.5h
+    会议间隙确认             :crit, 11.5, 0.3h
+    午休 review             :crit, 12.5, 0.3h
+    工位深度操作             :13.5, 2h
+    手机批准下一阶段         :crit, 15.5, 0.2h
+    通程启动新工作流         :crit, 19, 0.5h
+`} />
+
+### 8.2 解法：远程操控 + 跨设备接管
+
+腾讯团队的方案是引入 Hapi 内网版：**在办公网下通过手机远程接管运行在开发机上的 AI 编程会话**。
+
+核心能力矩阵：
+
+| 能力 | 说明 | 对 Harness 的意义 |
+|-----|------|-----------------|
+| 跨设备会话接管 | 手机/平板/电脑均可接管同一 Agent 会话 | 工作流不因设备切换而中断 |
+| 24 小时待机 | 开发机上的 Agent 持续运行 | 工作流可以 7×24 小时流转 |
+| PWA 原生体验 | 安装到桌面后像原生 App | 降低远程操控的使用门槛 |
+| 多助手切换 | 支持 Codebuddy/Codex/Gemini 等 | 适配不同 Agent 引擎的工作流 |
+| 自主模式 | YOLO 模式让 Agent 自主执行 | 减少人工确认频率 |
+
+### 8.3 工作流不中断 ≠ 知识闭环完整
+
+由于 Harness 工作流采用"文件系统即状态机"的设计，**暂停本身不会丢失任何进度**——所有阶段产物和状态都持久化在文件中。但暂停过久带来的是**效率和时效性**问题：
+
+1. **交付周期拉长**：从 1 天变成 3 天，工作流在"等人"
+2. **知识沉淀时效性下降**：ARCHIVE 阶段依赖流程完整走完，流程卡得越久，新知识沉淀越慢
+3. **碎片时间浪费**：会议间隙的 5 分钟、通勤的 30 分钟本可以推进工作流
+
+远程操控让碎片时间被利用——工作流可以更紧凑地走完全流程，从 INIT 到 ARCHIVE，大幅加速知识沉淀闭环的流转。
+
+> **好的 Harness 工程不仅要设计"Agent 怎么跑"，还要设计"人怎么随时参与"。**
+
+具体的架构启示：
+- **状态持久化**：工作流状态存在文件中，不依赖内存
+- **断点恢复**：每个阶段入口和出口有明确的持久化产物
+- **异步审批**：人工确认节点设计为异步模式
+- **通知触达**：关键节点通过企业微信等渠道主动推送
+
+## 九、知识库从零搭建：实战路径
+
+基于以上分析，我们可以提炼出一个可操作的知识库搭建路径：
+
+### 9.1 冷启动——从隐性到显性
+
+最大的挑战不是设计架构，而是让已有项目的隐性知识显性化。知识散落在 Wiki、JIRA 评论、聊天记录、甚至团队成员的脑子里。
+
+推荐做法：
+
+<MermaidDiagram chart={`flowchart LR
+    S1["多源收集<br/>Git/TAPD/iWiki<br/>本地文档/口述"] --> S2["渐进导入<br/>所有知识初始<br/>maturity = draft"]
+    S2 --> S3["断点恢复<br/>import-state.json<br/>持久化进度"]
+    S3 --> S4["工作流验证<br/>后续 flow-run<br/>逐步提升"]
+    
+    style S1 fill:#e1f5fe
+    style S2 fill:#e8f5e9
+    style S3 fill:#fff3e0
+    style S4 fill:#e8f5e9
+`} />
+
+不追求一次性完美。所有导入知识初始 confidence 为 0.5-0.6（draft），通过后续工作流的实际使用逐步验证提升。
+
+### 9.2 知识膨胀治理
+
+知识库不能只进不出。Lint 机制定期巡检：
+
+| 检查项 | 处理方式 |
+|-------|---------|
+| 索引不一致 | 自动修复 |
+| 孤儿条目（无引用、无验证） | 降级为 draft |
+| 矛盾检测（同主题相反结论） | 标记冲突，等待 maintainer 裁决 |
+| 过时检测（6 月未引用的 draft） | 自动归档 |
+| 重复/相似条目 | 标记合并候选 |
+| 成熟度衰减 | 按规则自动降级 |
+
+Lint 触发时机：每完成 10 个工作流自动触发、`/knowledge lint` 手动触发、连续 30 天未执行时下次 `/flow-run` 启动时提醒。
+
+### 9.3 Big Model vs Big Harness——务实立场
+
+**这不是非此即彼的选择，而是要找到适合你团队的平衡点：**
+
+- 模型能力提升是大势所趋，投在知识工程上的架构应该对模型能力提升保持**开放**——当模型更强时，同样的知识可以被更好地利用
+- 但模型能力提升**不能替代**领域知识——再强的模型也不知道你业务系统里有哪些隐藏的坑
+- **知识工程的投入是确定性回报**：每沉淀一条 proven 知识，所有后续工作流都受益；模型能力提升的回报是概率性的
+
+### 9.4 "文件即状态"到"知识即资产"
+
+AI Team 的设计哲学：**文件系统即状态机**。所有状态、产物、知识都以 Markdown 文件形式存在，没有数据库、没有独立平台。这不是技术妥协，而是刻意选择：
+
+| 特性 | 文件系统方案的收益 |
+|-----|-----------------|
+| **可见性** | Markdown 人可以直接阅读、编辑、审查 |
+| **可版本化** | Git 管理天然有版本历史 |
+| **可迁移性** | 不依赖特定平台或服务，换工具链时知识不丢失 |
+| **IDE 原生** | `.codebuddy/` 目录驱动，被 IDE 原生识别，零配置成本 |
+
+## 十、与 LLM Wiki 的异同
+
+腾讯 AI Team 的知识库体系与 Karpathy 的 LLM Wiki 模式（本站 [另一篇文章](/knowledge/ai/llm-wiki-knowledge-base) 有详细解读）有深刻的联系，也有重要差异：
+
+| 维度 | LLM Wiki | AI Team 知识库 |
+|-----|----------|--------------|
+| **定位** | 个人知识管理工具 | 团队知识共享资产 |
+| **结构** | 三层：来源/Wiki/Schema | 五层存储 × 五种类型 × 三级成熟度 |
+| **知识类型** | 实体页、概念页、对比页、综合 | model/decision/guideline/pitfall/process |
+| **生命周期** | Lint 检查（矛盾、孤儿、缺失） | draft→verified→proven + 自动衰减 |
+| **贡献模式** | 个人 → Wiki | 团队共建：contributor/maintainer/reader 三角色 |
+| **工作流集成** | 手动触发 ingese | 16 阶段状态机自动提取和注入 |
+| **查询模式** | Wiki 内搜索 | 三级渐进式索引 + 查询预算 |
+
+核心启示是共同的：**知识必须是有结构的、可演化的、有生命周期的**。无论是个人 Wiki 还是团队知识库，"写了就忘"都不是知识管理。
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph 共同核心理念["共同核心理念"]
+        C1["知识是持久的、可复利的制品"]
+        C2["知识有生命周期，必须维护"]
+        C3["增量更新优于全量重写"]
+    end
+    
+    subgraph LLMWiki["LLM Wiki 侧重"]
+        L1["个人探索"]
+        L2["知识发现与整合"]
+        L3["LLM 作为 wiki 维护者"]
+    end
+    
+    subgraph AITeam["AI Team 知识库侧重"]
+        A1["团队协作"]
+        A2["工作流驱动的知识提取"]
+        A3["多角色共建与成熟度治理"]
+    end
+    
+    共同核心理念 --> LLMWiki
+    共同核心理念 --> AITeam
+    
+    style 共同核心理念 fill:#e8f5e9
+    style LLMWiki fill:#e1f5fe
+    style AITeam fill:#fff3e0
+`} />
+
+## 十一、总结与展望
+
+回到核心论点：**Harness 不是目的，知识才是护城河。**
+
+六个关键洞察：
+
+1. **知识分层管理**（五层存储 × 五种类型 × 三级成熟度）让知识有清晰的组织结构，Agent 可以精准按需消费
+2. **团队知识库共建共享**（独立 Git 仓库 + 三角色 + 自动冲突解决）让知识从"个人经验"变成"团队资产"
+3. **工作流服务于知识沉淀**（INIT 注入 → 各阶段查询 → ARCHIVE 提取）让每次需求交付都是一次知识积累
+4. **知识按需消费**（三级渐进式索引 + 查询预算）解决了上下文膨胀与知识利用的平衡
+5. **知识生命周期管理**（自动衰减 + Lint + 引用追踪闭环）让知识库保持健康和活力
+6. **突破人机交互瓶颈**（远程操控 + 跨设备接管 + 异步审批）让工作流顺畅流转，保障知识沉淀闭环完整性
+
+展望未来，值得探索的方向：
+
+- **知识的语义检索增强**：从结构化标签过滤走向向量检索级别的语义发现
+- **跨团队知识联邦**：安全共享通用技术知识（Layer 1），同时保护业务知识（Layer 2）边界
+- **知识质量自动评估**：不仅基于引用频率，还能用模型评估知识条目的质量和时效性
+- **全异步工作流**：Agent 自主执行非关键路径，仅在关键决策点异步通知人类审批
+
+最后，以腾讯团队的一句话作为结尾：
+
+> **Skill、Agent、工具链会随模型迭代更新，但领域知识是永恒的。AI Team 的每次交付都自动沉淀知识到团队共享仓库，所有成员共建共享，新工作流启动时自动站在前人肩上。**
+
+工作流是手段，知识是目的。当你设计下一个 Harness 工作流时，不妨先问：**这个工作流能让团队的知识库变得更厚吗？** 如果不能，那它只是一次性的工程实践，而非可持续的技术飞轮。

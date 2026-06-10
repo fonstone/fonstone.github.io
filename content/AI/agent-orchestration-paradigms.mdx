@@ -519,19 +519,38 @@ Flowise 是 LangChain 的可视化封装：
 
 ## 6. 五范式全景对比矩阵
 
-<MermaidDiagram chart={`quadrantChart
-    title AI Agent 编排范式定位图
-    x-axis 约束性强 --> 灵活性强
-    y-axis 门槛低 --> 门槛高
-    quadrant-1 灵活专业
-    quadrant-2 约束专业
-    quadrant-3 约束易用
-    quadrant-4 灵活易用
-    状态机范式: [0.6, 0.8]
-    角色驱动范式: [0.5, 0.6]
-    事件驱动范式: [0.8, 0.9]
-    SDK封装范式: [0.4, 0.3]
-    低代码范式: [0.2, 0.1]
+<MermaidDiagram chart={`flowchart TB
+    subgraph Quadrant["五范式定位矩阵"]
+        direction TB
+        subgraph TopRow["← 约束性强 ——————————————— 灵活性强 →"]
+            direction LR
+            Q2["⬛ 约束专业<br/>——————<br/>🟦 状态机<br/>高门槛·中灵活<br/>可控可审计"]
+            Q1["⬛ 灵活专业<br/>——————<br/>🟪 事件驱动<br/>高门槛·高灵活<br/>松耦合高扩展"]
+        end
+        subgraph BottomRow["← 约束性强 ——————————————— 灵活性强 →"]
+            direction LR
+            Q3["⬛ 约束易用<br/>——————<br/>🟩 SDK封装<br/>低门槛·中灵活<br/>快速上手"]
+            Q4["⬛ 灵活易用<br/>——————<br/>🟨 低代码<br/>低门槛·低灵活<br/>可视化拖拽"]
+        end
+    end
+
+    Q2 --- Q1
+    Q2 --- Q3
+    Q1 --- Q4
+    Q3 --- Q4
+
+    ROLLED["🔵 角色驱动<br/>中门槛·中灵活<br/>居中位"]
+
+    Q2 -.-> ROLLED
+    ROLLED -.-> Q1
+
+    style Q1 fill:#e1bee7,stroke:#7b1fa2
+    style Q2 fill:#bbdefb,stroke:#1565c0
+    style Q3 fill:#c8e6c9,stroke:#2e7d32
+    style Q4 fill:#fff9c4,stroke:#f9a825
+    style ROLLED fill:#ffe0b2,stroke:#e65100
+    style TopRow fill:transparent,stroke:none
+    style BottomRow fill:transparent,stroke:none
 `} />
 
 ### 6.1 核心维度对比

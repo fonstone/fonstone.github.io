@@ -15,16 +15,16 @@ lijigang/ljg-skills 是一个 Claude Code 自定义技能集，在 GitHub 上获
     subgraph 传统["传统 Prompt 工程范式"]
         T1["用户意图"] --> T2["通用 LLM"]
         T2 --> T3["自由格式输出"]
-        T3 --> T4["❌ 结果不可预期<br/>质量波动大<br/>风格随机"]
+        T3 --> T4["结果不可预期<br/>质量波动大<br/>风格随机"]
     end
 
     subgraph ljg["ljg-skills 范式"]
         L1["用户意图"] --> L2["认知框架模具"]
         L2 --> L3["结构化思维过程"]
-        L3 --> L4["✅ 可预期的高质量输出<br/>风格统一<br/>深度可控"]
+        L3 --> L4["可预期的高质量输出<br/>风格统一<br/>深度可控"]
     end
 
-    T4 -.->|"方法论的飞跃"| L2
+    T4 -.-> L2
 
     style 传统 fill:#ffcdd2
     style ljg fill:#c8e6c9
@@ -33,7 +33,7 @@ lijigang/ljg-skills 是一个 Claude Code 自定义技能集，在 GitHub 上获
 ## 1. 全景：21 个技能的六大类
 
 <MermaidDiagram chart={`flowchart TB
-    subgraph Cognitive["◆ 认知原子 — 深度理解"]
+    subgraph Cognitive["认知原子 -- 深度理解"]
         LJG_LEARN["ljg-learn<br/>概念解剖"]
         LJG_THINK["ljg-think<br/>追本之箭"]
         LJG_RANK["ljg-rank<br/>降秩引擎"]
@@ -41,7 +41,7 @@ lijigang/ljg-skills 是一个 Claude Code 自定义技能集，在 GitHub 上获
         LJG_WORD["ljg-word<br/>单词精通"]
     end
 
-    subgraph Input["● 网络通达 — 输入增强"]
+    subgraph Input["输入增强 -- 读取与提取"]
         LJG_READ["ljg-read<br/>伴读"]
         LJG_PAPER["ljg-paper<br/>论文阅读"]
         LJG_PAPER_RIVER["ljg-paper-river<br/>论文溯源"]
@@ -49,24 +49,24 @@ lijigang/ljg-skills 是一个 Claude Code 自定义技能集，在 GitHub 上获
         LJG_QA["ljg-qa<br/>信息提问机"]
     end
 
-    subgraph Output["▲ 输出铸型 — 可视化输出"]
+    subgraph Output["输出铸型 -- 可视化输出"]
         LJG_CARD["ljg-card<br/>内容铸卡"]
         LJG_LIBRARY["ljg-library<br/>借书卡"]
         LJG_PRESENT["ljg-present<br/>演讲铸造器"]
     end
 
-    subgraph Network["● 网络通达 — 输入增强"]
+    subgraph Network["交互增强 -- 对话与诊断"]
         LJG_ROUNDTABLE["ljg-roundtable<br/>圆桌讨论"]
         LJG_RELATIONSHIP["ljg-relationship<br/>关系分析"]
     end
 
-    subgraph Writing["✎ 写作引擎 — 内容生产"]
+    subgraph Writing["写作引擎 -- 内容生产"]
         LJG_WRITES["ljg-writes<br/>写作引擎"]
         LJG_TRAVEL["ljg-travel<br/>旅行研究"]
         LJG_INVEST["ljg-invest<br/>投资分析"]
     end
 
-    subgraph System["★ 系统运维 — 技能管理"]
+    subgraph System["系统运维 -- 技能管理"]
         LJG_SKILL_MAP["ljg-skill-map<br/>技能地图"]
         LJG_PUSH["ljg-push<br/>推送引擎"]
         LJG_PAPER_FLOW["ljg-paper-flow<br/>论文工作流"]
@@ -115,7 +115,7 @@ lijigang/ljg-skills 是一个 Claude Code 自定义技能集，在 GitHub 上获
     D5 --> D6["存在维度<br/>不依赖此概念的世界是否可能"]
     D6 --> D7["美感维度<br/>概念的美学品质"]
     D7 --> D8["元反思维度<br/>此解剖框架自身的问题"]
-    D8 --> OUTPUT["🎯 顿悟压缩<br/>公式 + 一句话 + ASCII 骨架图"]
+    D8 --> OUTPUT["顿悟压缩<br/>公式 + 一句话 + ASCII 骨架图"]
 
     style D1 fill:#e1f5fe
     style D4 fill:#e1f5fe
@@ -141,14 +141,14 @@ lijigang/ljg-skills 是一个 Claude Code 自定义技能集，在 GitHub 上获
 
 <MermaidDiagram chart={`flowchart TD
     P1["1. 列出现象"] --> P2["2. 列出候选生成器"]
-    P2 --> P3["3. 递归下降<br/>⭐ 关键步骤"]
+    P2 --> P3["3. 递归下降<br/>关键步骤"]
     P3 --> P4["4. 合并同源"]
     P4 --> P5["5. 裁切"]
     P5 --> P6["6. 反生成检验"]
     P6 --> P7["7. 预测 + 难变异检验"]
-    P7 --> OUT["🎯 不可再少的独立生成器"]
+    P7 --> OUT["不可再少的独立生成器"]
 
-    P3 -.- NOTE["不断追问"这个生成器<br/>又依赖什么？"<br/>直到不可再分"]
+    P3 -.-> NOTE["不断追问这个生成器<br/>又依赖什么？<br/>直到不可再分"]
 
     style P3 fill:#fff176
     style P6 fill:#fff176
@@ -187,11 +187,11 @@ lijigang/ljg-skills 是一个 Claude Code 自定义技能集，在 GitHub 上获
         Q2["之前共识怎么答？"]
     end
     
-    Q --> DELTA["🇩🇪 Delta<br/>挪动了什么"]
+    Q --> DELTA["Delta<br/>挪动了什么"]
     DELTA --> CONC["结论"]
-    CONC --> TAKE["🎒 一个要带走的东西"]
+    CONC --> TAKE["一个要带走的东西"]
 
-    Q -.- TEST["三道质检<br/>替换检验 / 指纹检验 / Delta检验"]
+    Q -.-> TEST["三道质检<br/>替换检验 / 指纹检验 / Delta检验"]
 
     style DELTA fill:#fff176
     style TAKE fill:#c8e6c9
@@ -282,27 +282,22 @@ lijigang/ljg-skills 是一个 Claude Code 自定义技能集，在 GitHub 上获
 
 <MermaidDiagram chart={`flowchart TB
     subgraph P1["1. 思维模具 > 执行脚本"]
-        direction LR
         P1A["传统 Prompt<br/>告诉 AI 做什么"] --> P1B["ljg-skills<br/>告诉 AI 怎么想"]
     end
 
     subgraph P2["2. 红线守门 > 正向鼓励"]
-        direction LR
         P2A["请写得简洁清晰"] --> P2B["禁用以下表述<br/>红线列表"]
     end
 
     subgraph P3["3. 结构自由 > 格式模板"]
-        direction LR
         P3A["填空式模板<br/>固定字段"] --> P3B["约束输出结构<br/>但不约束表达形式"]
     end
 
     subgraph P4["4. 自检闭环 > 线性输出"]
-        direction LR
-        P4A["生成即终"] --> P4B["生成 → 红线检查 → 重写<br/>多轮自检"]
+        P4A["生成即终"] --> P4B["生成到红线检查到重写<br/>多轮自检"]
     end
 
     subgraph P5["5. 认知原子可组合 > 单体技能"]
-        direction LR
         P5A["每个技能独立完整"] --> P5B["流水线组合<br/>paper-flow / word-flow"]
     end
 

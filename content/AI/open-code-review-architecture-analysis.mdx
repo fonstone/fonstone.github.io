@@ -1,0 +1,754 @@
+---
+title: "OpenCodeReview 架构深度剖析：确定性工程 × LLM Agent 双轮驱动的代码评审范式"
+date: "2026-06-25"
+description: "逐文件拆解阿里巴巴开源的 open-code-review 工程——从 Git diff 解析、并发子任务分发、Plan/Main 双阶段、LLM 工具使用循环，到确定性评论定位、LLM 反思重定位、Review Filter 过滤，完整还原其「确定性工程 × LLM Agent」混合架构的工作原理，并解读其精度优先的基准测试权衡。"
+tags: ["AI", "Code Review", "Agent", "LLM", "确定性工程", "Harness Engineering", "阿里巴巴", "Go"]
+---
+
+> 当通用 Agent（如 Claude Code + Skills）做代码评审时，会遭遇覆盖不全、位置漂移、质量波动三大痛点。阿里巴巴开源的 OpenCodeReview 给出了一个被低估的答案：**不要让语言模型决定一切，用确定性工程为评审过程套上硬约束缰绳，再让 Agent 在动态决策处发力**。本文逐文件拆解 `alibaba/open-code-review` 的完整源码架构，还原其「确定性工程 × LLM Agent 双轮驱动」的工作原理。
+
+## 一、项目背景：从内部工具到开源标杆
+
+OpenCodeReview（以下简称 OCR，CLI 命令 `ocr`）起源于阿里巴巴集团内部的官方 AI 代码评审助手。过去两年间，它服务了数万名开发者、识别了数百万代码缺陷。在大规模验证之后，阿里将其孵化为开源项目。截至本文撰写时，仓库已收获 9.1k Stars、576 Forks，发布 64 个 Release（最新 v1.6.0）。
+
+技术栈上，核心 CLI 用 **Go** 编写（占 65.7%），VSCode 扩展用 **TypeScript**（占 18.2%）。它兼容 OpenAI 与 Anthropic 两套 API 协议，支持 Claude Code、Codex 等 AI 编码 Agent 作为 Skill/Plugin 集成，也可接入 GitHub Actions / GitLab CI 等 CI/CD 流水线。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph Origin["起源"]
+        O1["阿里巴巴内部<br/>AI 代码评审助手"]
+        O2["2 年 / 数万开发者<br/>数百万缺陷识别"]
+    end
+    subgraph Product["开源产品"]
+        P1["ocr CLI (Go)"]
+        P2["VSCode 扩展 (TS)"]
+        P3["Claude Code / Codex 插件"]
+        P4["CI/CD 集成"]
+    end
+    subgraph LLM["LLM 后端"]
+        L1["Anthropic 协议"]
+        L2["OpenAI 协议"]
+    end
+    Origin --> Product
+    Product --> LLM
+    style Origin fill:#fff3e0
+    style Product fill:#e3f2fd
+    style LLM fill:#f3e5f5
+`} />
+
+## 二、核心问题：通用 Agent 做代码评审的三大痛点
+
+如果你用过 Claude Code 搭配 Skills 做代码评审，大概率遇到过以下问题。OCR 团队在 README 中明确诊断了根因——**纯语言驱动的架构缺乏对评审过程的硬约束**：
+
+| 痛点 | 表现 | 根因 |
+|------|------|------|
+| **覆盖不全** | 大变更集上 Agent 倾向"偷懒"，只评审部分文件，遗漏其余 | 没有工程逻辑强制确保每个重要变更都被覆盖 |
+| **位置漂移** | 报告的问题行号/文件引用与实际代码位置对不上 | 行号定位完全依赖 LLM，无独立校验机制 |
+| **质量不稳定** | 自然语言驱动的 Skills 难以调试，提示词微调即引起质量大幅波动 | 评审流程的关键步骤缺少确定性保障 |
+
+<MermaidDiagram chart={`mindmap
+  root((通用 Agent 评审痛点))
+    覆盖不全["覆盖不全"]
+      skip["大变更集跳过部分文件"]
+      no_guarantee["无文件级覆盖保证"]
+    位置漂移["位置漂移"]
+      line_drift["行号与实际代码不符"]
+      file_ref["文件引用错位"]
+      no_verify["无独立行号校验"]
+    质量不稳定["质量不稳定"]
+      prompt_fragile["提示词微调即波动"]
+      hard_debug["Skills 难以调试"]
+      no_constraint["关键步骤无确定性约束"]
+`} />
+
+这三个痛点共同指向一个结论：**评审过程中"绝不能出错"的步骤，应该由工程逻辑而非语言模型来保证正确性**。这正是 OCR 架构设计的出发点。
+
+## 三、核心架构：确定性工程 × LLM Agent 双轮驱动
+
+OCR 的核心哲学是**让确定性工程和 Agent 各司其职**——确定性工程负责"绝不能出错"的硬约束，Agent 负责"需要动态判断"的决策。
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph Deterministic["确定性工程 — 硬约束"]
+        D1["精确文件选择<br/>filterDiffs"]
+        D2["智能文件打包<br/>divide & conquer"]
+        D3["细粒度规则匹配<br/>四层优先级链"]
+        D4["外部定位与反思模块<br/>Resolver + ReLocation"]
+    end
+    subgraph Agent["Agent — 动态决策"]
+        A1["场景化提示词<br/>Plan/Main/Filter/ReLocate"]
+        A2["场景化工具集<br/>6 个精炼工具"]
+        A3["动态上下文检索<br/>file_read/code_search"]
+    end
+    Deterministic -->|保障正确性| Agent
+    Agent -->|产出评论| Deterministic
+    style Deterministic fill:#e8f5e9
+    style Agent fill:#fff3e0
+`} />
+
+**确定性工程（硬约束）** 处理的是评审步骤中"必须正确"的环节：
+
+- **精确文件选择**：由工程逻辑而非 LLM 决定哪些文件需要评审、哪些应过滤，确保不遗漏重要变更。
+- **智能文件打包**：将关联文件分组为单个评审单元，每个 bundle 作为独立子 Agent 运行——分治策略在超大变更集上保持稳定，并天然支持并发。
+- **细粒度规则匹配**：根据每个文件的特征匹配评审规则，将模型注意力聚焦，从源头消除信息噪声。相比纯语言驱动的规则引导，基于模板引擎的规则匹配更稳定、更可预测。
+- **外部定位与反思模块**：独立的评论定位模块和评论反思模块，系统性提升 AI 反馈的位置准确度和内容准确度。
+
+**Agent（动态决策）** 的优势集中在最需要的地方：
+
+- **场景化提示词**：为代码评审深度优化的提示词模板，在提升有效性的同时降低 token 消耗。
+- **场景化工具集**：从大规模生产数据的工具调用轨迹分析中提炼而来——包括调用频率分布、单工具重复率、新工具对整体调用链的影响——最终形成一个比通用 Agent 工具包更稳定、更可预测的专用工具集。
+
+## 四、工程目录结构总览
+
+在深入源码之前，先建立全局地图。OCR 的核心逻辑全部位于 `internal/` 下，按职责清晰分包：
+
+```
+open-code-review/
+├── cmd/opencodereview/       # CLI 入口层
+│   ├── main.go               # 命令路由
+│   ├── review_cmd.go         # ocr review 命令
+│   ├── scan_cmd.go           # ocr scan 命令
+│   ├── flags.go              # 旗标解析
+│   ├── output.go             # 输出格式化
+│   └── provider_cmd.go       # LLM Provider 交互式配置
+├── internal/
+│   ├── agent/                # ★ 评审编排器（diff 模式）
+│   │   ├── agent.go          # Agent 主体：流水线编排
+│   │   ├── preview.go        # --preview 预览
+│   │   └── util.go           # 辅助函数
+│   ├── scan/                 # ★ 全文件扫描编排器
+│   │   ├── agent.go          # Scan Agent
+│   │   ├── batch.go          # 批处理策略
+│   │   ├── estimate.go       # Token 成本估算
+│   │   └── provider.go       # 文件遍历 Provider
+│   ├── llmloop/              # ★ LLM 工具使用循环
+│   │   ├── loop.go           # Runner：核心 tool-use 循环
+│   │   ├── compression.go    # 三区上下文压缩
+│   │   └── pool.go           # CommentWorkerPool 异步池
+│   ├── tool/                 # ★ Agent 工具集
+│   │   ├── definitions.go    # 6 个工具定义 + Registry
+│   │   ├── code_comment.go   # 评论提交工具
+│   │   ├── file_read.go      # 全文件读取
+│   │   ├── file_read_diff.go # 关联文件 diff 读取
+│   │   ├── file_find.go      # 文件查找
+│   │   ├── code_search.go    # 代码搜索
+│   │   └── comment_collector.go # 评论收集器
+│   ├── diff/                 # ★ Diff 处理与评论定位
+│   │   ├── parser.go         # Git diff 解析
+│   │   ├── hunk.go           # Hunk 结构
+│   │   ├── resolver.go       # ★ 确定性行号定位
+│   │   ├── relocation.go     # ★ LLM 反思重定位
+│   │   ├── git.go            # Git diff Provider
+│   │   └── workspace_file.go # 工作区文件 Provider
+│   ├── llm/                  # LLM 客户端抽象
+│   ├── config/               # 配置体系
+│   │   ├── rules/            # 规则解析（四层优先级）
+│   │   ├── template/         # 提示词模板
+│   │   ├── toolsconfig/      # 工具配置
+│   │   └── allowlist/        # 文件类型白名单
+│   ├── model/                # 数据模型（Diff/LlmComment）
+│   ├── session/              # 会话历史记录
+│   ├── suggestdiff/          # 建议差异验证
+│   ├── telemetry/            # OpenTelemetry 可观测性
+│   ├── viewer/               # WebUI 会话查看器
+│   └── gitcmd/               # Git 子进程管理
+├── extensions/vscode/        # VSCode 扩展
+├── examples/                 # CI/CD 集成示例
+├── plugins/                  # Claude Code / Codex 插件
+└── skills/                   # Agent Skill 定义
+```
+
+整个工程的核心数据流可以概括为一条主线：**Git diff → 解析过滤 → 并发子任务 → Plan + Main 工具循环 → 确定性定位 → 反思重定位 → Review Filter → 输出**。下文将沿这条主线逐层拆解。
+
+## 五、评审流水线深度拆解：`ocr review`
+
+### 5.1 总体流水线
+
+`ocr review` 的完整流水线由 `internal/agent/agent.go` 的 `Agent.Run()` 方法编排，分为三大阶段：
+
+<MermaidDiagram chart={`flowchart TB
+    Start(["ocr review"]) --> Parse["Step 1: 解析 Diff<br/>loadDiffs()"]
+    Parse --> DiffMap["构建 DiffMap<br/>injectDiffMap()"]
+    DiffMap --> Filter["Step 2: 过滤文件<br/>filterDiffs() + filterLargeDiffs()"]
+    Filter --> Dispatch{"Step 3: 并发分发<br/>dispatchSubtasks()"}
+    Dispatch --> Sub1["子任务: 文件 A"]
+    Dispatch --> Sub2["子任务: 文件 B"]
+    Dispatch --> SubN["子任务: 文件 N..."]
+    Sub1 --> Plan["Phase 1: Plan<br/>executePlanPhase()"]
+    Sub2 --> Plan
+    SubN --> Plan
+    Plan --> Main["Phase 2: Main 循环<br/>llmloop.Runner.RunPerFile()"]
+    Main --> Collect["收集评论<br/>CommentCollector"]
+    Collect --> Filter2["Phase 3: Review Filter<br/>executeReviewFilter()"]
+    Filter2 --> Output(["输出评论"])
+    style Parse fill:#e3f2fd
+    style Filter fill:#e8f5e9
+    style Main fill:#fff3e0
+    style Filter2 fill:#fce4ec
+`} />
+
+### 5.2 Step 1：Diff 解析（确定性）
+
+评审的起点是 Git diff。OCR 通过 `diff.Provider` 接口抽象了三种 diff 来源，在 `loadDiffs()` 中根据参数选择：
+
+```go
+// internal/agent/agent.go — loadDiffs()
+switch {
+case a.args.Commit != "":
+    provider = diff.NewCommitProvider(a.args.RepoDir, a.args.Commit, a.args.GitRunner)
+case a.args.From != "" && a.args.To != "":
+    provider = diff.NewProvider(a.args.RepoDir, a.args.From, a.args.To, a.args.GitRunner)
+default:
+    provider = diff.NewWorkspaceProvider(a.args.RepoDir, a.args.GitRunner)
+}
+```
+
+三种模式对应三种 CLI 用法：
+
+| 模式 | Provider | CLI 用法 |
+|------|----------|----------|
+| 工作区 | `NewWorkspaceProvider` | `ocr review`（暂存 + 未暂存 + 未跟踪） |
+| 分支范围 | `NewProvider` | `ocr review --from main --to feature` |
+| 单提交 | `NewCommitProvider` | `ocr review --commit abc123` |
+
+解析后的每个文件变更封装为 `model.Diff` 结构——这是贯穿整个流水线的核心数据模型：
+
+```go
+// internal/model/diff.go
+type Diff struct {
+    OldPath        string // 旧路径
+    NewPath        string // 新路径
+    Diff           string // 原始 diff 文本
+    NewFileContent string // 新文件完整内容
+    IsBinary       bool
+    IsDeleted      bool
+    IsNew          bool
+    IsRenamed      bool
+    Insertions     int64  // 新增行数
+    Deletions      int64  // 删除行数
+}
+```
+
+注意 `NewFileContent` 字段——它存储新文件的完整内容，后续的确定性行号定位会用到它。
+
+### 5.3 DiffMap 注入：跨文件上下文的关键一步
+
+在过滤之前，OCR 做了一个容易被忽略但至关重要的步骤——**从所有已解析的 diff 构建 DiffMap 并注入到工具注册表**：
+
+```go
+// internal/agent/agent.go — Run()
+a.injectDiffMap()
+a.args.Tools.Freeze()
+```
+
+`injectDiffMap()` 将所有文件的 `{NewPath: Diff}` 映射注入 `FileReadDiffProvider`。这意味着即使某个文件被后续过滤掉了，Agent 仍然可以通过 `file_read_diff` 工具查询到它的 diff——**LLM 能看到关联但被过滤文件的上下文，而不是只能看到最终被评审的文件**。这一步在 `Tools.Freeze()`（冻结注册表，禁止后续修改）之前完成，确保并发安全。
+
+### 5.4 Step 2：文件过滤（确定性硬约束）
+
+文件过滤是确定性工程的第一个硬约束，由 `filterDiffs()` 和 `filterLargeDiffs()` 完成。过滤逻辑严格遵循优先级链：
+
+<MermaidDiagram chart={`flowchart TB
+    File["变更文件"] --> B1{"二进制文件?"}
+    B1 -->|是| Ex1["排除"]
+    B1 -->|否| B2{"匹配用户 exclude?"}
+    B2 -->|是| Ex2["排除"]
+    B2 -->|否| B3{"扩展名在支持列表?"}
+    B3 -->|否| Ex3["排除"]
+    B3 -->|是| B4{"配置了 include 且匹配?"}
+    B4 -->|是| Keep["评审"]
+    B4 -->|否| B5{"匹配默认排除模式?<br/>(测试文件等)"}
+    B5 -->|是| Ex5["排除"]
+    B5 -->|否| Keep
+    Keep --> B6{"Diff token > 80% MaxTokens?"}
+    B6 -->|是| Ex6["跳过(过大)"]
+    B6 -->|否| Final["进入评审"]
+    style Keep fill:#c8e6c9
+    style Final fill:#c8e6c9
+`} />
+
+过滤决策的优先级（从高到低）：
+
+1. **二进制文件** → 排除
+2. **匹配用户 `exclude` 模式** → 排除
+3. **扩展名不在支持列表**（`supported_file_types.json`）→ 排除
+4. **配置了 `include` 且路径匹配** → **直接评审**（跳过第 5 步）
+5. **匹配内置默认排除模式**（测试文件等，`default_exclude_patterns.json`）→ 排除
+6. **以上都不命中** → 评审
+
+通过第 1-6 步的文件，还要经过 `filterLargeDiffs()` 的 token 体积预过滤——**diff 内容单独超过 `MaxTokens` 的 80% 的文件会被跳过**，避免单个文件撑爆上下文窗口。这一步用 `llm.CountTokens(d.Diff)` 精确计算，而非粗略估算。
+
+内置默认排除模式覆盖了各语言的测试文件约定：
+
+```
+**/*_test.go, **/*Test.java, **/*Tests.java, **/*_test.rs,
+**/*.test.{js,jsx,ts,tsx}, **/*.spec.{js,jsx,ts,tsx}, **/__tests__/**,
+**/src/test/java/**/*.java, **/src/test/**/*.kt, ...
+```
+
+### 5.5 Step 3：并发子任务分发（确定性 + 并发）
+
+通过过滤的文件进入 `dispatchSubtasks()`，每个文件作为一个独立子任务并发执行：
+
+```go
+// internal/agent/agent.go — dispatchSubtasks()
+concurrency := a.args.MaxConcurrency  // 默认 8
+sem := make(chan struct{}, concurrency)
+timeout := time.Duration(a.args.ConcurrentTaskTimeout) * time.Minute  // 默认 10 分钟
+
+for i := range a.diffs {
+    if a.diffs[i].IsDeleted { continue }  // 纯删除文件跳过
+    wg.Add(1)
+    sem <- struct{}{}  // 获取信号量
+    go func(d model.Diff) {
+        defer wg.Done()
+        defer func() { <-sem }()  // 释放信号量
+        a.executeSubtask(fileCtx, d)
+    }(a.diffs[i])
+}
+```
+
+这里体现了 OCR 的**分治策略**：每个文件作为独立子 Agent 运行，拥有隔离的上下文。这使得：(1) 超大变更集上每个文件的评审互不干扰，不会因为某个文件过大而影响其他文件；(2) 天然支持并发，8 个文件可同时评审。
+
+### 5.6 单文件子任务：Plan + Main 双阶段
+
+每个子任务由 `executeSubtask()` 编排，包含三个阶段：
+
+#### Phase 1：Plan（规划阶段）
+
+Plan 阶段是一个可选的"预评审规划"步骤。当文件变更行数超过模板配置的 `PlanModeLineThreshold` 阈值时，OCR 会先让 LLM 对 diff 做一次规划分析，产出评审指导（plan guidance），再注入到主任务中：
+
+```go
+// internal/agent/agent.go — executeSubtask()
+threshold := a.args.Template.PlanModeLineThreshold
+changeLines := d.Insertions + d.Deletions
+
+if threshold > 0 && changeLines < int64(threshold) {
+    // 小变更跳过 Plan 阶段
+    fmt.Fprintf(stdout.Writer(), "[ocr] Skipping plan phase for %s (%d lines < threshold %d)\n", ...)
+} else {
+    planResult, err = a.executePlanPhase(ctx, newPath, d.Diff, changeFilesExcludingCurrent, rule)
+}
+```
+
+Plan 阶段的提示词模板通过占位符注入上下文：`{{current_file_path}}`、`{{system_rule}}`（该文件匹配到的评审规则）、`{{change_files}}`（其他变更文件列表）、`{{diff}}`、`{{requirement_background}}`（可选的业务背景）、`{{plan_tools}}`（可用工具列表，仅供参考不可调用）。LLM 返回的规划文本随后通过 `{{plan_guidance}}` 占位符注入到 Main 阶段的提示词中。
+
+这一设计的精妙之处在于：**Plan 阶段让 LLM 先"想清楚要查什么、关注什么"，再进入正式评审**，类似于人类 reviewer 先浏览 diff 概貌再深入细节。对于小变更则跳过以节省 token。
+
+#### Phase 2：Main（主评审循环）
+
+Main 阶段是评审的核心——渲染 `MainTask` 提示词模板，启动 LLM 工具使用循环。提示词渲染时，所有占位符被替换为实际值：
+
+```go
+// internal/agent/agent.go — executeSubtask()
+for _, m := range rawMsgs {
+    content := m.Content
+    content = strings.ReplaceAll(content, "{{current_system_date_time}}", a.currentDate)
+    content = strings.ReplaceAll(content, "{{current_file_path}}", newPath)
+    content = strings.ReplaceAll(content, "{{system_rule}}", rule)
+    content = strings.ReplaceAll(content, "{{change_files}}", changeFilesExcludingCurrent)
+    content = strings.ReplaceAll(content, "{{diff}}", d.Diff)
+    content = strings.ReplaceAll(content, "{{requirement_background}}", a.args.Background)
+    if planResult == "" {
+        content = stripEmptyPlanBlock(content)  // 清除空的 Plan 区块标题
+    }
+    content = strings.ReplaceAll(content, "{{plan_guidance}}", planResult)
+    messages = append(messages, llm.NewTextMessage(m.Role, content))
+}
+```
+
+渲染后还有一个 token 预检查——**如果提示词 token 数超过 `MaxTokens` 的 80%**，直接跳过该文件评审并记录警告，避免上下文溢出。
+
+随后进入 `llmloop.Runner.RunPerFile()`——LLM 工具使用循环。
+
+## 六、LLM 工具使用循环：`llmloop.Runner`
+
+`internal/llmloop/loop.go` 中的 `Runner` 是整个 Agent 的心脏。它驱动 LLM 与工具的交互循环，直到任务完成或达到限制。
+
+### 6.1 循环主逻辑
+
+```go
+// internal/llmloop/loop.go — RunPerFile()
+for toolReqCount > 0 {
+    toolReqCount--  // 每轮递减，达到 MaxToolRequestTimes 则停止
+
+    resp, err := r.deps.LLMClient.CompletionsWithCtx(ctx, llm.ChatRequest{
+        Model:    r.deps.Model,
+        Messages: messages,
+        Tools:    r.deps.MainToolDefs,  // 工具定义
+        MaxTokens: r.deps.Template.MaxTokens,
+    })
+
+    calls := resp.ToolCalls()
+    if len(calls) == 0 {
+        // 无工具调用，提示重试
+        messages = append(messages, llm.NewTextMessage("user",
+            "You did not successfully call any tools. Please try again or use task_done if finished."))
+        continue
+    }
+
+    for _, call := range calls {
+        cp := r.executeToolCall(ctx, newPath, call, rec)
+        if cp.Completed { taskCompleted = true; break }
+    }
+    if taskCompleted { break }
+
+    // 三区上下文压缩 + 追加 assistant 和 tool result 消息
+    r.addNextMessage(ctx, content, calls, results, &messages, newPath)
+}
+```
+
+循环的退出条件有三个：
+1. LLM 调用 `task_done` 工具（正常完成）
+2. 达到 `MaxToolRequestTimes` 轮数上限
+3. 连续 3 轮无有效工具结果（`maxConsecutiveEmptyRounds`）
+
+### 6.2 六个专用工具
+
+OCR 的工具集只有 6 个，从大规模生产数据的工具调用轨迹分析中精炼而来。定义在 `internal/tool/definitions.go`：
+
+```go
+// internal/tool/definitions.go
+var (
+    Unknown      = Tool{name: "unknown"}
+    TaskDone     = Tool{name: "task_done"}      // 信号：评审完成
+    CodeComment  = Tool{name: "code_comment"}    // 提交评审评论
+    FileRead     = Tool{name: "file_read"}       // 读取完整文件
+    FileFind     = Tool{name: "file_find"}       // 按模式查找文件
+    FileReadDiff = Tool{name: "file_read_diff"}  // 读取关联文件 diff
+    CodeSearch   = Tool{name: "code_search"}     // 代码库搜索
+)
+```
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph Tools["Agent 工具集（6 个）"]
+        T1["task_done<br/>完成信号"]
+        T2["code_comment<br/>提交评论"]
+        T3["file_read<br/>读完整文件"]
+        T4["file_find<br/>查找文件"]
+        T5["file_read_diff<br/>读关联 diff"]
+        T6["code_search<br/>搜索代码库"]
+    end
+    subgraph Purpose["用途"]
+        P1["动态上下文检索<br/>让 LLM 按需读取<br/>评审所需的全文件/关联代码"]
+        P2["评论产出<br/>结构化提交评审意见"]
+        P3["流程控制<br/>声明评审结束"]
+    end
+    T3 --> P1
+    T4 --> P1
+    T5 --> P1
+    T6 --> P1
+    T2 --> P2
+    T1 --> P3
+    style Tools fill:#e3f2fd
+    style Purpose fill:#fff3e0
+`} />
+
+这个工具集的设计哲学是**少而精**。相比通用 Agent 动辄数十个工具，OCR 只保留了代码评审真正需要的：动态上下文检索（4 个读取/搜索工具）+ 评论产出（1 个）+ 流程控制（1 个）。README 强调，这个工具集是从生产数据的调用频率分布、单工具重复率、新工具对调用链影响等维度分析后提炼的，比通用工具包更稳定可预测。
+
+### 6.3 `code_comment` 工具：评论产出的结构化契约
+
+`code_comment` 是最关键的工具——LLM 通过它提交结构化评审评论。参数解析在 `internal/tool/code_comment.go`：
+
+```go
+// internal/tool/code_comment.go — ParseComments()
+type LlmComment struct {
+    Content        string // 评论内容
+    SuggestionCode string // 建议代码
+    ExistingCode   string // 现有代码片段（用于行号定位！）
+    Thinking       string // 思考过程
+    Path           string // 文件路径
+}
+```
+
+关键设计：**LLM 不直接输出行号，而是输出 `existing_code`（现有代码片段）**。行号由后续的确定性 Resolver 通过文本匹配计算。这就是"位置漂移"问题的解法——行号定位脱离 LLM 的不确定性，交给工程逻辑。
+
+### 6.4 异步评论处理：CommentWorkerPool
+
+一个重要的工程优化是 `code_comment` 的异步处理。在 `executeToolCall()` 中，当配置了 `CommentWorkerPool` 时，评论的定位和收集被提交到后台线程池异步执行，主 LLM 循环可以立即继续发起下一轮请求：
+
+```go
+// internal/llmloop/loop.go — executeToolCall()
+if r.deps.CommentWorkerPool != nil {
+    pool.Submit(func() ([]model.LlmComment, error) {
+        resolveAndCollect(asyncCtx)  // 异步执行定位+收集
+        return []model.LlmComment{}, nil
+    })
+    return tool.Of(tool.CommentSucceed)  // 立即返回，不阻塞
+}
+```
+
+这镜像了 Java 版本的 `subtaskExecutor` 设计——**将 CODE_COMMENT 工具的执行移出关键路径，使主 LLM 工具循环可以一边产出评论、一边继续评审**，显著降低总耗时。
+
+## 七、评论定位与反思：确定性 × LLM 的协作典范
+
+评论定位是 OCR 架构中最能体现"双轮驱动"哲学的模块。它分为两层：**确定性定位（主）** + **LLM 反思重定位（辅）**。
+
+### 7.1 确定性定位：`diff/resolver.go`
+
+当 `code_comment` 产出的评论进入 `resolveAndCollect()` 时，首先调用 `diff.ResolveComment()` 尝试确定性定位：
+
+```go
+// internal/diff/resolver.go — ResolveComment()
+func ResolveComment(cm *model.LlmComment, d *model.Diff) bool {
+    if cm.StartLine > 0 || cm.EndLine > 0 { return true }  // 已有行号
+    if cm.ExistingCode == "" { return false }
+    if resolveFromHunk(d, cm) { return true }  // 主：从 diff hunk 匹配
+    return resolveFromFileContent(d, cm)        // 备：从完整文件内容匹配
+}
+```
+
+**主策略——从 Hunk 匹配**：`resolveFromHunk()` 将评论的 `existing_code` 按行拆分并归一化（去除空白、去除 diff 的 `+`/`-` 前缀），然后在 diff hunk 的行中寻找连续匹配。它先尝试新侧（context + added 行 → 新文件行号），再尝试旧侧（context + deleted 行 → 旧文件行号）：
+
+```go
+// internal/diff/resolver.go — resolveFromHunk()
+targetLines := splitAndNormalize(cm.ExistingCode)
+for i := range hunks {
+    newSide := extractSideLines(&hunks[i], true)   // 新侧行+行号
+    if start, end, ok := matchConsecutive(newSide, targetLines); ok {
+        cm.StartLine = start; cm.EndLine = end; return true
+    }
+}
+for i := range hunks {
+    oldSide := extractSideLines(&hunks[i], false)  // 旧侧行+行号
+    if start, end, ok := matchConsecutive(oldSide, targetLines); ok {
+        cm.StartLine = start; cm.EndLine = end; return true
+    }
+}
+```
+
+**备策略——从完整文件内容匹配**：`resolveFromFileContent()` 在 `NewFileContent` 中逐行扫描连续匹配，作为 hunk 匹配失败时的兜底。
+
+这两个策略都是**纯文本匹配，零 LLM 调用**——确定性保证行号正确，彻底解决"位置漂移"痛点。
+
+### 7.2 LLM 反思重定位：`diff/relocation.go`
+
+当确定性定位失败（`existing_code` 与 diff 无法匹配）时，OCR 不会直接放弃，而是启动 LLM 反思重定位——`ReLocateComment()`：
+
+```go
+// internal/diff/relocation.go — ReLocateComment()
+// 1. 用 {diff}, {existing_code}, {suggestion_content} 构造提示词
+// 2. 让 LLM 重新生成精确的 existing_code 片段
+// 3. 用新的 existing_code 重试 ResolveComment()
+func ReLocateComment(ctx, cm, d, client, task, modelName, maxTokens) (bool, *resp, msgs) {
+    messages := renderTemplate(task.Messages, d.Diff, cm.ExistingCode, cm.Content)
+    resp, err := client.CompletionsWithCtx(ctx, ...)
+    code := extractCodeBlock(resp.Content())  // 提取代码块
+    original := cm.ExistingCode
+    cm.ExistingCode = code                     // 替换为 LLM 重新生成的片段
+    if ResolveComment(cm, d) { return true, resp, messages }  // 重试确定性定位
+    cm.ExistingCode = original                 // 失败则回滚
+    return false, resp, messages
+}
+```
+
+这是一个精巧的**确定性 × LLM 协作**模式：
+
+<MermaidDiagram chart={`flowchart TB
+    Comment["code_comment 产出评论<br/>含 existing_code"] --> Resolve{"确定性定位<br/>ResolveComment()"}
+    Resolve -->|匹配成功| Done["获得精确行号<br/>StartLine/EndLine"]
+    Resolve -->|匹配失败| ReLocate{"LLM 反思重定位<br/>ReLocateComment()"}
+    ReLocate --> LLM["LLM 重新生成<br/>精确 existing_code"]
+    LLM --> Retry["用新片段重试<br/>ResolveComment()"]
+    Retry -->|成功| Done
+    Retry -->|失败| Rollback["回滚 original<br/>评论保留但无行号"]
+    style Resolve fill:#c8e6c9
+    style ReLocate fill:#fff3e0
+    style Done fill:#c8e6c9
+`} />
+
+- **确定性定位是主路径**：大部分评论通过纯文本匹配即可定位，零额外 LLM 调用、零成本。
+- **LLM 反思是兜底**：仅当确定性匹配失败时触发，让 LLM 基于 diff 上下文重新生成更精确的代码片段，再用确定性方法重试。
+- **失败安全**：即使重定位也失败，评论仍保留（只是没有精确行号），不会丢失评审意见。
+
+这种设计将 LLM 的不确定性限制在最小范围——**行号最终仍由确定性方法计算，LLM 只是辅助生成更好的匹配输入**。
+
+## 八、Review Filter：事后确定性校验
+
+在 Main 循环结束后，OCR 还有一道"事后过滤"工序——`executeReviewFilter()`。它运行 `REVIEW_FILTER_TASK`，让 LLM 基于纯 diff 事实判断哪些评论是"可证伪的错误评论"并移除：
+
+```go
+// internal/agent/agent.go — executeReviewFilter()
+comments := a.args.CommentCollector.CommentsForPath(newPath)
+commentsJSON := buildFilterCommentsJSON(comments)  // 序列化为 {id, content, existing_code}
+
+messages := renderFilterTemplate(ft.Messages, newPath, d.Diff, commentsJSON)
+resp, err := a.args.LLMClient.CompletionsWithCtx(ctx, ...)
+
+indices := parseFilterResponse(resp.Content(), len(comments))
+a.args.CommentCollector.RemoveByPathAndIndices(newPath, indices)  // 移除错误评论
+```
+
+Review Filter 的提示词只包含 `{path}`、`{diff}`、`{comments}` 三个变量——**让 LLM 在纯 diff 事实的约束下判断评论是否站得住脚**。这是一个"反思"过程：先产出，后校验，剔除可证伪的误报。这是 OCR 追求高 Precision（低误报）的关键机制之一。
+
+## 九、上下文压缩：三区水位线
+
+LLM 工具使用循环会不断追加 assistant 消息和 tool result，上下文持续增长。OCR 在 `llmloop/compression.go` 中实现了三区水位线压缩策略：
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph Zones["三区水位线（相对 MaxTokens）"]
+        Z1["安全区<br/>< 60%<br/>正常运行"]
+        Z2["软阈值区<br/>60% - 80%<br/>触发异步压缩"]
+        Z3["警告区<br/>> 80%<br/>同步压缩 + 可能停止"]
+    end
+    Z1 -->|token 增长| Z2
+    Z2 -->|异步压缩完成| Z1
+    Z2 -->|继续增长| Z3
+    Z3 -->|同步压缩| Z1
+    Z3 -->|压缩后仍超| Stop["停止该文件评审"]
+    style Z1 fill:#c8e6c9
+    style Z2 fill:#fff9c4
+    style Z3 fill:#ffcdd2
+`} />
+
+在 `addNextMessage()` 中，每轮循环后检查 token 水位：
+
+- **软阈值（60%）**：触发**异步压缩**（`triggerAsyncCompression`），在后台运行不阻塞主循环
+- **警告阈值（80%）**：取消未完成的异步压缩，执行**同步压缩**（`runCompression`），压缩后若仍超阈值则停止该文件评审
+- **压缩前先尝试应用已完成的异步压缩结果**（`tryApplyPendingCompression`），避免重复工作
+
+这种三区设计在保证不溢出的同时最大化并发效率——大部分压缩在后台悄悄完成，只有极端情况才阻塞主循环。
+
+## 十、Scan 模式：全文件审计（`ocr scan`）
+
+除了基于 diff 的 `ocr review`，OCR 还提供 `ocr scan`——全文件评审模式，用于审计陌生代码库或没有有意义 diff 的目录。它甚至能在非 Git 目录中工作（回退为遵守 `.gitignore` 的文件系统遍历）。
+
+`internal/scan/` 包实现了独立的 Scan Agent，相比 diff 模式增加了几个特有机制：
+
+| 机制 | 实现 | 作用 |
+|------|------|------|
+| **Token 成本估算** | `estimate.go` | 运行前打印粗略 token 成本估算，`--max-tokens-budget` 可封顶总消耗 |
+| **批处理策略** | `batch.go` | `none` / `by-language` / `by-directory` 三种分批方式 |
+| **逐批去重** | `dedup_test.go` | 每批次内相似评论去重（`--no-dedup` 可跳过） |
+| **项目级摘要** | `agent.go` | 评审完成后生成项目级总结（`--no-summary` 可跳过） |
+| **逐文件规划** | `agent.go` | 每个文件的规划预扫描（`--no-plan` 可跳过） |
+
+Scan 模式复用了 `llmloop.Runner` 的工具使用循环和评论定位机制，但在编排层做了适配——它构造合成的 `model.Diff`（`NewFileContent` 为整个文件，`Diff` 为空），使下游的定位和评审逻辑无需感知差异。
+
+## 十一、规则系统：四层优先级链
+
+OCR 的规则匹配是确定性工程的另一支柱。规则解析使用四层优先级链，每层**首次匹配胜出**：
+
+<MermaidDiagram chart={`flowchart TB
+    L1["1. --rule 旗标<br/>CLI 显式覆盖（最高）"]
+    L2["2. 项目配置<br/>.opencodereview/rule.json"]
+    L3["3. 全局配置<br/>~/.opencodereview/rule.json"]
+    L4["4. 系统默认<br/>内嵌 system_rules.json（最低）"]
+    L1 -->|未配置| L2
+    L2 -->|未配置| L3
+    L3 -->|未配置| L4
+    L4 --> Default["使用默认规则"]
+    style L1 fill:#c8e6c9
+    style L4 fill:#ffcdd2
+`} />
+
+规则文件格式支持 `path` glob 匹配（`**` 递归、`{java,kt}` 花括号展开）、`merge_system_rule`（合并或替换系统规则）、以及 `include`/`exclude` 路径过滤。`resolveSystemRule()` 在每个文件子任务开始时调用，根据文件路径匹配出适用的规则文本，注入到提示词的 `{{system_rule}}` 占位符。
+
+**基于模板引擎的规则匹配 vs 纯语言驱动的规则引导**——前者更稳定、更可预测，不会因为提示词微调就导致规则应用偏差。这是 OCR 对"质量不稳定"痛点的直接回应。
+
+## 十二、基准测试：精度优先的权衡
+
+OCR 构建了一个真实世界的代码评审基准：**50** 个流行开源仓库、**200** 个真实 PR、**10** 种编程语言，由 80+ 位资深工程师交叉验证，标注了 **1,505** 条 ground-truth 问题。
+
+结果（与通用 Agent Claude Code 对比，使用相同底层模型）：
+
+| 指标 | 含义 | OCR 表现 |
+|------|------|----------|
+| **F1** | 精确率与召回率的调和平均 | **显著更高** |
+| **Precision** | 报告的问题中真实缺陷的比例 | **显著更高**（更少误报） |
+| **Recall** | 真实缺陷被发现的比例 | 较低（刻意权衡） |
+| **Avg Time** | 单次评审耗时 | 更快 |
+| **Avg Token** | 单次评审 token 消耗 | **仅约 1/9** |
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph OCR["OpenCodeReview"]
+        O1["高 Precision"]
+        O2["高 F1"]
+        O3["低 Recall（刻意）"]
+        O4["~1/9 Token"]
+        O5["更快"]
+    end
+    subgraph CC["通用 Agent (Claude Code)"]
+        C1["较低 Precision"]
+        C2["较低 F1"]
+        C3["高 Recall"]
+        C4["~9x Token"]
+        C5["较慢"]
+    end
+    OCR -.->|"同一模型下的权衡"| CC
+    style OCR fill:#c8e6c9
+    style CC fill:#fff3e0
+`} />
+
+**Recall 较低是刻意为之的权衡**——OCR 选择优先保证 Precision（少误报）而非 Recall（多发现）。在工程实践中，过多的误报会淹没真实问题，导致开发者对评审工具失去信任。1/9 的 token 消耗意味着在相同预算下可以做更多次评审，或在 CI 中更经济地运行。
+
+这种精度优势来自前面分析的多重确定性约束：文件过滤消除噪声、规则匹配聚焦注意力、确定性定位保证位置准确、Review Filter 剔除误报。
+
+## 十三、集成生态
+
+OCR 不仅是一个 CLI，更是一个可嵌入各种开发工作流的评审能力：
+
+<MermaidDiagram chart={`flowchart TB
+    Core["ocr CLI (Go 核心)"]
+    Core --> NPM["npm 全局安装<br/>@alibaba-group/open-code-review"]
+    Core --> Release["GitHub Release 二进制"]
+    Core --> Source["源码编译 make build"]
+    Core --> Int1["Claude Code Skill<br/>npx skills add"]
+    Core --> Int2["Claude Code Plugin<br/>/plugin install"]
+    Core --> Int3["Codex Plugin<br/>codex plugin"]
+    Core --> Int4["VSCode 扩展<br/>CommentProvider/SidebarProvider"]
+    Core --> Int5["GitHub Actions<br/>examples/github_actions"]
+    Core --> Int6["GitLab CI<br/>examples/gitlab_ci"]
+    Core --> Viewer["ocr viewer<br/>WebUI 会话查看器<br/>localhost:5483"]
+    style Core fill:#e3f2fd
+`} />
+
+会话查看器（`ocr viewer`）是一个贴心的设计——它将评审会话的 JSONL 记录（LLM 请求/响应消息）通过 WebUI 展示，方便调试提示词和分析工具调用链。它还内置了 Host-header 白名单安全机制，防止 DNS 重绑定攻击。
+
+## 十四、工程启示
+
+逐文件拆解完 OCR 的源码，我们可以提炼出几条对 AI 工程实践有普遍意义的启示：
+
+### 启示一：识别"绝不能出错"的步骤，用工程逻辑兜底
+
+通用 Agent 的失败往往发生在那些"默认以为 LLM 能做好"的环节——文件覆盖、行号定位、规则应用。OCR 的做法是**把这些环节从 LLM 手中接管过来**：文件覆盖用确定性过滤保证、行号定位用文本匹配计算、规则应用用模板引擎匹配。LLM 只在真正需要动态判断的地方发力。
+
+### 启示二：让 LLM 产出"可校验的中间表示"而非"最终答案"
+
+`code_comment` 工具不要求 LLM 输出行号，而是输出 `existing_code` 片段——一个**可被确定性方法校验和定位的中间表示**。这种"LLM 产出原料，工程逻辑加工成品"的分工，既利用了 LLM 的理解能力，又规避了它的不确定性。
+
+### 启示三：确定性为主、LLM 反思为辅的两层设计
+
+评论定位的"确定性匹配（主）+ LLM 重定位（辅）"是一个可复用的模式：**先用零成本的确定性方法尝试，失败后再用 LLM 兜底，且 LLM 的输出仍需经过确定性方法验证**。这样既保证了大部分情况的高效准确，又为边缘情况留出了恢复路径。
+
+### 启示四：事后反思比事前完美更实际
+
+Review Filter 证明了"先产出后校验"的价值——不要求 LLM 一次产出完美结果，而是允许它先产出，再用独立的反思环节基于纯事实剔除误报。这比试图在提示词中要求"不要误报"更可靠。
+
+### 启示五：精度优先、刻意权衡 Recall
+
+在工程实践中，评审工具的信任度由 Precision 决定——**一个误报太多的工具会被关闭，而一个漏报一些的工具至少还在运行**。OCR 刻意选择高 Precision、低 Recall 的权衡，并配合 1/9 的 token 消耗让高频运行成为可能，这是对真实工程约束的务实回应。
+
+### 启示六：从生产数据中精炼工具集
+
+OCR 的 6 个工具不是凭空设计的，而是从大规模生产数据的工具调用轨迹分析中提炼的。**工具集不是越多越好，而是越精准越好**——每一个多余的工具都会增加 LLM 的决策空间和不确定性。
+
+---
+
+## 结语
+
+OpenCodeReview 的核心贡献不在于"又一个 AI 代码评审工具"，而在于它用工程实践验证了一个架构命题：**在 AI 工程中，确定性工程和 LLM Agent 不是二选一，而是双轮驱动**。确定性工程为评审过程套上缰绳——文件覆盖、规则匹配、行号定位、事后过滤——确保"绝不能出错"的步骤不出错；LLM Agent 在动态决策处发力——上下文检索、评论生成、反思重定位——处理"需要判断"的环节。
+
+这种架构的收益是可量化的：更高 Precision、更高 F1、1/9 的 token、更快的速度。代价是较低的 Recall——一个被坦然接受的工程权衡。
+
+当业界还在争论"该用多大的模型"时，OCR 用源码给出了另一个答案：**架构设计本身，就是驾驭模型能力的关键变量**。
+
+> **项目地址**：https://github.com/alibaba/open-code-review
+>
+> **核心源码索引**：
+> - 评审编排：`internal/agent/agent.go`
+> - LLM 工具循环：`internal/llmloop/loop.go`
+> - 上下文压缩：`internal/llmloop/compression.go`
+> - 工具集定义：`internal/tool/definitions.go`
+> - 评论提交：`internal/tool/code_comment.go`
+> - 确定性定位：`internal/diff/resolver.go`
+> - LLM 反思重定位：`internal/diff/relocation.go`
+> - Scan 模式：`internal/scan/agent.go`
+> - 数据模型：`internal/model/diff.go`

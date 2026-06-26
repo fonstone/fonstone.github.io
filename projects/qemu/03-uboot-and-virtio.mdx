@@ -1,0 +1,247 @@
+---
+title: "U-Boot 移植、内存重规划与 virtio/fw_cfg"
+description: "移植 U-Boot 到 udomain，重新规划整系统物理内存，添加 virtio-mmio 与 fw_cfg 虚拟外设，为 Linux 内核启动做准备。"
+date: "2026-06-27"
+order: 3
+tags: ["QEMU", "RISC-V", "U-Boot", "virtio", "fw_cfg", "Quard-Star"]
+---
+
+本篇对应原教程 ch8、ch9、ch10。在 OpenSBI 跑通后，下一步是移植 U-Boot 作为 udomain 中的二级 loader，并系统性地重新规划物理内存，同时为内核启动添加 virtio 块设备与 fw_cfg 参数传递外设。
+
+> 配套代码工程：https://gitee.com/QQxiaoming/quard_star_tutorial （本篇对应 tag `ch8`~`ch10`）
+
+## 1. U-Boot 介绍与编译（ch8）
+
+### 1.1 U-Boot 的角色
+
+U-Boot 在 ARM 嵌入式开发中常作为二级甚至一级 loader 引导 Linux 内核。早期仅是从非易失性存储加载内核引导，如今还拥有网络功能、固件升级等能力。本教程将 U-Boot 移植进来保证流程完整性。
+
+U-Boot 的 **spl 功能**将其分为 bl0（XIP flash 内运行，少量内存，初始化 ddr 后加载 bl1）和 bl1（ddr 内运行）。本教程不需要 spl，因为已有前级 OpenSBI 负责 BL0 阶段功能。
+
+### 1.2 编译
+
+使用 `u-boot-2021.07` 版本（该版本刚提交了 fw_cfg mmio 驱动，免去了自行实现）：
+
+```bash
+cd u-boot-2021.07
+make CROSS_COMPILE=$CROSS_PREFIX- qemu-riscv64_smode_defconfig
+make CROSS_COMPILE=$CROSS_PREFIX- -j16
+cp u-boot $SHELL_FOLDER/output/uboot/u-boot.elf
+cp u-boot.bin $SHELL_FOLDER/output/uboot/u-boot.bin
+```
+
+U-Boot 同样需要设备树，重新编写 `quard_star_uboot.dts`（删除 opensbi 的 domain 相关内容，增加 `bootargs = "console=ttyS0"`），并修改 opensbi dts 中 udomain 启动地址为 `0x80200000`。
+
+固件打包布局：
+
+```bash
+dd of=fw.bin ... seek=0   if=lowlevel_fw.bin      # BL1
+dd of=fw.bin ... seek=512 if=quard_star_sbi.dtb    # OpenSBI 设备树
+dd of=fw.bin ... seek=1K  if=quard_star_uboot.dtb  # U-Boot 设备树
+dd of=fw.bin ... seek=2K  if=fw_jump.bin           # OpenSBI
+dd of=fw.bin ... seek=4K  if=trusted_fw.bin        # 安全域固件
+dd of=fw.bin ... seek=8K  if=u-boot.bin            # U-Boot
+```
+
+![U-Boot 运行](/images/qemu/ch8-0.png)
+
+本节 tag：`ch8`。
+
+### 1.3 U-Boot 代码流程初分析
+
+<MermaidDiagram chart={`flowchart TD
+    A["start.S: _start"] --> B["board_init_f<br/>早期初始化(汇编+C)"]
+    B --> C["init_sequence_f 表<br/>内存/时钟等基础初始化"]
+    C --> D["relocate_code<br/>自搬到 DDR 高地址"]
+    D --> E["board_init_r<br/>完整C代码阶段"]
+    E --> F["init_sequence_r 表<br/>驱动初始化(dm)"]
+    F --> G["run_main_loop"]
+    G --> H["main_loop<br/>cli_init + autoboot + cli_loop"]
+    H --> I{"Distro Boot"}
+    I -->|"找到 boot.scr"| J["执行脚本加载内核"]
+    I -->|"超时"| K["进入命令行"]
+`} />
+
+总结：U-Boot 分两阶段——`board_init_f` 早期初始化 + 展开 data/bss/堆栈 → `board_init_r` 完成驱动初始化 → 进入命令行 cli 执行外部命令或自动加载内核（Distro Boot）。
+
+## 2. 内存分配重规划与 platform 添加（ch9）
+
+### 2.1 物理内存规划
+
+默认配置不适合本系统。真实 IC 设计开发时，软件团队需早期规划系统内存使用方案。重新规划如下：
+
+![物理内存规划](/images/qemu/ch9-0.png)
+
+<MermaidDiagram chart={`memory map DDR 1GB (重新规划后)
+0x80000000  +-------------------+
+            | Linux Kernel 区域  |
+            | kernel_addr_r      |
+            | fdt_addr_r         |
+0x84000000  | ...               |
+            |                   |
+0xB0000000  +-------------------+
+            | uboot.dtb          |
+0xB0200000  | u-boot.bin (BL0)   |
+            | u-boot reloc (BL1) |  32MB 向下生长
+0xB0400000  +-------------------+
+            | ...               |
+0xBF800000  +-------------------+
+            | trusted_fw (core7) |  4MB
+0xBFC00000  +-------------------+
+0xBFF00000  | sbi.dtb            |
+0xBFF80000  | opensbi 安全域     |  512KB
+0xC0000000  +-------------------+  DDR 顶
+`} />
+
+整理加载地址：
+
+```
+load opensbi_fw.bin    [0x20200000:0x20400000] --> [0xBFF80000:0xC0000000]
+load qemu_sbi.dtb      [0x20080000:0x20100000] --> [0xBFF00000:0xBFF80000]
+load trusted_fw.bin    [0x20400000:0x20800000] --> [0xBF800000:0xBFC00000]
+load qemu_uboot.dtb    [0x20100000:0x20180000] --> [0xB0000000:0xB0080000]
+load u-boot.bin        [0x20800000:0x20C00000] --> [0xB0200000:0xB0600000]
+```
+
+重写 lowlevelboot（仅 core0 加载，其余 core 等待 `_pen` 标志释放后跳转），修改设备树 boot 地址与 trusted_domain接脚本地址。本节 tag：`ch9`。
+
+### 2.2 添加 platform 到 U-Boot
+
+创建 `board/emulation/qemu-quard-star/` 目录，添加 `Kconfig`、`qemu-quard-star.c`、`Makefile`：
+
+```c
+// u-boot-2021.07/board/emulation/qemu-quard-star/Kconfig
+if TARGET_QEMU_QUARD_STAR
+config SYS_BOARD
+    default "qemu-quard-star"
+config SYS_VENDOR
+    default "emulation"
+config SYS_CONFIG_NAME
+    default "qemu-quard-star"
+config SYS_TEXT_BASE
+    default 0xB0200000
+config BOARD_SPECIFIC_OPTIONS
+    def_bool y
+    select GENERIC_RISCV
+    select CMD_QFW
+    select QFW_MMIO
+    imply VIRTIO_MMIO
+    imply VIRTIO_NET
+    imply VIRTIO_BLK
+    imply SYS_NS16550
+    imply SYSRESET_SYSCON
+endif
+```
+
+```c
+// u-boot-2021.07/board/emulation/qemu-quard-star/qemu-quard-star.c
+phys_size_t get_effective_memsize(void) {
+    return 32*1024*1024;  // 限制 uboot reloc top 地址为 32MB
+}
+```
+
+```c
+// u-boot-2021.07/include/configs/qemu-quard-star.h
+#define CONFIG_SYS_SDRAM_BASE     0x80000000
+#define CONFIG_SYS_LOAD_ADDR      (CONFIG_SYS_SDRAM_BASE + SZ_2M)
+#define CONFIG_SYS_MALLOC_LEN     SZ_8M
+#define BOOT_TARGET_DEVICES(func) func(QEMU, qemu, na) func(VIRTIO, virtio, 0)
+#define CONFIG_EXTRA_ENV_SETTINGS \
+  "kernel_addr_r=0x84000000\0" \
+  "fdt_addr_r=0x88000000\0" \
+  "scriptaddr=0x88100000\0" \
+  "ramdisk_addr_r=0x88300000\0" \
+  BOOTENV
+```
+
+## 3. virtio 与 fw_cfg（ch10）
+
+### 3.1 virtio
+
+virtio 是 I/O 半虚拟化解决方案。直接调用 QEMU API 例化 virtio-mmio 设备：
+
+```c
+// qemu-6.0.0/hw/riscv/quard_star.c
+[QUARD_STAR_VIRTIO] = { 0x10100000, 0x1000 }, // 八组连续
+
+for (i = 0; i < QUARD_STAR_COUNT; i++) {
+    sysbus_create_simple("virtio-mmio",
+        memmap[QUARD_STAR_VIRTIO].base + i * memmap[QUARD_STAR_VIRTIO].size,
+        qdev_get_gpio_in(DEVICE(virtio_plic), QUARD_STAR_IRQ + i));
+}
+```
+
+设备树添加 8 个 `virtio_mmio@1010X000` 节点：
+
+```dts
+virtio_mmio@10100000 {
+    interrupts = <0x1>;
+    interrupt-parent = <0x11>;
+    reg = <0x0 0x10100000 0x0 0x1000>;
+    compatible = "virtio,mmio";
+};
+// ... 10101000 ~ 10107000 ...
+```
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph QEMU
+        VM["virtio-mmio 后端<br/>8组设备"]
+    end
+    subgraph Guest
+        D1["virtio-blk<br/>块设备/文件系统"]
+        D2["virtio-gpu<br/>显示设备"]
+        D3["virtio-net<br/>网卡"]
+        D4["virtio-mouse/keyboard<br/>输入设备"]
+        D5["virtio-9p<br/>目录共享"]
+    end
+    VM --> D1
+    VM --> D2
+    VM --> D3
+    VM --> D4
+    VM --> D5
+`} />
+
+### 3.2 fw_cfg
+
+fw_cfg 是 QEMU 提供的传递参数给内核的虚拟 IP：
+
+```c
+[QUARD_STAR_FW_CFG] = { 0x10108000, 0x18 },
+s->fw_cfg = fw_cfg_init_mem_wide(memmap[QUARD_STAR_FW_CFG].base + 8,
+                                 memmap[QUARD_STAR_FW_CFG].base, 8,
+                                 memmap[QUARD_STAR_FW_CFG].base + 16,
+                                 &address_space_memory);
+fw_cfg_add_i16(s->fw_cfg, FW_CFG_NB_CPUS, (uint16_t)machine->smp.cpus);
+```
+
+设备树添加 `fw-cfg@10108000 { compatible = "qemu,fw-cfg-mmio"; }`。U-Boot 需打开 `CMD_QFW` 功能。
+
+### 3.3 测试使用
+
+```bash
+$SHELL_FOLDER/output/qemu/bin/qemu-system-riscv64 \
+  -M quard-star -m 1G -smp 8 \
+  -drive if=pflash,bus=0,unit=0,format=raw,file=fw.bin \
+  -drive file=rootfs.img,format=raw,id=hd0 \
+  -device virtio-blk-device,drive=hd0 \
+  -fw_cfg name="opt/qemu_cmdline",string="qemu_vc=$DEFAULT_V" \
+  -global virtio-mmio.force-legacy=false \
+  --serial vc:$DEFAULT_VC --monitor vc:$DEFAULT_VC --parallel none
+```
+
+![virtio/fw_cfg 测试](/images/qemu/ch10-0.png)
+
+`qfw list`/`qfw cpus`/`virtio scan`/`virtio info` 命令输出正确信息即功能正常。本节 tag：`ch10`。
+
+## 4. 阶段小结
+
+本篇把 U-Boot 跑了起来并完成系统级内存重规划，同时为内核启动备齐了 virtio 块设备与 fw_cfg 参数通道。关键要点：
+
+- **U-Boot 两阶段**：`board_init_f` 早期初始化 → `board_init_r` 驱动初始化 → main_loop
+- **内存规划思维**：真实 IC 开发需早期统筹各级 boot 与固件升级的内存布局
+- **virtio 半虚拟化**：QEMU 中一行 `sysbus_create_simple` 即可例化
+- **fw_cfg 传参**：QEMU → guest 的轻量参数通道
+
+> 参考链接：
+> - U-Boot 官方：http://www.denx.de/wiki/U-Boot/
+> - virtio 原理：https://www.cnblogs.com/super-sos/p/9044154.html

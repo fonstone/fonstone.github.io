@@ -312,10 +312,11 @@ export default async function Home() {
                 },
                 {
                   name: "QEMU",
-                  desc: "虚拟化与系统仿真工具",
+                  desc: "基于 QEMU-RISCV 从零构建嵌入式 Linux 系统学习指南",
                   Icon: Box,
                   iconWrapClassName: "bg-orange-100 dark:bg-orange-500/15",
                   iconClassName: "text-orange-500 dark:text-orange-300",
+                  href: "/projects/qemu",
                 },
                 {
                   name: "ARM/RISC-V",
@@ -334,7 +335,7 @@ export default async function Home() {
               ].map((p) => (
                 <Link
                   key={p.name}
-                  href="#projects"
+                  href={"href" in p && p.href ? p.href : "#projects"}
                   className="group flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 hover:bg-slate-100 transition-colors dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900 w-full max-w-xs"
                 >
                   <div

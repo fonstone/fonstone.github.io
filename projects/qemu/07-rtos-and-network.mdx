@@ -1,0 +1,251 @@
+---
+title: "FreeRTOS 移植、网卡配置与 sshd 服务"
+description: "在 trusted-domain 中移植 FreeRTOS 到 RISC-V S 模式（自写 port 层），给 qemu 添加 virtio-net 网卡并配置 DHCP 开机启动，交叉编译 openssh 并配置 sshd 服务。"
+date: "2026-06-27"
+order: 7
+tags: ["FreeRTOS", "RISC-V", "RTOS", "网络", "DHCP", "ssh", "Quard-Star"]
+---
+
+本篇对应原教程 ch21、ch24、ch25。让 7 个 core 跑 Linux 的同时，在 core7 的 trusted-domain 上跑起 FreeRTOS（S 模式），并为 Linux 系统添加网络与 sshd 远程登录服务。
+
+> 配套代码工程：https://gitee.com/QQxiaoming/quard_star_tutorial （本篇对应 tag `ch21`、`ch24`、`ch25`）
+
+## 1. FreeRTOS 移植 RISC-V S 模式（ch21）
+
+### 1.1 背景
+
+在 7 个 core 跑 Linux 的同时，core7 的 trusted-domain 上移植 FreeRTOS。**运行在 S 模式而非裸机 M 模式**——截止撰文官方还没给出 S 模式 port 文件，因此自己动手编写。
+
+### 1.2 port 层架构
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph FreeRTOS["FreeRTOS Kernel"]
+        A["tasks.c<br/>任务调度"]
+        B["queue.c<br/>IPC"]
+        C["timers.c<br/>软件定时器"]
+        D["heap_4.c<br/>内存管理"]
+    end
+    subgraph Port["自写 RISC-V S 模式 port 层"]
+        E["port.c<br/>tick: sbi_set_timer<br/>yield: sbi_send_ipi"]
+        F["portASM.S<br/>trap handler<br/>压栈/中断分发/sret"]
+        G["portmacro.h<br/>portYIELD/csr操作"]
+    end
+    subgraph SBI["OpenSBI (M模式)"]
+        H["sbi_set_timer<br/>sbi_send_ipi<br/>sbi_clear_ipi"]
+    end
+    A --> Port
+    B --> Port
+    C --> Port
+    Port --> SBI
+`} />
+
+### 1.3 port.c 关键实现
+
+```c
+// trusted_domain/FreeRTOS-Kernel/portable/GCC/RISC-V/port.c
+const size_t uxTimerIncrementsForOneTick =
+    (size_t)(configCPU_CLOCK_HZ / configTICK_RATE_HZ);
+
+void vPortSetupTimerInterrupt(void) {
+    sbi_set_timer(get_ticks() + uxTimerIncrementsForOneTick);  // SBI 设置 tick
+}
+
+BaseType_t xPortStartScheduler(void) {
+    vPortSetupTimerInterrupt();
+    csr_set(CSR_SIE, SIP_STIP);   // 使能 S 模式 Timer 中断
+    csr_set(CSR_SIE, SIP_SSIP);   // 使能 S 模式 Soft 中断
+    xPortStartFirstTask();
+    return pdFAIL;
+}
+```
+
+### 1.4 portmacro.h
+
+```c
+// S 模式下用 sstatus 的 SIE 位控制全局中断
+#define portYIELD()              sbi_send_ipi((const unsigned long *)(0x1<<PRIM_HART))
+#define portDISABLE_INTERRUPTS() __asm volatile("csrc sstatus, 2")
+#define portENABLE_INTERRUPTS()  __asm volatile("csrs sstatus, 2")
+```
+
+### 1.5 测试代码
+
+```c
+// trusted_domain/main.c
+static void task1(void *p_arg) {
+    int time = 0;
+    for(;;) { debug_log("task1 0x%x\n", time++); vTaskDelay(pdMS_TO_TICKS(1000)); }
+}
+int main(void) {
+    debug_log("Hello FreeRTOS!\n");
+    debug_log_init();
+    xTaskCreate(vTaskCreate, "task creat", 256, NULL, 4, NULL);
+    vTaskStartScheduler();
+}
+```
+
+**link.lds** 关键：rom 区 `0xBF800000` 1M，ram 区 `0xBF900000` 6M。编译器务必用 `-mcmodel=medany`。
+
+![FreeRTOS 运行](/images/qemu/ch21-0.png)
+
+本节 tag：`ch21`。
+
+## 2. qemu 网卡与 Linux 内核网络配置（ch24）
+
+### 2.1 virtio-net-device
+
+选择 qemu **user 模式网络**（免配置，适合笔记本开发）：
+
+```bash
+-netdev user,id=net0,net=192.168.31.0/24,dhcpstart=192.168.31.100,hostfwd=tcp::3522-:22,hostfwd=tcp::3580-:80
+-device virtio-net-device,netdev=net0
+```
+
+限制：只支持 tcp/udp（无法 ping）；入站流量需启动前配置端口转发。
+
+### 2.2 配置开机启动 DHCP
+
+<MermaidDiagram chart={`flowchart TD
+    A["inittab: sysinit /etc/init.d/rcS"] --> B["rcS 脚本"]
+    B --> C["mount -a + mdev -s"]
+    C --> D["for i in /etc/init.d/S??*"]
+    D --> E["S40network start"]
+    E --> F["ifup -a"]
+    F --> G["读取 /etc/network/interfaces"]
+    G --> H["iface eth0 inet dhcp"]
+    H --> I["udhcpc 守护进程启动"]
+    I --> J["/usr/share/udhcpc/default.script"]
+    J --> K["获取 IP/配置路由/DNS"]
+    K --> L["网络就绪"]
+`} />
+
+**/etc/init.d/rcS**：
+
+```sh
+#! /bin/sh
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+LD_LIBRARY_PATH=/lib:/usr/lib:/usr/local/lib
+export PATH LD_LIBRARY_PATH
+
+mount -a
+/sbin/mdev -s
+mount -a
+mkdir /dev/pts
+mount -t devpts devpts /dev/pts
+mount -t 9p -o trans=virtio,version=9p2000.L,msize=16384 hostshare /mnt/
+/bin/hostname -F /etc/hostname
+
+for i in /etc/init.d/S??* ;do
+     [ ! -f "$i" ] && continue
+     case "$i" in *.sh) ( set start; . $i ) ;; *) $i start ;; esac
+done
+```
+
+**/etc/network/interfaces**：
+
+```
+auto lo
+iface lo inet loopback
+auto eth0
+iface eth0 inet dhcp
+  pre-up /etc/network/nfs_check
+  wait-delay 15
+  hostname $(hostname)
+```
+
+**/usr/share/udhcpc/default.script**（busybox example 提供）处理 deconfig/renew/bound 事件。
+
+### 2.3 网络相关工具
+
+```bash
+# libmnl (ethtool 依赖)
+./configure --host=riscv64-linux-gnu --prefix=$SHELL_FOLDER/output CC=$CROSS_PREFIX-gcc
+# ethtool
+./configure --host=riscv64-linux-gnu MNL_CFLAGS=-I... MNL_LIBS="-L... -lmnl" CC=$CROSS_PREFIX-gcc
+# openssl
+./Configure linux-generic64 no-asm --prefix=$SHELL_FOLDER/output --cross-compile-prefix=$CROSS_PREFIX-
+# iperf
+./configure --host=riscv64-linux-gnu --with-openssl=$SHELL_FOLDER/output CC=$CROSS_PREFIX-gcc
+```
+
+本节 tag：`ch24`。
+
+## 3. sshd 服务配置（ch25）
+
+### 3.1 openssh 编译
+
+```bash
+# zlib
+export CC=$CROSS_PREFIX-gcc
+./configure --prefix=$SHELL_FOLDER/output
+make -j16 && make install
+
+# openssh
+./configure --host=riscv64-linux-gnu \
+  --with-openssl=$SHELL_FOLDER/output --with-zlib=$SHELL_FOLDER/output \
+  CXX=$CROSS_PREFIX-g++ CC=$CROSS_PREFIX-gcc
+make -j16
+```
+
+目标机 `/etc/passwd` 添加：`sshd:x:74:74:Privilege-separated SSH:/var/empty/sshd:/sbin/nologin`
+
+### 3.2 openssh 配置
+
+**/usr/local/etc/sshd_config** 关键项：
+
+```
+HostKey /usr/local/etc/ssh_host_rsa_key
+PermitRootLogin yes
+UseDNS no
+Subsystem sftp /usr/local/libexec/sftp-server
+```
+
+**/etc/init.d/S90sshd.sh**：
+
+```sh
+#! /bin/bash
+sshd=/usr/local/sbin/sshd
+case "$1" in
+  start)  start-stop-daemon --start --quiet --exec $sshd -b ;;
+  stop)   start-stop-daemon --stop  --quiet --exec $sshd ;;
+  restart) $0 stop; sleep 3; $0 start ;;
+esac
+```
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph Host["主机"]
+        A["ssh localhost:3522"]
+        B["putty/ssh 客户端"]
+    end
+    subgraph QEMU["QEMU 端口转发"]
+        C["hostfwd tcp::3522-:22"]
+    end
+    subgraph Guest["目标机"]
+        D["sshd 守护进程 :22"]
+        E["ssh 登录 shell"]
+        F["sftp 文件传输"]
+    end
+    A --> C
+    B --> C
+    C --> D
+    D --> E
+    D --> F
+`} />
+
+![ssh 连接](/images/qemu/ch25-0.png)
+
+本节 tag：`ch25`。
+
+## 4. 阶段小结
+
+关键要点：
+
+- **FreeRTOS S 模式 port**：tick 用 `sbi_set_timer`、`portYIELD` 用 `sbi_send_ipi`、中断使能操作 `sstatus` SIE 位——S 模式不能直接操作 M 模式 CSR
+- **`-mcmodel=medany`**：高地址裸机程序必须，glibc 用 medlow 不适合
+- **user 模式网络**：免配置但只支持 tcp/udp、需预设端口转发
+- **udhcpc + default.script**：busybox 网络自动配置的核心机制
+- **sshd 端口转发**：qemu `hostfwd=tcp::3522-:22` 让主机 ssh 到虚拟机
+
+> 参考链接：
+> - FreeRTOS 官网：https://www.freertos.org/
+> - openssh：https://www.openssh.com/

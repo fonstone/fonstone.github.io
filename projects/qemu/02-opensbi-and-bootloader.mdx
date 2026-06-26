@@ -1,0 +1,371 @@
+---
+title: "多级 BootLoader、OpenSBI 与设备树"
+description: "理解 SOC 多级 Boot 设计，移植 OpenSBI 并添加 platform，编写设备树文件，加载运行 OpenSBI，并配置 Domain 实现安全域隔离。"
+date: "2026-06-27"
+order: 2
+tags: ["QEMU", "RISC-V", "OpenSBI", "设备树", "Bootloader", "Quard-Star"]
+---
+
+本篇对应原教程 ch5-1、ch5-2、ch6、ch7。从"只打印 Hello"的 lowlevelboot 升级为真正加载运行 OpenSBI，并引入设备树与 Domain 概念，为后续 U-Boot 与 Linux 内核铺路。
+
+> 配套代码工程：https://gitee.com/QQxiaoming/quard_star_tutorial （本篇对应 tag `ch5`~`ch7`）
+
+## 1. 多级 BootLoader 与 OpenSBI 概念（ch5-1）
+
+### 1.1 为什么需要多级 BootLoader
+
+随着嵌入式转向 SOC 方式，IC 内部不止一颗 CPU 核，可能包含各种 IP，上层软件需要划分不同的功能域、操作域、安全域。为支持复杂而碎片化的应用需求，SOC 的 Boot 阶段延伸出数级 BootLoader，依次称作 BL0、BL1、BL2……
+
+### 1.2 OpenSBI 是什么
+
+RISC-V 提出了标准的 **SBI 规范**（RISC-V Supervisor Binary Interface）。SBI 作为直接运行在系统 M 模式（机器模式）下的程序，向上层 OS 提供统一的系统调用环境，拥有最高权限，可访问所有硬件资源，并通过 PMP 等硬件级权限管理单元将系统划分为多个域（domain）供不同安全等级的多操作系统使用。如下图所示，SBI 位于 S 模式和 M 模式之间。
+
+![OpenSBI 位于 S/M 模式之间](/images/qemu/ch5-0.png)
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph M模式["M 模式 (Machine)"]
+        SBI["OpenSBI<br/>最高权限, PMP 域管理"]
+    end
+    subgraph S模式["S 模式 (Supervisor)"]
+        UB["U-Boot"]
+        KERNEL["Linux Kernel (7核)"]
+    end
+    subgraph U模式["U 模式 (User)"]
+        RTOS["FreeRTOS / 裸机<br/>trusted-domain (core7)"]
+    end
+    SBI -->|"mret S模式"| UB
+    UB --> KERNEL
+    SBI -->|"mret U模式"| RTOS
+    KERNEL -->|"ecall SBI调用"| SBI
+`} />
+
+RISC-V 官方在给出 SBI 标准规范的同时开发了开源代码 opensbi。本教程使用 V0.9 版本。
+
+### 1.3 目标启动流程设计
+
+RISC-V 文档中给出的常见多级 BL 结构如下：
+
+![多级 BL 结构](/images/qemu/ch5-1.png)
+
+最终确定本系统启动流程：maskrom(BL0) → pflash 首地址的 lowlevelboot(BL1) → BL1 初始化 ddr、将 pflash 上的 opensbi(BL2) 与设备树加载到 ddr 并跳转执行。本节 tag：`ch5`。
+
+<MermaidDiagram chart={`flowchart LR
+    A["maskrom BL0<br/>0x0 固定"] -->|"跳转 pflash"| B["lowlevelboot BL1<br/>0x20000000"]
+    B -->|"搬运到DDR并跳转"| C["OpenSBI BL2<br/>0x80000000"]
+    C -->|"解析设备树<br/>Domain划分"| D["U-Boot (udomain)"]
+    C -->|"Domain隔离"| E["trusted-domain (core7)"]
+    D --> F["Linux Kernel"]
+`} />
+
+## 2. OpenSBI 源码结构与 platform 添加（ch5-2）
+
+### 2.1 源码结构
+
+![OpenSBI 源码结构](/images/qemu/ch5-2.png)
+
+- `sbi/`：核心文件
+- `utils/`：设备树解析 libfdt 及驱动文件（均采用 fdt 设备树驱动框架）
+- `platform/`：板卡特有代码
+
+OpenSBI 生成的固件有三类，本教程只使用 `fw_jump`。启动流程如下：
+
+<MermaidDiagram chart={`flowchart TD
+    A["fw_base.S: _start"] --> B{"boot核心?"}
+    B -->|"否"| C["wait_for_boot_hart 等待"]
+    B -->|"是"| D["_relocate 自拷贝检查"]
+    D --> E["清bss, 初始化SP"]
+    E --> F["fw_platform_init<br/>读取设备树配置"]
+    F --> G["_scratch_init<br/>写入下一级启动信息"]
+    G --> H["_fdt_reloc"]
+    H --> I["_start_warm"]
+    C --> I
+    I --> J["sbi_init (C代码)"]
+    J --> K["冷启动: 解析设备树<br/>初始化 irq/tlb/ipi/domain/PMP/timer"]
+    K --> L["sbi_hart_switch_mode<br/>mret 切换到 S/U 模式"]
+`} />
+
+![OpenSBI 启动流程图](/images/qemu/ch5-3.png)
+
+### 2.2 platform 添加
+
+SBI 使用设备树大大减少了 platform 代码开发，更多是留 hook 函数。配置 `platform_ops` 与 `platform` 结构体：
+
+```c
+// opensbi-0.9/platform/quard-star/platform.c
+const struct sbi_platform_operations platform_ops = {
+    .early_init    = quard_star_early_init,
+    .final_init    = quard_star_final_init,
+    .console_putc  = fdt_serial_putc,
+    .console_init  = fdt_serial_init,
+    .irqchip_init  = fdt_irqchip_init,
+    .ipi_send      = fdt_ipi_send,
+    .timer_init    = fdt_timer_init,
+    .system_reset  = quard_star_system_reset,
+    ...
+};
+
+struct sbi_platform platform = {
+    .opensbi_version  = OPENSBI_VERSION,
+    .name              = "Quard-Star",
+    .hart_count        = SBI_HARTMASK_MAX_BITS,
+    .platform_ops_addr = (unsigned long)&platform_ops
+};
+```
+
+`fw_platform_init` 通过 fdt 读取 hart id 等配置到 platform 结构；`final_init` 调用 `fdt_cpu_fixup`/`fdt_fixups`/`fdt_domain_fixup` 将设备树修订为 platform 执行完毕后的真实设备信息。
+
+```c
+unsigned long fw_platform_init(unsigned long arg0, unsigned long arg1,
+                unsigned long arg2, unsigned long arg3, unsigned long arg4) {
+    const char *model;
+    void *fdt = (void *)arg1;
+    u32 hartid, hart_count = 0;
+    // ...解析设备树获取hart_count...
+    platform.hart_count = hart_count;
+    return arg1;  // 返回 FDT 指针
+}
+```
+
+`config.mk` 配置：
+
+```makefile
+FW_JUMP=y
+FW_TEXT_START=0x80000000
+FW_JUMP_ADDR=0x0
+```
+
+### 2.3 固件打包合成
+
+编译生成 `fw_jump.bin`，用 `dd` 打包到 pflash 固件的 2K 偏移区域：
+
+```bash
+cd $SHELL_FOLDER/opensbi-0.9
+make CROSS_COMPILE=$CROSS_PREFIX- PLATFORM=quard_star
+cp build/platform/quard_star/firmware/*.bin $SHELL_FOLDER/output/opensbi/
+
+# 合成固件
+dd of=fw.bin bs=1k conv=notrunc seek=2K if=fw_jump.bin
+```
+
+本节 tag：`ch5`。
+
+## 3. 设备树文件与 OpenSBI 加载运行（ch6）
+
+### 3.1 什么是设备树
+
+扁平设备树（FDT）源于 linux 内核 powerpc 架构对驱动的抽象封装，使驱动编写架构清晰，逐渐被 U-Boot、OpenSBI 等引入。步骤：编写 `.dts/.dtsi` 源文件 → `dtc` 编译为 `.dtb` → 内核启动时加载解析。
+
+<MermaidDiagram chart={`flowchart LR
+    A["quard_star_sbi.dts<br/>人类可读源文件"] -->|"dtc -I dts -O dtb"| B["quard_star_sbi.dtb<br/>二进制 DTB"]
+    B -->|"dd 打包到 pflash 512K偏移"| C["fw.bin"]
+    C -->|"lowlevelboot 搬运到 DDR"| D["0x82200000"]
+    D -->|"a1寄存器传给OpenSBI"| E["OpenSBI 解析驱动"]
+`} />
+
+### 3.2 编写设备树
+
+为 OpenSBI 编写最简单的 `quard_star_sbi.dts`，关键片段：
+
+```dts
+// dts/quard_star_sbi.dts
+/dts-v1/;
+/ {
+    #address-cells = <0x2>;
+    #size-cells = <0x2>;
+    compatible = "riscv-quard-star";
+    model = "riscv-quard-star,qemu";
+    chosen { stdout-path = "/soc/uart0@10000000"; };
+    memory@80000000 {
+        device_type = "memory";
+        reg = <0x0 0x80000000 0x0 0x40000000>;
+    };
+    cpus {
+        #address-cells = <0x1>;
+        #size-cells = <0x0>;
+        timebase-frequency = <0x989680>;
+        cpu0: cpu@0 {
+            device_type = "cpu"; reg = <0x0>; status = "okay";
+            riscv,isa = "rv64imafdcsu"; mmu-type = "riscv,sv48";
+            interrupt-controller { compatible = "riscv,cpu-intc"; };
+        };
+        // ... cpu1~cpu7 ...
+    };
+    soc {
+        compatible = "simple-bus"; ranges;
+        uart0: uart0@10000000 {
+            interrupts = <0xa>; interrupt-parent = <0x11>;
+            clock-frequency = <0x384000>;
+            reg = <0x0 0x10000000 0x0 0x100>;
+            compatible = "ns16550a";
+        };
+        plic@c000000 { compatible = "riscv,plic0"; ... };
+        clint@2000000 { compatible = "riscv,clint0"; ... };
+    };
+};
+```
+
+编译并打包：
+
+```bash
+dtc -I dts -O dtb -o quard_star_sbi.dtb quard_star_sbi.dts
+dd of=fw.bin bs=1k conv=notrunc seek=512 if=quard_star_sbi.dtb
+```
+
+### 3.3 重新编写 lowlevelboot
+
+此时固件包含三部分。修改 lowlevelboot 完成加载并跳转：
+
+```asm
+// lowlevelboot/startup.s (修改后)
+    .macro load_data,_src_start,_dst_start,_dst_end
+    bgeu    \_dst_start, \_dst_end, 2f
+1:  lw      t0, (\_src_start)
+    sw      t0, (\_dst_start)
+    addi    \_src_start, \_src_start, 4
+    addi    \_dst_start, \_dst_start, 4
+    bltu    \_dst_start, \_dst_end, 1b
+2:  .endm
+
+_start:
+    // load opensbi [0x20200000:0x20400000] --> [0x80000000:0x80200000]
+    li      a0, 0x202
+    slli    a0, a0, 20
+    li      a1, 0x800
+    slli    a1, a1, 20
+    li      a2, 0x802
+    slli    a2, a2, 20
+    load_data a0, a1, a2
+
+    // load dtb [0x20080000:0x20100000] --> [0x82200000:0x82280000]
+    li      a0, 0x2008
+    slli    a0, a0, 16
+    li      a1, 0x822
+    slli    a1, a1, 20
+    li      a2, 0x8228
+    slli    a2, a2, 16
+    load_data a0, a1, a2
+
+    csrr    a0, mhartid          # a0 = hart id
+    li      a1, 0x82200000       # a1 = dtb 起始地址
+    li      t0, 0x80000000       # t0 = opensbi 起始地址
+    jr      t0                   # 跳转进入 opensbi
+```
+
+运行后看到 OpenSBI 输出即说明成功。本节 tag：`ch6`。
+
+![OpenSBI 运行成功](/images/qemu/ch6-0.png)
+
+## 4. OpenSBI Domain（ch7）
+
+### 4.1 Domain 的作用
+
+Domain 用于将 SOC 内部硬件人为划分不同权限区域，分别独立运行，使用 RISC-V 的 PMP 等硬件保护单元。好处：可以让一部分 core 在 SMP 模式下跑 Linux，另一部分 core 在 AMP 模式下单独运行裸机或 RTOS，只需划分到不同 Domain。
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph M模式["M模式 OpenSBI"]
+        DM["Domain Manager<br/>PMP 权限管理"]
+    end
+    DM -->|"udomain S模式<br/>core0~6 全权限"| U["Linux Kernel SMP"]
+    DM -->|"tdomain U模式<br/>core7 限制权限"| T["FreeRTOS/裸机"]
+    DM -->|"内存隔离"| MEM["tmem: 0xB0000000 256MB<br/>tuart: uart2 独占"]
+`} />
+
+### 4.2 设备树中添加 Domain
+
+在 `chosen` 节点下添加 `opensbi-domains`：
+
+```dts
+// dts/quard_star_sbi.dts (追加 Domain 配置)
+chosen {
+    stdout-path = "/soc/uart0@10000000";
+    opensbi-domains {
+        compatible = "opensbi,domain,config";
+        tmem: tmem {
+            compatible = "opensbi,domain,memregion";
+            base = <0x0 0xb0000000>; order = <28>;  // 256MB
+        };
+        tuart: tuart {
+            compatible = "opensbi,domain,memregion";
+            base = <0x0 0x10002000>; order = <8>; mmio;
+            devices = <&uart2>;
+        };
+        allmem: allmem {
+            compatible = "opensbi,domain,memregion";
+            base = <0x0 0x0>; order = <64>;
+        };
+        tdomain: trusted-domain {
+            compatible = "opensbi,domain,instance";
+            possible-harts = <&cpu7>;
+            regions = <&tmem 0x7>, <&tuart 0x7>, <&allmem 0x7>;
+            boot-hart = <&cpu7>;
+            next-addr = <0x0 0xb0000000>; next-mode = <0x0>;  // U模式
+        };
+        udomain: untrusted-domain {
+            compatible = "opensbi,domain,instance";
+            possible-harts = <&cpu0 &cpu1 &cpu2 &cpu3 &cpu4 &cpu5 &cpu6>;
+            regions = <&tmem 0x0>, <&tuart 0x0>, <&allmem 0x7>;
+            boot-hart = <&cpu0>;
+            next-arg1 = <0x0 0x82200000>;
+            next-addr = <0x0 0x82000000>; next-mode = <0x1>;  // S模式
+        };
+    };
+};
+```
+
+### 4.3 OpenSBI 代码流程
+
+<MermaidDiagram chart={`flowchart TD
+    A["sbi_domain_init<br/>初始化 root domain"] --> B["sbi_hsm_init"]
+    B --> C["sbi_domain_finalize"]
+    C --> D["sbi_platform_final_init"]
+    D --> E["quard_star_final_init"]
+    E --> F["fdt_domain_fixup<br/>解析设备树 domain 节点"]
+    F --> G["sbi_domain_register<br/>注册 tdomain + udomain"]
+    G --> H["sbi_hsm_prepare_next_jump"]
+    H --> I["sbi_hart_switch_mode<br/>写CSR + mret 切换模式"]
+`} />
+
+### 4.4 编写安全 Domain 测试代码
+
+为 trusted-domain 编写最简单的串口打印代码（运行于 `0xb0000000`，使用 uart2）：
+
+```asm
+// trusted_domain/startup.s
+_start:
+    li      t0, 0x100
+    slli    t0, t0, 20         # t0 = 0x10000000
+    li      t1, 0x200
+    slli    t1, t1, 4
+    add     t0, t0, t1         # t0 = 0x10002000 (uart2)
+    li      t1, 'H'
+    sb      t1, 0(t0)
+    # ... 输出 "Hello Quard Star board!" ...
+_loop:
+    j       _loop
+```
+
+```
+// trusted_domain/link.lds
+OUTPUT_ARCH( "riscv" )
+ENTRY( _start )
+MEMORY { ddr (rxai!w) : ORIGIN = 0xb0000000, LENGTH = 256M }
+SECTIONS { .text { KEEP(*(.text)) } >ddr }
+```
+
+qemu 添加三个 `--serial vc:1280x720` 将串口输出定位到 GUI 终端。
+
+![双 Domain 启动演示](/images/qemu/ch7-0.gif)
+
+切换到串口 0 和串口 2 可分别查看 udomain 与 tdomain 打印。本节 tag：`ch7`。
+
+## 5. 阶段小结
+
+本篇完成了从理论到实践的跨越：理解多级 BootLoader 设计 → 移植 OpenSBI 并添加 platform → 编写设备树让 OpenSBI 真正跑起来 → 配置 Domain 实现安全域隔离。核心要点：
+
+- **OpenSBI 定位**：M 模式下的统一系统调用层 + 域权限管理
+- **设备树作用**：解耦硬件配置与驱动代码，OpenSBI/U-Boot/Kernel 共用
+- **Domain 价值**：PMP 硬件保护下的多 OS/AMP 隔离
+
+> 参考链接：
+> - OpenSBI Deep Dive：https://archive.fosdem.org/2019/schedule/event/riscvsbi/
+> - 教程文档：https://quard-star-tutorial.readthedocs.io/zh-cn/latest/ch7.html

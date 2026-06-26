@@ -1,0 +1,251 @@
+---
+title: "调试技巧、qemu 参数速查与扩展主题"
+description: "kgdb 调试 Linux 内核与驱动模块，qemu gdbstub 早期调试，gcc -pg 选项做嵌入式 profile，qemu 常用参数速查表，QEMU CAN 总线模拟，ifplugd 网口插拔检测配置。"
+date: "2026-06-27"
+order: 8
+tags: ["kgdb", "gdb", "qemu", "调试", "CAN", "ifplugd", "profile", "Quard-Star"]
+---
+
+本篇对应原教程 6 篇扩展文章（ext1–ext6）。前面 7 篇把系统从零搭到了一个可用的 Linux 发行版，本篇聚焦调试、性能分析、qemu 参数速查与几个实际项目常用的扩展主题。
+
+> 配套代码工程：https://gitee.com/QQxiaoming/quard_star_tutorial （扩展分支：`experiment/kgdb` 等）
+
+## 1. kgdb 调试 Linux 内核与驱动模块（ext1）
+
+### 1.1 修改内核配置
+
+| 配置项 | 作用 |
+|--------|------|
+| `CONFIG_KGDB=y` | 启用 kgdb |
+| `CONFIG_GDB_SCRIPTS=y` | 生成 `vmlinux-gdb.py`，提供 gdb 扩展命令 |
+| `CONFIG_DEBUG_INFO=y` | 生成调试信息 |
+| `CONFIG_DEBUG_INFO_DWARF4=y` | DWARF4 信息（否则无法 debug 变量） |
+| 关闭 `STRICT_KERNEL_RWX`/`STRICT_MODULE_RWX` | 允许软件断点写入内核代码段 |
+
+### 1.2 修改内核启动参数
+
+```
+bootargs = "root=/dev/vda2 rw console=ttyS0 earlycon=sbi nokaslr kgdboc=ttyS1,115200 kgdbwait"
+```
+
+### 1.3 启动调试
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph T1["终端1: QEMU"]
+        A["qemu 启动<br/>--serial telnet::3441<br/>--serial telnet::3442"]
+    end
+    subgraph T2["终端2: telnet 3441"]
+        B["查看内核启动 log<br/>内核等待 gdb 接入"]
+    end
+    subgraph T3["终端3: gdb 3442"]
+        C["riscv64-gdb -x gdb.script<br/>target remote :3442"]
+        C --> D["c 继续启动<br/>echo g > /proc/sysrq-trigger<br/>进入断点"]
+        D --> E["bt / b / s / n / p 调试"]
+    end
+    T1 --> T2
+    T1 --> T3
+`} />
+
+```bash
+# gdb.script
+add-auto-load-safe-path ./linux-5.10.42/
+file ./linux-5.10.42/vmlinux
+source ./linux-5.10.42/vmlinux-gdb.py
+target remote :3442
+```
+
+![kgdb 三终端调试](/images/qemu/ext1-0.png)
+
+### 1.4 调试技巧
+
+内核调试是**被动调试**——`echo g > /proc/sysrq-trigger` 触发 breakpoint。`lx-symbols` 自动加载 ko 符号。
+
+## 2. gcc -pg 编译选项在嵌入式 profile 中应用（ext2）
+
+<MermaidDiagram chart={`flowchart TD
+    A["gcc -pg 编译选项"] --> B["所有函数前插入 _mcount 调用"]
+    B --> C["_mcount 读取 ra 寄存器<br/>获取调用者地址"]
+    C --> D["统计 curr_ra 计数"]
+    D --> E["分析高频调用函数<br/>进行优化"]
+    C --> F["caller_ra 参数<br/>可 hook 返回地址统计执行时间"]
+    C --> G["通过串口/USB 发送 PC<br/>实时分析或存储脱机分析"]
+`} />
+
+```c
+void __attribute__((no_instrument_function)) _mcount(uint64_t caller_ra) {
+    uint64_t curr_ra;
+    __asm__ __volatile__("mv %0, ra":"=r"(curr_ra));
+    profiling(curr_ra - 4);
+}
+```
+
+![profile 输出](/images/qemu/ext2-0.png)
+
+## 3. qemu 常用参数选项说明（ext3）
+
+<MermaidDiagram chart={`flowchart TD
+    A["qemu-system-riscv64"] --> B["-M quard-star<br/>设备类型"]
+    A --> C["-m 1G -smp 8<br/>内存/核心数"]
+    A --> D["-drive if=pflash<br/>固件映像"]
+    A --> E["-drive if=none + -device virtio-blk<br/>块设备"]
+    A --> F["-netdev user/tap<br/>网络"]
+    A --> G["-chardev socket<br/>字符设备(如USB串口)"]
+    A --> H["-fsdev local + -device virtio-9p<br/>目录共享"]
+    A --> I["-global virtio-mmio.force-legacy=false<br/>全局参数"]
+    A --> J["-device virtio-***<br/>总线外设"]
+    A --> K["-display gtk/nographic<br/>显示"]
+    A --> L["--serial --monitor<br/>终端"]
+    A --> M["-s -S / -d in_asm<br/>调试"]
+`} />
+
+### 3.1 网络设备
+
+**user 模式**（免配置）：
+
+```bash
+-netdev user,id=net0,net=192.168.31.0/24,dhcpstart=192.168.31.100,hostfwd=tcp::3522-:22
+```
+
+**tap 模式**（需宿主机配网桥，无线网卡一般不支持）：
+
+```bash
+-netdev tap,ifname=tap0,script=no,downscript=no,id=net0
+```
+
+### 3.2 调试选项
+
+```bash
+-s -S                    # 启动 gdb 服务(端口1234)并等待连接
+-d in_asm/int/page/mmu -D qemu.log  # 输出 guest 运行时信息
+```
+
+## 4. 使用 qemu 的 gdbstub 调试（ext4）
+
+<MermaidDiagram chart={`flowchart TD
+    A["qemu -s -S 启动<br/>等待 gdb 连接"] --> B["gdb.script"]
+    B --> C["file vmlinux<br/>source vmlinux-gdb.py<br/>target remote :1234"]
+    C --> D["hbreak start_kernel<br/>必须用硬件断点"]
+    D --> E{"报错 Cannot access memory?"}
+    E -->|"是"| F["maintenance packet<br/>Qqemu.PhyMemMode:1"]
+    F --> D
+    E -->|"否"| G["c 继续执行"]
+    G --> H["bootloader/uboot 阶段结束后<br/>在 start_kernel 断点停下"]
+    H --> I["跟踪内核早期代码"]
+`} />
+
+与 kgdb 的区别：gdbstub 在仿真环境更早介入，适用于早期 bring up。
+
+## 5. QEMU CAN 总线（ext5）
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph Host["主机"]
+        A["vcan0 虚拟CAN设备<br/>modprobe vcan + ip link"]
+        B["candump vcan0<br/>cansend vcan0 ..."]
+    end
+    subgraph QEMU["QEMU"]
+        C["can-host-socketcan<br/>if=vcan0"]
+        D["can-bus 中间总线"]
+        E["xlnx-zynqmp-can IP<br/>(已修复字节序)"]
+    end
+    subgraph Guest["目标机"]
+        F["can0 网络接口"]
+        G["cansend can0 ...<br/>candump can0"]
+    end
+    A --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+`} />
+
+```bash
+# qemu 参数
+-M quard-star,canbus=canbus0
+-object can-bus,id=canbus0
+-object can-host-socketcan,id=socketcan0,if=vcan0,canbus=canbus0
+
+# vcan0 创建
+modprobe vcan
+ip link add dev vcan0 type vcan
+ip link set up vcan0
+
+# 目标机内
+/sbin/ip link set can0 type can bitrate 1000000 sample-point 0.750
+/sbin/ifconfig can0 up
+cansend can0 1807EC0B#1122334455667788
+```
+
+## 6. 嵌入式 Linux 上 ifplugd 的使用配置与 qemu 模拟验证（ext6）
+
+### 6.1 启动脚本与配置
+
+**/etc/init.d/S50ifplugd.sh**：
+
+```sh
+#! /bin/sh
+source /etc/ifplugd/ifplugd.conf
+case "$1" in
+  start)
+    for i in $INTERFACES; do
+      /usr/sbin/ifplugd -pq -t1 -u1 -d1 -i $i -r /etc/ifplugd/ifplugd.action
+    done ;;
+  stop)
+    for i in $INTERFACES; do kill $(cat /var/run/ifplugd.$i.pid); done ;;
+esac
+```
+
+**/etc/ifplugd/ifplugd.conf**：`INTERFACES="eth0 eth1"`
+
+**/etc/ifplugd/ifplugd.action**：
+
+```sh
+case "$2" in
+  up)   /sbin/ifup $1   ;;
+  down) /sbin/ifdown $1 ;;
+esac
+```
+
+### 6.2 qemu 模拟网口插拔
+
+qemu monitor 终端输入即可模拟真实板卡网口插拔：
+
+```
+set_link net0 off
+set_link net0 on
+```
+
+![ifplugd 检测 up](/images/qemu/ext6-0.png)
+
+![ifplugd 检测 down](/images/qemu/ext6-1.png)
+
+## 7. 全系列总结
+
+至此 8 篇文档覆盖了原教程 26 个正文章节 + 6 个扩展主题。完整学习路线：
+
+<MermaidDiagram chart={`flowchart TD
+    A["01 QEMU环境与板卡<br/>ch0-ch4"] --> B["02 OpenSBI与设备树<br/>ch5-ch7"]
+    B --> C["03 U-Boot与virtio<br/>ch8-ch10"]
+    C --> D["04 内核与根文件系统<br/>ch11-ch15"]
+    D --> E["05 显示与交叉编译<br/>ch16-ch18"]
+    E --> F["06 应用移植与工具链<br/>ch19-ch23"]
+    F --> G["07 RTOS与网络<br/>ch21,ch24-ch25"]
+    G --> H["08 调试与扩展<br/>ext1-ext6"]
+`} />
+
+| 阶段 | 篇目 | 核心能力 |
+|------|------|---------|
+| 1 | QEMU 环境与板卡 | QEMU 板卡注册、内存映射、RISC-V 上电约定 |
+| 2 | OpenSBI 与设备树 | 多级 Boot、SBI 规范、FDT、Domain 隔离 |
+| 3 | U-Boot 与 virtio | U-Boot 两阶段、内存重规划、virtio/fw_cfg |
+| 4 | 内核与根文件系统 | kernel 启动流程、busybox、动态链接、多用户 |
+| 5 | 显示与交叉编译 | DRM 驱动、GNU 交叉编译套路、RTC/syscon |
+| 6 | 应用移植与工具链 | sudo/screen、自编译 GCC、Qt 移植 |
+| 7 | RTOS 与网络 | FreeRTOS S 模式、DHCP、sshd |
+| 8 | 调试与扩展 | kgdb/gdbstub、qemu 参数、CAN、ifplugd |
+
+这条路线的价值在于**真正从 0 开始**——不使用真实板子、不使用 QEMU 快速加载 ELF，而是定制硬件板卡、编写每一级 BootLoader、理解每一层启动代码。完成它，你对嵌入式 Linux 系统从上电第一条指令到 ssh 登录的全链路将有清晰的、可验证的认知。
+
+> 参考链接：
+> - 教程文档：https://quard-star-tutorial.readthedocs.io/zh-cn/latest/
+> - gitee 仓库：https://gitee.com/QQxiaoming/quard_star_tutorial
+> - github 仓库：https://github.com/QQxiaoming/quard_star_tutorial

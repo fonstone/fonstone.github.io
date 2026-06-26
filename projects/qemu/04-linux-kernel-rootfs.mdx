@@ -1,0 +1,303 @@
+---
+title: "Linux 内核加载与最小根文件系统"
+description: "编译 Linux 内核并制作文件系统映像引导启动，移植 busybox，编写 inittab/rcS/fstab 完成最小根文件系统，探究动态链接 ELF 加载机制与多用户管理。"
+date: "2026-06-27"
+order: 4
+tags: ["Linux", "RISC-V", "busybox", "根文件系统", "ELF", "Quard-Star"]
+---
+
+本篇对应原教程 ch11-1、ch11-2、ch12、ch13、ch14、ch15。从内核编译、文件系统映像制作，到 busybox 移植、最小根文件系统完成，再到动态链接 ELF 加载机制与多用户管理——这是整个学习路线最核心的一段，系统真正"活了"过来。
+
+> 配套代码工程：https://gitee.com/QQxiaoming/quard_star_tutorial （本篇对应 tag `ch11`~`ch15`）
+
+## 1. 向着 Linux Kernel 出发——加载引导（ch11-1）
+
+### 1.1 kernel 编译
+
+```bash
+cd linux-5.10.42
+make ARCH=riscv CROSS_COMPILE=$CROSS_PREFIX- defconfig
+make ARCH=riscv CROSS_COMPILE=$CROSS_PREFIX- -j16
+cp arch/riscv/boot/Image $SHELL_FOLDER/output/linux_kernel/Image
+```
+
+### 1.2 制作文件系统映像
+
+<MermaidDiagram chart={`flowchart TD
+    A["创建 rootfs.img<br/>dd 1GB 空文件"] --> B["losetup 挂载回环设备"]
+    B --> C["fdisk 分两个区<br/>p1: vfat(bootfs) p2: ext4(rootfs)"]
+    C --> D["mkfs.vfat / mkfs.ext4 格式化"]
+    D --> E["bootfs: Image + dtb + boot.scr"]
+    D --> F["rootfs: busybox + lib + etc配置"]
+    E --> G["mount 拷贝到分区"]
+    F --> G
+    G --> H["U-Boot Distro Boot 加载"]
+`} />
+
+bootfs 含三个文件，**boot.scr**（U-Boot 脚本）：
+
+```
+load virtio 0:1 0x80000000 /Image
+load virtio 0:1 0x82000000 /quard_star.dtb
+booti 0x80000000 - 0x82000000
+```
+
+用 `mkimage` 转换：
+
+```bash
+mkimage -A riscv -O linux -T script -C none -a 0 -e 0 \
+  -n "Distro Boot Script" -d quard_star_uboot.cmd boot.scr
+```
+
+分区格式化脚本 `generate_rootfs.sh`：
+
+```bash
+losetup -o 0 --sizelimit 1073741824 /dev/loop70 $1 -P
+echo -e "I\n$2\nw\n" | fdisk /dev/loop70
+losetup -d /dev/loop70
+losetup -o 0 --sizelimit 1073741824 /dev/loop70 $1 -P
+mkfs.vfat /dev/loop70p1
+mkfs.ext4 /dev/loop70p2
+losetup -d /dev/loop70
+```
+
+### 1.3 运行 qemu
+
+内核开始 boot 但报 `No working init found`——根文件系统还是空的。本节 tag：`ch11`。
+
+## 2. 向着 Linux Kernel 出发——完成启动（ch11-2）
+
+### 2.1 编写测试 init 进程
+
+```c
+// target_root_app/init_test/main.c
+#include <stdio.h>
+#include <unistd.h>
+#include <pthread.h>
+
+int main() {
+    pid_t result = fork();
+    if (result == 0) { printf("In child!! My PID is %d\n", getpid()); }
+    else {
+        printf("In father!! My PID is %d\n", getpid());
+        for(;;) { printf("PID%d:hello world!\n", getpid()); sleep(1); }
+    }
+    pthread_t th;
+    pthread_create(&th, NULL, thread0, NULL);
+    pthread_create(&th, NULL, thread1, NULL);
+    for(;;) { printf("PID%d:hello world!\n", getpid()); sleep(1); }
+}
+```
+
+```bash
+$CROSS_PREFIX-gcc main.c -lpthread -static -o init  # 静态编译
+```
+
+注意 init 进程不可退出，否则触发 `panic: Attempted to kill init!`。
+
+### 2.2 kernel 启动流程
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph early["early boot (汇编)"]
+        A["_start"] --> B["_start_kernel"]
+        B --> C["setup_vm<br/>构造 early_pg_dir + trampoline_pg_dir<br/>sv39 三级页表"]
+        C --> D["relocate<br/>配置 CSR_SATP, 转虚拟地址"]
+        D --> E["setup_trap_vector<br/>设 CSR_TVEC 异常入口"]
+        E --> F["soc_early_init<br/>设备树匹配 early_init"]
+    end
+    subgraph init["init 阶段 (C代码)"]
+        F --> G["start_kernel<br/>init/main.c:848"]
+        G --> H["各类子系统初始化<br/>sched/irq/timer/fs/net..."]
+        H --> I["加载第一个用户进程<br/>/sbin/init"]
+    end
+`} />
+
+![sv39 页表项](/images/qemu/ch11-1.png)
+
+![CSR_SATP 寄存位域](/images/qemu/ch11-0.png)
+
+RISC-V 的汇编可读性非常好。本节 tag：`ch11`。
+
+## 3. busybox（ch12）
+
+### 3.1 编译
+
+```bash
+cd busybox-1.33.1
+make ARCH=riscv CROSS_COMPILE=$CROSS_PREFIX- quard_star_defconfig
+make ARCH=riscv CROSS_COMPILE=$CROSS_PREFIX- -j16
+make ARCH=riscv CROSS_COMPILE=$CROSS_PREFIX- install
+```
+
+关键配置 `CONFIG_STATIC=y`（静态编译，后续改动态）。所有工具软连接到 `bin/busybox`，按 argv[0] 分发调用 `XX_main`。
+
+![busybox 启动](/images/qemu/ch12-0.png)
+
+本节 tag：`ch12`。
+
+## 4. 最小根文件系统完成（ch13）
+
+### 4.1 busybox init 进程流程
+
+<MermaidDiagram chart={`flowchart TD
+    A["init_main<br/>init/init.c:1039"] --> B["接管系统信号<br/>SIGINT/SIGQUIT/SIGPWR..."]
+    B --> C["设置默认环境变量<br/>HOME=/ PATH=/sbin:..."]
+    C --> D["parse_inittab<br/>读取 /etc/inittab"]
+    D -->|"未找到"| E["使用默认行为<br/>sysinit:/etc/init.d/rcS<br/>askfirst:/bin/sh"]
+    D -->|"找到"| F["解析注册的action"]
+    E --> G["run_actions<br/>SYSINIT/WAIT/ONCE/RESPAWN/ASKFIRST"]
+    F --> G
+    G --> H["while(1) 等待子进程退出<br/>重新 run_actions(RESPAWN|ASKFIRST)"]
+`} />
+
+### 4.2 配置文件
+
+**/etc/inittab**：
+
+```
+::sysinit:/etc/init.d/rcS
+console::askfirst:-/bin/sh
+```
+
+**/etc/init.d/rcS**：
+
+```sh
+#! /bin/sh
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+/bin/mount -a
+/sbin/mdev -s
+/bin/mount -a
+echo " Welcome debugging on Qemu Quard Star board! "
+```
+
+**/etc/fstab**：
+
+```
+proc     /proc              proc    defaults 0 0
+none     /tmp               ramfs   defaults 0 0
+sysfs    /sys               sysfs   defaults 0 0
+mdev     /dev               ramfs   defaults 0 0
+debugfs  /sys/kernel/debug  debugfs defaults 0 0
+```
+
+`mount -a` 读取 fstab 自动挂载；`mdev -s` 通过查询 `/sys/dev` 自动创建 `/dev` 设备节点。
+
+![最小根文件系统启动](/images/qemu/ch13-0.png)
+
+本节 tag：`ch13`。
+
+## 5. 动态链接——ELF 文件加载（ch14）
+
+### 5.1 busybox 动态链接
+
+改 `CONFIG_STATIC` 为 not set，重新编译后 `/bin/busybox` 只有 960K。
+
+### 5.2 Linux ELF 加载机制
+
+<MermaidDiagram chart={`flowchart TD
+    A["execve 系统调用"] --> B["内核 search_binary_handler"]
+    B --> C{"可执行文件格式"}
+    C -->|"ELF"| D["load_elf_binary<br/>fs/binfmt_elf.c:820"]
+    C -->|"脚本"| E["load_script<br/>binfmt_script.c"]
+    D --> F["load_elf_phdrs<br/>加载 ELF 头信息"]
+    F --> G["for 循环处理各段<br/>LOAD/INTERP/DYNAMIC..."]
+    G --> H{"有 .interp 段?"}
+    H -->|"是 动态链接"| I["加载解释器<br/>/lib/ld-linux-riscv64-lp64d.so.1"]
+    I --> J["解释器加载依赖 .so<br/>libc.so.6/libm.so.6..."]
+    J --> K["跳转到程序入口执行"]
+    H -->|"否 静态链接"| K
+`} />
+
+```bash
+$CROSS_PREFIX-readelf -h busybox  # 查看 ELF 头
+$CROSS_PREFIX-readelf -l busybox  # 查看段信息
+# INTERP 段: [Requesting program interpreter: /lib/ld-linux-riscv64-lp64d.so.1]
+
+/lib/ld-linux-riscv64-lp64d.so.1 --list /bin/busybox
+# 列出所有动态依赖（类似 ldd）
+```
+
+解释器源码位于 `glibc/elf/rtld.c:1124:dl_main`。从交叉编译工具链 sysroot 拷贝解释器与相关 lib 库到目标文件系统 `/lib`。本节 tag：`ch14`。
+
+## 6. Linux 多用户管理（ch15）
+
+### 6.1 inittab 修改
+
+从 `-/bin/sh` 改为 `getty`+`login`：
+
+```
+::sysinit:/etc/init.d/rcS
+console::respawn:/sbin/getty 38400 console
+console::restart:/sbin/init
+console::ctrlaltdel:/sbin/reboot
+::shutdown:/etc/init.d/rcK
+::shutdown:/sbin/swapoff -a
+::shutdown:/bin/umount -a -r
+```
+
+<MermaidDiagram chart={`flowchart TD
+    A["inittab<br/>respawn getty"] --> B["getty_main<br/>绑定 tty 到 stdin/stdout"]
+    B --> C["get_logname<br/>获取登录用户名"]
+    C --> D["执行 login"]
+    D --> E["login_main<br/>loginutils/login.c:313"]
+    E --> F["ask_and_check_password"]
+    F --> G["check_password → getspnam_r"]
+    G --> H["读取 /etc/passwd<br/>/etc/group<br/>/etc/shadow"]
+    H --> I{"密码匹配?"}
+    I -->|"是"| J["登录成功, 启动用户shell"]
+    I -->|"否"| K["拒绝登录"]
+`} />
+
+### 6.2 编写配置文件
+
+**/etc/passwd**：
+
+```
+root:x:0:0:root:/home/root:/bin/sh
+daemon:x:1:1:daemon:/usr/sbin:/bin/sh
+nobody:x:65534:65534:nobody:/nonexistent:/bin/sh
+xiaoming:x:1000:1000:Linux User,,,:/home/xiaoming:/bin/sh
+```
+
+**/etc/group**：
+
+```
+root:x:0:
+sudo:x:27:xiaoming
+users:x:100:
+xiaoming:x:1000:
+```
+
+**/etc/shadow**（第二项为加密密码，建议 sha-512）：
+
+```
+root:8f3SuzAlYA9zc:18802:0:99999:7:::
+xiaoming:8KRJzPtwP/eRQ:18802:0:99999:7:::
+```
+
+**/etc/busybox.conf**（SUID 权限配置）：
+
+```
+[SUID]
+su = ssx 0.0
+passwd = --- 0.0
+```
+
+![多用户登录](/images/qemu/ch15-0.png)
+
+本节 tag：`ch15`。
+
+## 7. 阶段小结
+
+本篇是整个教程的"心脏"——系统真正跑起来了。关键要点：
+
+- **内核启动两阶段**：early boot（汇编，页表/MMU/异常向量）→ start_kernel（C 代码）
+- **busybox 万剑归宗**：所有工具软连接到单一 busybox，按 argv[0] 分发
+- **init 进程不可退出**：退出即 panic
+- **动态链接三要素**：`.interp` 指向解释器 → 解释器加载依赖 so → 真正可执行文件
+- **多用户三文件**：passwd（用户）、group（组）、shadow（密码）
+
+> 参考链接：
+> - Linux 内核：https://www.kernel.org/
+> - busybox：https://busybox.net/
+> - ELF 加载详解：https://blog.csdn.net/gatieme/article/details/51628257/

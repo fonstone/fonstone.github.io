@@ -1,0 +1,181 @@
+---
+title: "Framebuffer 显示、交叉编译应用与 RTC/syscon"
+description: "添加 virtio-gpu 显示设备并调试 DRM 驱动，交叉编译 bash/ncurses/make 并用 virtio-9p 共享目录，添加 RTC 时钟与 syscon 复位/关机设备。"
+date: "2026-06-27"
+order: 5
+tags: ["Linux", "RISC-V", "Framebuffer", "DRM", "交叉编译", "RTC", "Quard-Star"]
+---
+
+本篇对应原教程 ch16、ch17、ch18。给系统添加图形显示能力，开始交叉编译用户态应用（bash/ncurses/make），并补齐 RTC 时钟与 syscon 系统控制设备。
+
+> 配套代码工程：https://gitee.com/QQxiaoming/quard_star_tutorial （本篇对应 tag `ch16`~`ch18`）
+
+## 1. Framebuffer 显示设备（ch16）
+
+### 1.1 添加 virtio-gpu-device
+
+```bash
+-device virtio-gpu-device,id=video0,xres=1280,yres=720
+```
+
+### 1.2 调试驱动
+
+较新 Linux 版本 GPU 驱动是 **DRM 架构**。默认配置中 `CONFIG_DRM`/`CONFIG_DRM_VIRTIO_GPU` 均已打开，但启动出现内核恐慌。
+
+<MermaidDiagram chart={`flowchart TD
+    A["内核恐慌<br/>vgdev 空指针"] --> B["virtgpu_kms.c:242"]
+    B --> C["根因: :110 检查 VIRTIO_F_VERSION_1 不通过"]
+    C --> D["驱动未正常加载"]
+    D --> E["查 qemu 源码<br/>virtio-mmio.c:712"]
+    E --> F["proxy->legacy 默认 true<br/>不添加 VIRTIO_F_VERSION_1"]
+    F --> G["解决方案: 添加 qemu 参数<br/>-global virtio-mmio.force-legacy=false"]
+    G --> H["驱动正常加载, 显示 7 个企鹅"]
+`} />
+
+### 1.3 编写 kernel config
+
+新增 `arch/riscv/configs/quard_star_defconfig`，增加 `CONFIG_LOGO=y` 测试 Framebuffer：
+
+![Framebuffer 显示 Linux logo](/images/qemu/ch16-0.png)
+
+`/dev` 下出现 `fb0`、`dri/card0`、`dri/renderD128`。fb0 兼容早期 Framebuffer，可直接 `cat raw > /dev/fb0` 写入 rgb565 数据；`/dev/dri` 是更先进的 DRM 驱动。
+
+把 dts 启动参数改为 `console=tty0` 可让默认终端从显示设备输出：
+
+![tty0 终端输出](/images/qemu/ch16-1.png)
+
+本节 tag：`ch16`。
+
+## 2. bash——交叉编译应用（ch17）
+
+### 2.1 交叉编译概念与 GNU 项目结构
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph Host["主机 x86 Linux"]
+        A["configure --host=riscv64<br/>CC=riscv64-gcc"]
+        B["make -j16 交叉编译"]
+    end
+    subgraph Target["目标机 RISC-V Linux"]
+        C["make install<br/>安装到目标系统"]
+    end
+    A --> B
+    B -->|"二进制拷贝"| C
+`} />
+
+### 2.2 bash 编译
+
+```bash
+./configure --host=riscv64 --prefix=$SHELL_FOLDER/output \
+  CXX=$CROSS_PREFIX-g++ CC=$CROSS_PREFIX-gcc
+make -j16 && make install
+```
+
+### 2.3 virtio-9p-device 共享目录
+
+添加 virtio-9p-device 实现主机/虚拟机目录共享：
+
+```bash
+-fsdev local,security_model=mapped-xattr,id=fsdev0,path=$SHELL_FOLDER/
+-device virtio-9p-device,id=fs0,fsdev=fsdev0,mount_tag=hostshare
+```
+
+```bash
+# 目标机内
+mount -t 9p -o trans=virtio,version=9p2000.L hostshare /mnt/
+```
+
+### 2.4 ncurses 编译
+
+```bash
+./configure --host=riscv64 --disable-stripping CXX=$CROSS_PREFIX-g++ CC=$CROSS_PREFIX-gcc
+make -j16
+# 目标机内
+make install.progs
+make install.data
+```
+
+拷贝 `libncurses.so.6.1` 并创建软连接。
+
+### 2.5 bash 配置
+
+```bash
+# ~/.bashrc
+export TERM=xterm-256color
+export TERMINFO=/usr/local/share/terminfo
+export PS1='[\w]\$'
+```
+
+本节 tag：`ch17`。
+
+## 3. RTC 设备与系统控制设备（ch18）
+
+### 3.1 RTC 设备
+
+```c
+// qemu-6.0.0/hw/riscv/quard_star.c
+[QUARD_STAR_RTC] = { 0x10003000, 0x1000 },
+sysbus_create_simple("goldfish_rtc", memmap[QUARD_STAR_RTC].base,
+    qdev_get_gpio_in(DEVICE(mmio_plic), QUARD_STAR_RTC_IRQ));
+```
+
+```dts
+// 设备树
+rtc@10003000 {
+    interrupts = <0xb>;
+    interrupt-parent = <0x11>;
+    reg = <0x0 0x10003000 0x0 0x1000>;
+    compatible = "google,goldfish-rtc";
+};
+```
+
+### 3.2 syscon
+
+`reboot`/`halt` 不能实现重启和关机。QEMU 提供的 `hw/misc/sifive_test` 是简单 syscon IP：
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph Guest["目标机 Linux"]
+        A["reboot 命令"] --> B["syscon-reboot 驱动"]
+        C["halt 命令"] --> D["syscon-poweroff 驱动"]
+    end
+    B -->|"写 0x7777 到 regmap"| E["sifive_test 寄存器<br/>0x100000"]
+    D -->|"写 0x5555 到 regmap"| E
+    E --> F{"QEMU sifive_test_write"}
+    F -->|"0x7777"| G["qemu_system_reset_request<br/>复位仿真"]
+    F -->|"0x5555"| H["exit(0)<br/>退出 QEMU"]
+`} />
+
+```c
+// qemu-6.0.0/hw/misc/sifive_test.c
+static void sifive_test_write(void *opaque, hwaddr addr, uint64_t val64, ...) {
+    if (addr == 0) {
+        int status = val64 & 0xffff;
+        switch (status) {
+            case FINISHER_FAIL:  exit(code);
+            case FINISHER_PASS:  exit(0);
+            case FINISHER_RESET: qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+        }
+    }
+}
+```
+
+```dts
+// 设备树
+reboot   { value = <0x7777>; offset = <0x0>; regmap = <0x12>; compatible = "syscon-reboot"; };
+poweroff { value = <0x5555>; offset = <0x0>; regmap = <0x12>; compatible = "syscon-poweroff"; };
+test@100000 { phandle = <0x12>; reg = <0x0 0x100000 0x0 0x1000>;
+              compatible = "sifive,test1", "sifive,test0", "syscon"; };
+```
+
+本节 tag：`ch18`。
+
+## 4. 阶段小结
+
+本篇让系统具备了图形输出与完整的系统控制能力，并打开了用户态应用交叉编译的大门。关键要点：
+
+- **DRM 驱动调试**：`VIRTIO_F_VERSION_1` feature 与 `force-legacy` 选项的坑
+- **GNU 交叉编译套路**：`./configure --host=... CC=...-gcc` → `make` → 目标机 `make install`
+- **virtio-9p 共享**：替代回环挂载，主机/虚拟机文件交互更安全
+- **syscon 模式**：寄存器 + key 值触发系统复位/关机
+
+> 参考链接：
+> - 教程文档：https://quard-star-tutorial.readthedocs.io/zh-cn/latest/ch18.html

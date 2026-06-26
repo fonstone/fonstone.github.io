@@ -1,0 +1,231 @@
+---
+title: "应用移植、工具链更换与 Qt 库移植"
+description: "交叉编译 sudo/screen/tree/cu，更换为自编译的 GCC 工具链（glibc + newlib），简谈 libc 选择，并把 Qt 库移植到 Framebuffer 上运行 GUI 应用。"
+date: "2026-06-27"
+order: 6
+tags: ["Linux", "RISC-V", "交叉编译", "GCC", "libc", "Qt", "Quard-Star"]
+---
+
+本篇对应原教程 ch19、ch20、ch22、ch23。围绕用户态应用移植展开：先是常用命令行工具 sudo/screen/tree/cu，接着更换为自编译的 GCC 工具链以获得调试能力，最后把 Qt 库移植到 Framebuffer 跑起 GUI 应用。
+
+> 配套代码工程：https://gitee.com/QQxiaoming/quard_star_tutorial （本篇对应 tag `ch19`、`ch20`、`ch22`、`ch23`）
+
+## 1. 交叉编译 sudo（ch19）
+
+```bash
+./configure --host=riscv CXX=$CROSS_PREFIX-g++ CC=$CROSS_PREFIX-gcc
+make -j16
+# 目标机内
+make install-binaries
+```
+
+**/etc/sudoers**：
+
+```
+root    ALL=(ALL:ALL) ALL
+%admin  ALL=(ALL) ALL
+%sudo   ALL=(ALL:ALL) ALL
+```
+
+![sudo 提权测试](/images/qemu/ch19-0.png)
+
+本节 tag：`ch19`。
+
+## 2. 交叉编译 screen、tree、cu（ch20）
+
+### 2.1 screen
+
+```bash
+./configure --host=riscv64-linux-gnu \
+  CCFLAGS=-I$SHELL_FOLDER/output/usr/include \
+  LDFLAGS=-L$SHELL_FOLDER/output/usr/lib \
+  CXX=$CROSS_PREFIX-g++ CC=$CROSS_PREFIX-gcc
+make -j16
+# 目标机内 make install
+```
+
+终端尺寸通过 fw_cfg 传参，`.bashrc` 解析：
+
+```bash
+QEMU_VPARAM="$(cat /sys/firmware/qemu_fw_cfg/by_name/opt/qemu_cmdline/raw | sed 's/\(.*\)qemu_vc=:\(.*\):\(.*\)/\2/g')"
+ROWS="$(echo $QEMU_VPARAM | sed 's/\(.*\)vn:\(.*\)x\(.*\)/\2/g')"
+COLS="$(echo $QEMU_VPARAM | sed 's/\(.*\)vn:\(.*\)x\(.*\)/\3/g')"
+stty rows $ROWS cols $COLS
+```
+
+![screen 运行效果](/images/qemu/ch20-0.png)
+
+### 2.2 cu
+
+cu 依赖 libevent：
+
+```bash
+# libevent
+./configure --host=riscv64-linux-gnu --disable-openssl --disable-static \
+  --prefix=$SHELL_FOLDER/output CXX=$CROSS_PREFIX-g++ CC=$CROSS_PREFIX-gcc
+make -j16 && make install
+# cu (使用修改版 https://github.com/QQxiaoming/cu)
+make prefix=$SHELL_FOLDER/output LIBEVENTDIR=$SHELL_FOLDER/output CC=$CROSS_PREFIX-gcc -j16
+```
+
+### 2.3 tree
+
+```bash
+make prefix=$SHELL_FOLDER/output CC=$CROSS_PREFIX-gcc -j16
+```
+
+### 2.4 系统时区
+
+```bash
+ln -s /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+```
+
+本节 tag：`ch20`。
+
+## 3. 编译器与 C/C++ 标准库（ch22）
+
+### 3.1 更换编译器
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph 旧["旧: bootlin 二进制工具链"]
+        A1["riscv64-linux-gcc<br/>仅 glibc, 无法debug源码"]
+    end
+    subgraph 新["新: 自编译 riscv-gnu-toolchain"]
+        B1["gcc-riscv64-unknown-elf<br/>带 newlib (裸机/RTOS)"]
+        B2["gcc-riscv64-unknown-linux-gnu<br/>带 glibc + gdb (Linux应用)"]
+    end
+    A1 -->|"更换"| 新
+`} />
+
+```bash
+# 裸机带 newlib
+./configure --prefix=/opt/gcc-riscv64-unknown-elf --with-cmodel=medany
+make -j16
+# linux 带 glibc
+./configure --prefix=/opt/gcc-riscv64-unknown-linux-gnu
+make linux -j16
+```
+
+`--with-cmodel=medany` 必须配置——trusted_domain 裸机程序运行在高地址。
+
+### 3.2 debug screen 不正常的实例
+
+<MermaidDiagram chart={`flowchart TD
+    A["screen 执行后立即退出"] --> B["打开 DEBUG 编译, 查 log 无异常"]
+    B --> C["交叉编译 strace 检查无异常"]
+    C --> D["交叉编译 gdb 调试"]
+    D --> E["set follow-fork-mode child<br/>跟踪子进程"]
+    E --> F["定位: screen.c:1428 MakeWindow 返回-1"]
+    F --> G["调用链: MakeWindow→OpenDevice→OpenPTY→openpty"]
+    G --> H["openpty.c:99 master=getpt 返回-1"]
+    H --> I["自编译器用 linux 风格 getpt<br/>(打开 /dev/ptmx → /dev/pts/)"]
+    I --> J["bootlin 编译器用 BSD 风格<br/>(直接 /dev/pty*)"]
+    J --> K["测试 open /dev/ptmx 返回-1"]
+    K --> L["内核文档: devpts 需挂载到 /dev/pts"]
+    L --> M["解决: rcS 中添加<br/>mkdir /dev/pts<br/>mount -t devpts devpts /dev/pts"]
+    M --> N["screen 完美运行"]
+`} />
+
+### 3.3 简谈 libc
+
+OpenSBI/U-Boot/Kernel 虽用了 glibc 编译器，但根本没用任何 libc 函数（kernel 的 str/print 都自实现）。裸机或 RTOS 不适合用 glibc（平台依赖多），因此常用 **newlib**——需用户实现平台桩函数，不会有更多平台依赖。本节 tag：`ch22`。
+
+## 4. Linux FB 应用——Qt 库移植（ch23）
+
+### 4.1 Qt 与 Linux 图形协议栈
+
+![Linux 图形协议栈](/images/qemu/ch23-0.png)
+
+### 4.2 Qt 编译
+
+添加 `qtbase/mkspecs/linux-riscv64-gnu-g++/qmake.conf`：
+
+```
+QMAKE_CC   = riscv64-unknown-linux-gnu-gcc
+QMAKE_CXX  = riscv64-unknown-linux-gnu-g++
+QMAKE_LINK = riscv64-unknown-linux-gnu-g++
+QMAKE_LIBS = -latomic
+```
+
+```bash
+./configure -opensource -confirm-license -release -optimize-size -strip -ltcg \
+  -silent -qpa linuxfb -no-opengl -skip webengine \
+  -nomake tools -nomake tests -nomake examples \
+  -xplatform linux-riscv64-gnu-g++ \
+  -prefix /opt/Qt-5.12.12 -extprefix $SHELL_FOLDER/host_output
+make -j16 && make install
+```
+
+### 4.3 Qt 配置
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph App["Qt 应用"]
+        A["analogclock / gamebox"]
+    end
+    subgraph Qt["Qt 库 /opt/Qt-5.12.12"]
+        B["libQt5Core.so"]
+        C["libQt5Gui.so"]
+        D["libQt5Widgets.so"]
+        E["plugins/<br/>evdevkeyboard<br/>evdevmouse"]
+    end
+    subgraph Kernel["Linux Kernel DRM"]
+        F["/dev/fb0<br/>Framebuffer"]
+        G["/dev/dri/card0<br/>DRM"]
+        H["/dev/input/event0<br/>鼠标"]
+        I["/dev/input/event1<br/>键盘"]
+    end
+    A --> Qt
+    E --> H
+    E --> I
+    Qt --> F
+    Qt --> G
+`} />
+
+```bash
+# Qt 环境变量配置
+export QT_HOME=/opt/Qt-5.12.12
+export QT_QPA_FB_DRM=1
+export QT_QPA_GENERIC_PLUGINS=evdevkeyboard,evdevmouse
+export QT_QPA_EVDEV_MOUSE_PARAMETERS=/dev/input/event0
+export QT_QPA_EVDEV_KEYBOARD_PARAMETERS=/dev/input/event1
+export QT_QPA_FONTDIR=$QT_HOME/lib/fonts
+export QT_PLUGIN_PATH=$QT_HOME/plugins
+export QT_QPA_PLATFORM=linuxfb:fb=/dev/fb0
+export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$QT_HOME/lib"
+```
+
+### 4.4 测试用例
+
+**analogclock**：
+
+![Qt analogclock](/images/qemu/ch23-1.png)
+
+**gamebox**（https://github.com/QQxiaoming/game_box）：
+
+内核增加 `CONFIG_INPUT_EVDEV`，qemu 添加：
+
+```bash
+-device virtio-mouse-device,id=input0
+-device virtio-keyboard-device,id=input1
+```
+
+![gamebox 运行 1](/images/qemu/ch23-2.gif)
+
+![gamebox 运行 2](/images/qemu/ch23-3.gif)
+
+本节 tag：`ch23`。
+
+## 5. 阶段小结
+
+关键要点：
+
+- **sudo/sudoers**：`%sudo ALL=(ALL:ALL) ALL` 组授权模式
+- **screen 终端尺寸**：fw_cfg 传参 + `.bashrc` 解析 + `stty rows/cols`
+- **自编译工具链三优势**：newlib C 库、源码可 debug、自带 gdb
+- **libc 平台依赖**：getpt 的 linux vs BSD 风格差异是典型坑
+- **Qt 移植**：`-qpa linuxfb -no-opengl -xplatform linux-riscv64-gnu-g++` + evdev 输入插件
+
+> 参考链接：
+> - riscv-gnu-toolchain：https://github.com/riscv/riscv-gnu-toolchain
+> - Qt 嵌入式 Linux 文档：https://doc.qt.io/archives/qt-5.13/embedded-linux.html
+> - game_box 项目：https://github.com/QQxiaoming/game_box

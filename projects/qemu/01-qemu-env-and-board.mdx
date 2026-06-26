@@ -1,0 +1,421 @@
+---
+title: "QEMU 环境搭建与 Quard-Star 自定义板卡"
+description: "从下载 QEMU 源码、注册自定义 Quard-Star 仿真板，到添加串口/中断控制器/pflash 并编写 lowlevelboot 测试固件验证串口打印。"
+date: "2026-06-27"
+order: 1
+tags: ["QEMU", "RISC-V", "嵌入式", "Bootloader", "Quard-Star"]
+---
+
+本篇对应原教程 ch0–ch4，是整个"基于 qemu-riscv 从 0 构建嵌入式 Linux 系统"学习路线的起点。目标是不使用真实开发板、也不使用 QEMU 自带的 ELF 快速加载方式，而是定制一块属于自己的虚拟板卡 **Quard-Star**，从 CPU 上电执行第一条指令开始，一步步把系统跑起来。
+
+> 配套代码工程：https://gitee.com/QQxiaoming/quard_star_tutorial （各阶段以 tag 标识，本篇对应 `ch1`~`ch4`）
+
+## 1. 项目整体架构
+
+在动手之前，先建立全局视图。整个 Quard-Star 项目的硬件架构、软件启动流程与内存分布如下三图所示，后续所有章节都是围绕这三张图展开的。
+
+![Quard-Star 硬件架构](/images/qemu/img3.png)
+
+硬件上，Quard-Star 是一颗多核 RISC-V SoC 仿真：内部包含 maskrom、sram、ddr、多组 uart、CLINT/PLIC 中断控制器、pflash、virtio、fw_cfg、rtc、syscon 等外设 IP，全部由 QEMU 模拟代码注册到系统总线上。
+
+<MermaidDiagram chart={`flowchart LR
+  subgraph SoC["Quard-Star SoC (QEMU 模拟)"]
+    direction TB
+    CPU["8× RISC-V Core<br/>rv64imafdcsu"] 
+    MROM["maskrom 0x0<br/>32KB"]
+    SRAM["sram 0x8000<br/>32KB"]
+    DDR["DDR 0x80000000<br/>1GB"]
+    FLASH["pflash 0x20000000<br/>32MB"]
+    UART["UART×3<br/>0x10000000"]
+    CLINT["CLINT<br/>0x2000000"]
+    PLIC["PLIC<br/>0xc000000"]
+    VIRTIO["virtio×8<br/>0x10100000"]
+    FWCFG["fw_cfg<br/>0x10108000"]
+    RTC["RTC<br/>0x10003000"]
+    SYSCON["syscon<br/>0x100000"]
+  end
+  CPU --> MROM
+  CPU --> SRAM
+  CPU --> DDR
+  CPU --> UART
+  CPU --> CLINT
+  CPU --> PLIC
+  CPU --> FLASH
+  CPU --> VIRTIO
+  CPU --> FWCFG
+  CPU --> RTC
+  CPU --> SYSCON
+`} />
+
+![Quard-Star 软件流程](/images/qemu/img4_zh_CN.png)
+
+软件启动呈多级 BootLoader 结构：maskrom(BL0) → lowlevelboot(BL1) → opensbi(BL2) → u-boot → linux kernel，并存在一个独立的 trusted-domain 运行 RTOS。
+
+<MermaidDiagram chart={`flowchart TD
+    A["上电 reset"] --> B["maskrom BL0<br/>0x0 固定代码"]
+    B -->|"跳转 pflash 零地址"| C["lowlevelboot BL1<br/>0x20000000"]
+    C -->|"初始化 DDR, 搬运固件"| D["OpenSBI BL2<br/>0x80000000 M模式"]
+    D -->|"Domain 划分, mret"| E["U-Boot<br/>udomain S模式"]
+    E -->|"Distro Boot 加载内核"| F["Linux Kernel<br/>S模式 7核 SMP"]
+    D -->|"mret U模式"| G["trusted-domain<br/>core7 RTOS/裸机"]
+`} />
+
+![Quard-Star 内存分布](/images/qemu/img5.png)
+
+内存上，pflash 存放所有低阶固件与设备树资源，DDR 高地址划分出 opensbi 安全域与 trusted-domain 区域，其余供 linux 内核使用。
+
+<MermaidDiagram chart={`memory map pflash 32MB
+0x20000000  lowlevelboot(BL1)
+0x20080000  sbi.dtb
+0x20100000  uboot.dtb
+0x20200000  opensbi fw_jump.bin
+0x20400000  trusted_fw.bin
+0x20800000  u-boot.bin
+
+memory map DDR 1GB
+0x80000000  Linux Kernel 区域
+0x84000000  kernel_addr_r
+0x88000000  fdt_addr_r
+0xB0000000  uboot.dtb / u-boot reloc
+0xB0200000  u-boot.bin (BL0阶段)
+0xBF800000  trusted-domain 区域 (core7)
+0xBFF00000  sbi.dtb
+0xBFF80000  opensbi 安全内存域
+0xC0000000  DDR 顶
+`} />
+
+![Quard-Star 启动演示](/images/qemu/img6.gif)
+
+## 2. 搭建 QEMU 环境（ch0–ch1）
+
+### 2.1 引言与依赖
+
+项目旨在真正从 0 构建嵌入式 Linux 系统，剖析芯片从上电执行第一条指令到整个系统运行的完整过程。因此不使用真实板子，而是基于 QEMU 定制模拟开发板，且不使用 QEMU 提供的快速加载 ELF 文件方式，需要下载 `qemu-6.0.0` 源码自己编写硬件 IP 模拟代码。Ubuntu 18.04 需安装：
+
+```bash
+sudo apt install ninja-build pkg-config libglib2.0-dev libpixman-1-dev \
+  libgtk-3-dev libcap-ng-dev libattr1-dev libsdl2-dev device-tree-compiler \
+  bison flex gperf intltool mtd-utils libslirp-dev
+```
+
+### 2.2 编写简易编译脚本
+
+解压 QEMU 源码后编写 `build.sh`，先在不修改源码的情况下编译：
+
+![build.sh 目录结构](/images/qemu/ch1-0.png)
+
+```bash
+SHELL_FOLDER=$(cd "$(dirname "$0")";pwd)
+cd qemu-6.0.0
+if [ ! -d "$SHELL_FOLDER/output/qemu" ]; then
+  ./configure --prefix=$SHELL_FOLDER/output/qemu \
+    --target-list=riscv64-softmmu --enable-gtk --enable-virtfs --disable-gio
+fi
+make -j16
+make install
+cd ..
+```
+
+关键编译选项含义：`--target-list=riscv64-softmmu` 只编译 RISC-V 64 位系统级模拟器；`--enable-virtfs` 启用 9p 文件共享（后续 ch17 会用到）；`--enable-gtk` 启用图形窗口。编译成功后生成 `output/qemu/bin/qemu-system-riscv64`。
+
+> 工程内对应位置：`build.sh`、`qemu-6.0.0/` 源码目录。本节 tag：`ch1`。
+
+### 2.3 QEMU 板卡注册机制
+
+QEMU 使用基于 GObject 的类型系统注册 machine。理解这个机制是自定义板卡的核心：
+
+<MermaidDiagram chart={`flowchart TD
+    A["type_init() 宏"] --> B["quard_star_machine_init_register_types"]
+    B --> C["type_register_static<br/>注册 TypeInfo"]
+    C --> D["MACHINE_TYPE_NAME(quard-star)"]
+    D --> E["class_init: 设置 mc->init, mc->max_cpus"]
+    E --> F["instance_init: 创建 CPU/内存/外设"]
+    F --> G["quard_star_machine_init<br/>板卡资源初始化主函数"]
+    G --> H1["创建 RISCVHartArray (CPU核心)"]
+    G --> H2["创建 MemoryRegion (maskrom/sram/ddr)"]
+    G --> H3["加载 reset_vec 到 maskrom"]
+`} />
+
+## 3. 添加 Quard-Star 仿真板（ch2）
+
+### 3.1 增加源文件
+
+本节核心是新增 `hw/riscv/quard_star.c` 与 `.h` 文件定义虚拟板卡，并将其加入 QEMU 编译体系。
+
+![ch2 新增源文件](/images/qemu/ch2-0.png)
+
+### 3.2 源码解析
+
+**注册板卡到系统**：通过 QEMU 的类型系统注册一个名为 `quard-star` 的 machine。
+
+```c
+// qemu-6.0.0/hw/riscv/quard_star.c
+static const TypeInfo quard_star_machine_typeinfo = {
+    .name       = MACHINE_TYPE_NAME("quard-star"),
+    .parent     = TYPE_MACHINE,
+    .class_init = quard_star_machine_class_init,
+    .instance_init = quard_star_machine_instance_init,
+    .instance_size = sizeof(RISCVVirtState),
+};
+
+static void quard_star_machine_init_register_types(void) {
+    type_register_static(&quard_star_machine_typeinfo);
+}
+type_init(quard_star_machine_init_register_types)
+```
+
+`mc->init = quard_star_machine_init` 注册板卡资源初始化函数，`mc->max_cpus = QUARD_STAR_CPUS_MAX` 定义最大 SMP 核心数。
+
+**构造虚拟 CPU**：QEMU 中各 CPU 核心以线程模拟，通过 `object_initialize_child` 创建 `TYPE_RISCV_HART_ARRAY` 实例：
+
+```c
+soc_name = g_strdup_printf("soc%d", i);
+object_initialize_child(OBJECT(machine), soc_name, &s->soc[i],
+                        TYPE_RISCV_HART_ARRAY);
+object_property_set_str(OBJECT(&s->soc[i]), "cpu-type",
+                        machine->cpu_type, &error_abort);
+object_property_set_int(OBJECT(&s->soc[i]), "hartid-base",
+                        base_hartid, &error_abort);
+object_property_set_int(OBJECT(&s->soc[i]), "num-harts",
+                        hart_count, &error_abort);
+sysbus_realize(SYS_BUS_DEVICE(&s->soc[i]), &error_abort);
+```
+
+**定义内存资源**：maskrom 用于 CPU 启动时固定执行其内代码，sram 为早期启动数据存放空间，ddr 在真实板卡上需控制器初始化后才能使用（QEMU 模拟时直接可用，但为追求真实，早期启动不使用 ddr）。
+
+```c
+// qemu-6.0.0/hw/riscv/quard_star.h
+static const MemMapEntry virt_memmap[] = {
+    [QUARD_STAR_MROM]  = {        0x0,        0x8000 },
+    [QUARD_STAR_SRAM]  = {     0x8000,        0x8000 },
+    [QUARD_STAR_UART0] = { 0x10000000,         0x100 },
+    [QUARD_STAR_DRAM]  = { 0x80000000,           0x0 },
+};
+```
+
+```c
+// 创建并映射内存区域
+memory_region_init_ram(main_mem, NULL, "riscv_quard_star_board.dram",
+                       machine->ram_size, &error_fatal);
+memory_region_add_subregion(system_memory,
+    memmap[QUARD_STAR_DRAM].base, main_mem);
+
+memory_region_init_ram(sram_mem, NULL, "riscv_quard_star_board.sram",
+                       memmap[QUARD_STAR_SRAM].size, &error_fatal);
+memory_region_add_subregion(system_memory,
+    memmap[QUARD_STAR_SRAM].base, sram_mem);
+
+memory_region_init_rom(mask_rom, NULL, "riscv_quard_star_board.mrom",
+                       memmap[QUARD_STAR_MROM].size, &error_fatal);
+memory_region_add_subregion(system_memory,
+    memmap[QUARD_STAR_MROM].base, mask_rom);
+```
+
+**加载 maskrom 复位向量**：`quard_star_setup_rom_reset_vec` 将一段汇编编译生成的二进制指令写入 mrom，功能是把 hart id 加载到 `a0`、设备树基地址加载到 `a1`，然后跳转到下级代码运行地址。这遵循 RISC-V ABI 规范（a0/a1 为参数 0/1），本质相当于一次函数调用。
+
+```c
+uint32_t reset_vec[10] = {
+    0x00000297,                  /* 1:  auipc  t0, %pcrel_hi(fw_dyn) */
+    0x02828613,                  /*     addi   a2, t0, %pcrel_lo(1b) */
+    0xf1402573,                  /*     csrr   a0, mhartid  */
+    0,
+    0,
+    0x00028067,                  /*     jr     t0 */
+    start_addr,                  /* start: .dword */
+    start_addr_hi32,
+    fdt_load_addr,               /* fdt_laddr: .dword */
+    0x00000000,
+};
+```
+
+### 3.3 编译运行
+
+编写 `run.sh`：
+
+```bash
+SHELL_FOLDER=$(cd "$(dirname "$0")";pwd)
+$SHELL_FOLDER/output/qemu/bin/qemu-system-riscv64 \
+  -M quard-star -m 1G -smp 8 -nographic --parallel none
+```
+
+此时代码会陷入循环且无串口打印，只能在 QEMU monitor 中输入 `info registers` 查看 CPU 寄存器值是否正常。本节 tag：`ch2`。
+
+## 4. 添加中断控制器、串口、pflash（ch3）
+
+### 4.1 外设添加流程
+
+本节一次性添加三类基础外设，它们之间的依赖关系如下：
+
+<MermaidDiagram chart={`flowchart TD
+    A["添加 PLIC 中断控制器<br/>sifive_plic_create"] --> B["添加 CLINT<br/>sifive_clint_create"]
+    A --> C["添加串口×3<br/>serial_mm_init"]
+    C -->|"需要中断引脚"| A
+    D["添加 pflash<br/>PFlashCFI01"] --> E["修改 reset_vec 跳转地址<br/>指向 pflash 0x20000000"]
+`} />
+
+### 4.2 添加串口支持
+
+真实板卡初期调试串口打印是神器。添加三个串口基地址（为后续多权限域分别输出做准备）：
+
+```c
+// qemu-6.0.0/hw/riscv/quard_star.h
+{
+    [QUARD_STAR_UART0] = { 0x10000000,         0x100 },
+    [QUARD_STAR_UART1] = { 0x10001000,         0x100 },
+    [QUARD_STAR_UART2] = { 0x10002000,         0x100 },
+}
+```
+
+调用 `serial_mm_init` 创建 ns16550a 串口实例——OpenSBI、U-Boot、kernel 均自带该串口驱动，方便后续移植。注意 `qdev_get_gpio_in` 配置串口中断信号，因此必须先加中断控制器。
+
+```c
+// qemu-6.0.0/hw/riscv/quard_star.c
+serial_mm_init(system_memory, memmap[QUARD_STAR_UART0].base,
+    0, qdev_get_gpio_in(DEVICE(mmio_plic), QUARD_STAR_UART0_IRQ), 399193,
+    serial_hd(0), DEVICE_LITTLE_ENDIAN);
+serial_mm_init(system_memory, memmap[QUARD_STAR_UART1].base,
+    0, qdev_get_gpio_in(DEVICE(mmio_plic), QUARD_STAR_UART1_IRQ), 399193,
+    serial_hd(1), DEVICE_LITTLE_ENDIAN);
+serial_mm_init(system_memory, memmap[QUARD_STAR_UART2].base,
+    0, qdev_get_gpio_in(DEVICE(mmio_plic), QUARD_STAR_UART2_IRQ), 399193,
+    serial_hd(2), DEVICE_LITTLE_ENDIAN);
+```
+
+### 4.3 添加中断控制器
+
+RISC-V 标准中断控制器分两部分：**CLINT**（Core Local Interrupt，每核私有）和 **PLIC**（Platform-Level Interrupt Controller，所有核共用的外部中断控制器）。
+
+```c
+{
+    [QUARD_STAR_CLINT] = {  0x2000000,       0x10000 },
+    [QUARD_STAR_PLIC]  = {  0xc000000, QUARD_STAR_PLIC_SIZE(QUARD_STAR_CPUS_MAX * 2) },
+}
+```
+
+分别用 `sifive_clint_create` 和 `sifive_plic_create` 创建，并根据 SMP 个数为每个 core 创建对应资源。
+
+### 4.4 添加 pflash 支持
+
+pflash 是并行 flash，目前真实器件少见，常见的是 qspi nor flash 作低阶固件载体（支持 XIP 运行基本等同 pflash）。这里用 QEMU 的 pflash 作为早期固件载体，基地址 `0x20000000`，大小 32M。
+
+```c
+static PFlashCFI01 *quard_star_flash_create(RISCVVirtState *s,
+                                       const char *name,
+                                       const char *alias_prop_name) {
+    DeviceState *dev = qdev_new(TYPE_PFLASH_CFI01);
+    qdev_prop_set_uint64(dev, "sector-length", QUARD_STAR_FLASH_SECTOR_SIZE);
+    qdev_prop_set_uint8(dev, "width", 4);
+    qdev_prop_set_uint8(dev, "device-width", 2);
+    qdev_prop_set_uint16(dev, "id0", 0x89);
+    qdev_prop_set_uint16(dev, "id1", 0x18);
+    object_property_add_child(OBJECT(s), name, OBJECT(dev));
+    object_property_add_alias(OBJECT(s), alias_prop_name,
+                              OBJECT(dev), "drive");
+    return PFLASH_CFI01(dev);
+}
+```
+
+通过 `pflash_cfi01_legacy_drive` 关联到 `-drive if=pflash,bus=0,unit=0,...` 参数。最后把 `quard_star_setup_rom_reset_vec` 中 bootrom 的跳转地址改为 pflash 上的地址。本节 tag：`ch3`。
+
+## 5. 制作测试固件验证串口打印（ch4）
+
+### 5.1 安装交叉编译器
+
+从 bootlin（https://toolchains.bootlin.com/ ）下载 riscv64 glibc 工具链，安装到 `/opt` 下：
+
+```
+CROSS_PREFIX=/opt/riscv64--glibc--bleeding-edge-2020.08-1/bin/riscv64-linux-
+```
+
+![交叉编译器下载](/images/qemu/ch4-0.png)
+
+### 5.2 编写 lowlevelboot 代码
+
+新建 `lowlevelboot/` 目录，创建 `startup.s` 与 `boot.lds`。`startup.s` 位于 pflash 零地址（物理 `0x20000000`），即 maskrom 跳转进来的入口。整个固件编译流程如下：
+
+<MermaidDiagram chart={`flowchart LR
+    A["startup.s"] -->|"gcc -x assembler-with-cpp -c"| B["startup.o"]
+    B -->|"gcc -nostartfiles -T boot.lds"| C["lowlevel_fw.elf"]
+    C -->|"objcopy -O binary"| D["lowlevel_fw.bin"]
+    D -->|"dd 打包到 fw.bin 零偏移"| E["fw.bin (32MB)"]
+    E -->|"qemu -drive if=pflash"| F["QEMU 运行"]
+`} />
+
+```asm
+// lowlevelboot/startup.s
+    .section .text
+    .globl _start
+    .type _start,@function
+_start:
+    csrr    a0, mhartid        # 读取内核 hart id 到 a0
+    li      t0, 0x0
+    beq     a0, t0, _core0     # 仅 core0 继续，其余 core 循环等待
+_loop:
+    j       _loop
+_core0:
+    li      t0, 0x100
+    slli    t0, t0, 20         # t0 = 0x10000000 (uart0 发送寄存器)
+    li      t1, 'H'
+    sb      t1, 0(t0)          # 写入 uart0 data 寄存器输出 'H'
+    li      t1, 'e'
+    sb      t1, 0(t0)
+    li      t1, 'l'
+    sb      t1, 0(t0)
+    li      t1, 'l'
+    sb      t1, 0(t0)
+    li      t1, 'o'
+    sb      t1, 0(t0)
+    # ... 依次输出 "Hello Quard Star board!"
+    j       _loop
+    .end
+```
+
+`boot.lds` 链接脚本将 `.text` 段定位于 flash 内存域 `ORIGIN = 0x20000000`：
+
+```
+// lowlevelboot/boot.lds
+OUTPUT_ARCH( "riscv" )
+ENTRY( _start )
+MEMORY { flash (rxai!w) : ORIGIN = 0x20000000, LENGTH = 512k }
+SECTIONS { .text { KEEP(*(.text)) } >flash }
+```
+
+### 5.3 编译运行
+
+编译流程：`gcc -x assembler-with-cpp -c` → `gcc -nostartfiles -T boot.lds` 生成 elf → `objcopy -O binary` 生成 bin。然后用 `dd` 把 `lowlevel_fw.bin` 打包到 32M 的 `fw.bin` 固件零偏移处：
+
+```bash
+cd $SHELL_FOLDER/output/lowlevelboot
+dd of=fw.bin bs=1k count=32k if=/dev/zero
+dd of=fw.bin bs=1k conv=notrunc seek=0 if=lowlevel_fw.bin
+```
+
+运行 QEMU 添加 `-drive if=pflash,...,file=fw.bin` 参数：
+
+```bash
+$SHELL_FOLDER/output/qemu/bin/qemu-system-riscv64 \
+  -M quard-star -m 1G -smp 8 \
+  -drive if=pflash,bus=0,unit=0,format=raw,file=fw.bin \
+  -nographic --parallel none
+```
+
+![串口打印验证](/images/qemu/ch4-1.png)
+
+看到 "Hello Quard Star board!" 输出即说明外设添加与固件均正常。本节 tag：`ch4`。
+
+## 6. 阶段小结
+
+至此完成了第一阶段：从零搭建 QEMU 编译环境、注册自定义 Quard-Star 板卡、添加串口/中断/pflash 三类基础外设，并用一段裸机汇编固件验证了串口通路。这一阶段的关键在于理解 QEMU 的板卡注册机制（TypeInfo/class_init/instance_init）、内存区域（MemoryRegion）映射、以及 RISC-V 上电后的寄存器约定（a0=mhartid, a1=fdt）。
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph 本阶段完成
+        A["ch1: QEMU 编译环境"] --> B["ch2: Quard-Star 板卡注册<br/>CPU + maskrom/sram/ddr"]
+        B --> C["ch3: 添加外设<br/>串口×3 + CLINT/PLIC + pflash"]
+        C --> D["ch4: lowlevelboot 固件<br/>验证串口打印"]
+    end
+    D -->|"下一篇"| E["OpenSBI + 设备树 + Domain"]
+`} />
+
+> 参考链接：
+> - 教程文档：https://quard-star-tutorial.readthedocs.io/zh-cn/latest/
+> - gitee 仓库：https://gitee.com/QQxiaoming/quard_star_tutorial

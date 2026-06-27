@@ -123,19 +123,405 @@ cd ..
 
 ### 2.3 QEMU 板卡注册机制
 
-QEMU 使用基于 GObject 的类型系统注册 machine。理解这个机制是自定义板卡的核心：
+QEMU 并非直接使用 GObject，而是自行实现了一套借鉴 GObject 思想的**QEMU 对象模型（QOM, QEMU Object Model）**。理解 QOM 是自定义板卡、自定义外设 IP 的核心。下面结合 `quard_star_tutorial` 仓库中 `qemu-8.0.0` 的真实源码，逐层拆解一块板卡是如何从 C 源码"长"成 `-M quard-star` 可选项的。
+
+#### 2.3.1 QOM 三要素：TypeInfo / TypeImpl / ObjectClass
+
+QOM 用三个结构体描述一个类型：
+
+- **`TypeInfo`**（`include/qom/object.h:412`）：类型的**静态描述**，由板卡作者在源码中声明，告诉 QOM"我叫什么、父亲是谁、实例多大、初始化函数是谁"。
+- **`TypeImpl`**（`qom/object.c:39`）：TypeInfo 注册后由 QOM 内部生成的**运行时类型表项**，持有 `class`（类对象指针）、`instance_size` 等已计算好的值。
+- **`ObjectClass` / `MachineClass`**：类型的**类对象**，存放方法指针与类级配置（如 `mc->init`、`mc->max_cpus`），在 `class_init` 中被填充。
+
+Quard-Star 板卡的静态描述定义在 `hw/riscv/quard_star.c:722`：
+
+```c
+// hw/riscv/quard_star.c
+static const TypeInfo quard_star_machine_typeinfo = {
+    .name       = TYPE_RISCV_QUARD_STAR_MACHINE,   // "quard-star-machine"
+    .parent     = TYPE_MACHINE,                     // 父类型 "machine"
+    .class_init = quard_star_machine_class_init,    // 填充 MachineClass
+    .instance_init = quard_star_machine_instance_init, // 实例初始化(本板为空)
+    .instance_size = sizeof(QuardStarState),        // 实例大小
+};
+```
+
+其中 `TYPE_RISCV_QUARD_STAR_MACHINE` 由宏展开（`include/hw/riscv/quard_star.h:47`）：
+
+```c
+#define TYPE_RISCV_QUARD_STAR_MACHINE MACHINE_TYPE_NAME("quard-star")
+// MACHINE_TYPE_NAME 给字符串追加 "-machine" 后缀：
+// "quard-star" -> "quard-star-machine"
+```
+
+这个后缀是 QOM 做类型查找的约定——命令行 `-M quard-star` 会被拼成 `quard-star-machine` 去 `type_get_by_name()` 查表。`QuardStarState` 则是板卡的**实例结构体**（`include/hw/riscv/quard_star.h:52`），继承自 `MachineState`，内部持有所有外设的子对象（PLIC、flash、i2c、spi、usb、gpio、dma、can、lcdc……）：
+
+```c
+struct QuardStarState {
+    MachineState parent;            // 父类实例（私有部分）
+    CPUClusterState r_cluster;      // 管理 CPU 簇
+    CPUClusterState c_cluster;      // 计算 CPU 簇
+    RISCVHartArrayState r_cpus;     // 管理 CPU hart 数组
+    RISCVHartArrayState c_cpus;     // 计算 CPU hart 数组
+    DeviceState *plic;              // PLIC 中断控制器
+    PFlashCFI01 *flash;             // pflash
+    IMXI2CState i2c[3];             // 三组 I2C
+    SiFiveSPIState spi[2];          // 两组 SPI
+    FWCfgState *fw_cfg;             // fw_cfg
+    USBDWC3 usb;                    // USB host
+    // ... can, wdt, pwm, adc, timer, eth, lcdc, gpio, dma, sdio ...
+};
+```
+
+#### 2.3.2 注册链路：从 type_init 到 type_register_static
+
+板卡源码通过 `type_init` 宏完成注册。它的展开链路是理解"谁在何时调用谁"的关键（`include/qemu/module.h:56`）：
+
+```c
+// 展开前
+type_init(quard_star_machine_init_register_types)
+
+// 展开后（include/qemu/module.h:35-39）
+static void __attribute__((constructor))    // GCC 构造器属性
+do_qemu_init_quard_star_machine_init_register_types(void) {
+    register_module_init(quard_star_machine_init_register_types,
+                         MODULE_INIT_QOM);
+}
+```
+
+`__attribute__((constructor))` 使该函数在 `main()` 之前由 C 运行时自动执行，把 `quard_star_machine_init_register_types` 登记到 `MODULE_INIT_QOM` 模块初始化链表上。QEMU 主流程在启动早期调用 `module_call_init(MODULE_INIT_QOM)`，遍历该链表，最终调用：
+
+```c
+// hw/riscv/quard_star.c:730
+static void quard_star_machine_init_register_types(void) {
+    type_register_static(&quard_star_machine_typeinfo);
+}
+```
+
+`type_register_static`（`qom/object.c:826`）把 `TypeInfo` 拷贝到一个 `TypeImpl` 并插入全局类型表 `type_table`。此时只是"登记"，尚未创建任何类对象或实例。
+
+#### 2.3.3 类初始化：class_init 填充 MachineClass
+
+当 QEMU 第一次需要实例化某类型时，`type_initialize`（`qom/object.c:286`）被调用，它先递归初始化父类型，`memcpy` 继承父类的类对象，再调用本类型的 `class_init`。Quard-Star 的 `class_init` 填充了 `MachineClass` 的关键字段（`hw/riscv/quard_star.c:690`）：
+
+```c
+// hw/riscv/quard_star.c
+static void quard_star_machine_class_init(ObjectClass *oc, void *data) {
+    MachineClass *mc = MACHINE_CLASS(oc);   // 向下转型到 MachineClass
+
+    mc->desc = "RISC-V Quard Star board";   // -M help 显示的描述
+    mc->init = quard_star_machine_init;     // ★ 板卡初始化主入口
+    mc->max_cpus = QUARD_STAR_MANAGEMENT_CPU_COUNT
+                 + QUARD_STAR_COMPUTE_CPU_COUNT;   // 1 + 7 = 8
+    mc->min_cpus = mc->max_cpus;            // 固定 8 核
+    mc->default_cpus = mc->min_cpus;
+    mc->default_cpu_type = TYPE_RISCV_CPU_BASE;    // 默认 CPU 型号
+    mc->numa_mem_supported = true;
+
+    // 注册命令行可选属性：-M quard-star,mask-rom-path=...
+    object_class_property_add_str(oc, "mask-rom-path",
+        quard_star_get_mask_rom_path,
+        quard_star_set_mask_rom_path);
+    // 注册 canbus 链接属性
+    object_class_property_add_link(oc, "canbus", TYPE_CAN_BUS,
+        offsetof(QuardStarState, canbus),
+        quard_star_check_canbus_support, OBJ_PROP_LINK_STRONG);
+}
+```
+
+注意 `mc->init = quard_star_machine_init` 是**最关键的一行**——它把"板卡上有哪些 CPU、多少内存、哪些外设"的具体建板逻辑挂到 MachineClass 的 `init` 函数指针上。这个函数指针**不会**在 `class_init` 时被调用，而是在后面 `machine_run_board_init` 时才执行。
+
+#### 2.3.4 实例化：从命令行到 object_new_with_class
+
+QEMU 主流程（`softmmu/vl.c`）处理 `-M quard-star` 的链路如下：
 
 <MermaidDiagram chart={`flowchart TD
-    A["type_init() 宏"] --> B["quard_star_machine_init_register_types"]
-    B --> C["type_register_static<br/>注册 TypeInfo"]
-    C --> D["MACHINE_TYPE_NAME(quard-star)"]
-    D --> E["class_init: 设置 mc->init, mc->max_cpus"]
-    E --> F["instance_init: 创建 CPU/内存/外设"]
-    F --> G["quard_star_machine_init<br/>板卡资源初始化主函数"]
-    G --> H1["创建 RISCVHartArray (CPU核心)"]
-    G --> H2["创建 MemoryRegion (maskrom/sram/ddr)"]
-    G --> H3["加载 reset_vec 到 maskrom"]
+    A["main 启动<br/>module_call_init(MODULE_INIT_QOM)<br/>登记所有 TypeInfo 到类型表"] --> B["解析命令行 -M quard-star"]
+    B --> C["select_machine (vl.c:1577)<br/>object_class_get_list(TYPE_MACHINE)<br/>按名 quard-star-machine 查表"]
+    C --> D["qemu_create_machine (vl.c:2011)<br/>object_new_with_class(machine_class)"]
+    D --> E["object_new_with_type (object.c:722)<br/>qemu_memalign 分配 QuardStarState"]
+    E --> F["object_initialize_with_type (object.c:505)<br/>type_initialize -> class_init 填充 MachineClass"]
+    F --> G["object_init_with_type 递归<br/>先调用父类 instance_init 再本类<br/>Quard-Star 的 instance_init 为空"]
+    G --> H["machine_run_board_init (machine.c:1307)"]
+    H --> I["machine_class->init(machine)<br/>即 quard_star_machine_init"]
+    I --> J["真正创建 CPU/内存/外设"]
 `} />
+
+关键源码节点：
+
+1. **`select_machine`**（`softmmu/vl.c:1577`）：调用 `object_class_get_list(TYPE_MACHINE, false)` 列出所有已注册的 machine 类型，用名字 `"quard-star"` 匹配到 `MachineClass`。
+2. **`object_new_with_class`**（`qom/object.c:745`）：分配 `QuardStarState` 大小的内存，调用 `object_initialize_with_type`。
+3. **`object_initialize_with_type`**（`qom/object.c:505`）：先 `type_initialize`（触发 `class_init`，填充 `MachineClass`），再 `object_init_with_type`（递归调用 `instance_init`，Quard-Star 此处为空）。
+4. **`machine_run_board_init`**（`hw/core/machine.c:1307`）：做 RAM/CPU 合法性检查后，调用 `machine_class->init(machine)`（`machine.c:1409`）——这一行才真正进入 `quard_star_machine_init`。
+
+#### 2.3.5 板卡初始化主函数：quard_star_machine_init
+
+`quard_star_machine_init`（`hw/riscv/quard_star.c:635`）是板卡作者真正"搭积木"的地方，它把外设创建函数按依赖顺序串联起来：
+
+```c
+// hw/riscv/quard_star.c:635
+static void quard_star_machine_init(MachineState *machine) {
+    quard_star_cpu_create(machine);                 // 1. CPU 簇 + hart 数组
+    quard_star_interrupt_controller_create(machine);// 2. CLINT + PLIC(先于串口)
+    quard_star_memory_create(machine);              // 3. maskrom/sram/ddr + reset_vec
+    quard_star_flash_create(machine);               // 4. pflash
+    quard_star_system_control_create(machine);      // 5. syscon(复位/关机)
+    quard_star_rtc_create(machine);                 // 6. RTC
+    quard_star_serial_create(machine);              // 7. 三组串口(依赖 PLIC 中断)
+    quard_star_i2c_create(machine);                 // 8. I2C + at24c + wm8750
+    quard_star_spi_create(machine);                 // 9. SPI + nor flash
+    quard_star_usb_host_create(machine);            // 10. USB host
+    quard_star_usb_peripheral_create(machine);      // 11. USB device
+    quard_star_gpio_create(machine);                // 12. GPIO
+    quard_star_dma_create(machine);                 // 13. PDMA
+    quard_star_sdio_create(machine);                // 14. SDIO
+    quard_star_i2s_create(machine);                 // 15. I2S 音频
+    quard_star_nand_create(machine);                // 16. NAND
+    quard_star_can_create(machine);                 // 17. CAN
+    quard_star_wdt_create(machine);                 // 18. 看门狗
+    quard_star_pwm_create(machine);                 // 19. PWM
+    quard_star_adc_create(machine);                 // 20. ADC
+    quard_star_timer_create(machine);               // 21. 定时器
+    quard_star_eth_create(machine);                 // 22. 以太网
+    quard_star_lcdc_create(machine);                // 23. LCD 控制器
+    quard_star_virtio_mmio_create(machine);         // 24. 8 组 virtio-mmio
+    quard_star_fw_cfg_create(machine);              // 25. fw_cfg
+}
+```
+
+顺序很重要：**中断控制器必须在串口之前创建**，因为串口通过 `qdev_get_gpio_in(DEVICE(s->plic), QUARD_STAR_UART0_IRQ)` 向 PLIC 申请中断引脚；**内存必须在 reset_vec 之前创建**，因为 `quard_star_setup_rom_reset_vec` 要把复位向量写入 maskrom 的 `MemoryRegion`。
+
+#### 2.3.6 CPU 创建：双簇 + hart 数组
+
+Quard-Star 把 8 个核分成两个 CPU 簇（`hw/riscv/quard_star.c:144`），这是 qemu-8.0.0 版本相对原教程 6.0.0 的重要演进：
+
+```c
+// hw/riscv/quard_star.c:144  计算簇: 7 核, hartid 0~6
+object_initialize_child(OBJECT(machine), "c-cluster",
+                        &s->c_cluster, TYPE_CPU_CLUSTER);
+qdev_prop_set_uint32(DEVICE(&s->c_cluster), "cluster-id", 0);
+object_initialize_child(OBJECT(&s->c_cluster), "c-cpus",
+                        &s->c_cpus, TYPE_RISCV_HART_ARRAY);
+object_property_set_str(OBJECT(&s->c_cpus), "cpu-type",
+                        machine->cpu_type, &error_abort);
+object_property_set_int(OBJECT(&s->c_cpus), "hartid-base", 0, &error_abort);
+object_property_set_int(OBJECT(&s->c_cpus), "num-harts",
+                        QUARD_STAR_COMPUTE_CPU_COUNT, &error_abort);  // 7
+object_property_set_int(OBJECT(&s->c_cpus), "resetvec",
+                        quard_star_memmap[QUARD_STAR_MROM].base, &error_abort);
+sysbus_realize(SYS_BUS_DEVICE(&s->c_cpus), &error_fatal);
+
+// 管理簇: 1 核, hartid 7 (对应 trusted-domain)
+object_initialize_child(OBJECT(machine), "r-cluster",
+                        &s->r_cluster, TYPE_CPU_CLUSTER);
+qdev_prop_set_uint32(DEVICE(&s->r_cluster), "cluster-id", 1);
+// ... r_cpus: hartid-base=7, num-harts=1
+```
+
+`RISCVHartArrayState`（`include/hw/riscv/riscv_hart.h:32`）是 QEMU 对一组同构 RISC-V hart 的封装，`sysbus_realize` 时内部会按 `num-harts` 个数实例化 `RISCVCPU`，并把 `resetvec` 设为各自的重定向地址。这里计算簇 7 核跑 Linux，管理簇 1 核（hartid=7）跑 trusted-domain，正是后面 ch7 OpenSBI Domain 划分的硬件基础。
+
+#### 2.3.7 内存映射：MemoryRegion 体系
+
+QEMU 用 `MemoryRegion` 描述一片 guest 物理内存区域。Quard-Star 的整张地址表是一个静态数组（`hw/riscv/quard_star.c:45`）：
+
+```c
+static const MemMapEntry quard_star_memmap[] = {
+    [QUARD_STAR_MROM]   = { 0x00000000,   0x20000 },  // maskrom 128KB
+    [QUARD_STAR_SRAM]   = { 0x00020000,   0xe0000 },  // sram 896KB
+    [QUARD_STAR_SYSCTL] = { 0x00100000,    0x1000 },  // syscon
+    [QUARD_STAR_CLINT]  = { 0x02000000,   0x10000 },
+    [QUARD_STAR_PLIC]   = { 0x0c000000, 0x4000000 },
+    [QUARD_STAR_UART0]  = { 0x10000000,    0x1000 },
+    // ... UART1/2, RTC, I2C×3, SPI×2, GPIO, SDIO, I2S, CAN, PWM, ADC, TIMER, ETH, LCDC, WDT
+    [QUARD_STAR_FLASH]  = { 0x20000000, 0x2000000 },  // pflash 32MB
+    [QUARD_STAR_DRAM]   = { 0x80000000,       0x0 },  // DDR(大小由 -m 指定)
+};
+```
+
+`quard_star_memory_create`（`hw/riscv/quard_star.c:212`）把三块核心内存注册到系统地址空间：
+
+```c
+// hw/riscv/quard_star.c:212
+memory_region_init_ram(main_mem, NULL, "riscv_quard_star_board.dram",
+                       machine->ram_size, &error_fatal);
+memory_region_add_subregion(system_memory,
+    quard_star_memmap[QUARD_STAR_DRAM].base, main_mem);    // 0x80000000
+
+memory_region_init_ram(sram_mem, NULL, "riscv_quard_star_board.sram",
+                       quard_star_memmap[QUARD_STAR_SRAM].size, &error_fatal);
+memory_region_add_subregion(system_memory,
+    quard_star_memmap[QUARD_STAR_SRAM].base, sram_mem);    // 0x20000
+
+memory_region_init_rom(mask_rom, NULL, "riscv_quard_star_board.mrom",
+                       quard_star_memmap[QUARD_STAR_MROM].size, &error_fatal);
+memory_region_add_subregion(system_memory,
+    quard_star_memmap[QUARD_STAR_MROM].base, mask_rom);    // 0x0
+
+quard_star_setup_rom_reset_vec(machine, &s->r_cpus,
+    quard_star_memmap[QUARD_STAR_FLASH].base,   // start_addr = pflash 基地址
+    quard_star_memmap[QUARD_STAR_MROM].base,    // rom_base
+    quard_star_memmap[QUARD_STAR_MROM].size,
+    0x0, 0x0);
+```
+
+`memory_region_init_ram` 创建可读写 RAM，`memory_region_init_rom` 创建只读 ROM，`memory_region_add_subregion` 把它们挂到 `system_memory`（根地址空间）的指定偏移。`MemoryRegion` 之间形成树形拓扑，QEMU 的 softmmu 在 guest 访存时按树查找目标区域。
+
+#### 2.3.8 复位向量：reset_vec 的 10 条指令
+
+`quard_star_setup_rom_reset_vec`（`hw/riscv/quard_star.c:92`）往 maskrom 写入 10 条 RISC-V 指令，这是 CPU 上电后执行的第一段代码：
+
+```c
+// hw/riscv/quard_star.c:104
+uint32_t reset_vec[10] = {
+    0x00000297,                  /* 1:  auipc  t0, %pcrel_hi(fw_dyn) */
+    0x02828613,                  /*     addi   a2, t0, %pcrel_lo(1b) */
+    0xf1402573,                  /*     csrr   a0, mhartid  */   // 读 hart id -> a0
+    0,
+    0,
+    0x00028067,                  /*     jr     t0 */             // 跳转到 start_addr
+    start_addr,                  /* start: .dword */             // 即 pflash 0x20000000
+    start_addr_hi32,
+    fdt_load_addr,               /* fdt_laddr: .dword */         // 设备树地址(这里为0)
+    0x00000000,
+};
+if (riscv_is_32bit(harts)) {
+    reset_vec[3] = 0x0202a583;   /*     lw     a1, 32(t0) */     // 32位: 加载 fdt 到 a1
+    reset_vec[4] = 0x0182a283;   /*     lw     t0, 24(t0) */     // 32位: 加载跳转地址
+} else {
+    reset_vec[3] = 0x0202b583;   /*     ld     a1, 32(t0) */     // 64位: 加载 fdt 到 a1
+    reset_vec[4] = 0x0182b283;   /*     ld     t0, 24(t0) */     // 64位: 加载跳转地址
+}
+```
+
+这段代码的语义等价于：
+
+```asm
+1:  auipc  t0, %pcrel_hi(fw_dyn)   ; t0 = 当前PC
+    addi   a2, t0, %pcrel_lo(1b)
+    csrr   a0, mhartid             ; a0 = hart id (RISC-V ABI: 参数0)
+    ld     a1, 32(t0)              ; a1 = fdt_load_addr (RISC-V ABI: 参数1)
+    ld     t0, 24(t0)              ; t0 = start_addr
+    jr     t0                      ; 跳转到 pflash 零地址(BL1)
+```
+
+遵循 RISC-V SBI 规范：`a0=mhartid`、`a1=fdt`，相当于一次"函数调用"把 hart id 和设备树传给下级 loader。`mask_rom_path` 属性非空时改为加载用户提供的 maskrom 镜像（`quard_star.c:131`），这是 qemu-8.0.0 版本新增的可定制复位向量入口。
+
+#### 2.3.9 外设创建的两种范式
+
+Quard-Star 源码展示了 QEMU 创建外设的两种典型范式：
+
+**范式一：sysbus_create_simple（一步到位）**
+
+适用于简单的 MMIO + 单中断外设，如 RTC、virtio-mmio：
+
+```c
+// hw/riscv/quard_star.c:267  RTC
+sysbus_create_simple("goldfish_rtc",
+    quard_star_memmap[QUARD_STAR_RTC].base,
+    qdev_get_gpio_in(DEVICE(s->plic), QUARD_STAR_RTC_IRQ));
+
+// hw/riscv/quard_star.c:597  virtio-mmio x8
+sysbus_create_simple("virtio-mmio",
+    quard_star_memmap[QUARD_STAR_VIRTIO0].base,
+    qdev_get_gpio_in(DEVICE(s->plic), QUARD_STAR_VIRTIO0_IRQ));
+```
+
+`sysbus_create_simple` 内部完成 `qdev_new` + `sysbus_realize` + `sysbus_mmio_map` + `sysbus_connect_irq` 四步。
+
+**范式二：object_initialize_child + 属性设置 + sysbus_realize（分步精细）**
+
+适用于需要设属性、挂子设备的外设，如 I2C、SPI、USB：
+
+```c
+// hw/riscv/quard_star.c:309  I2C0
+object_initialize_child(OBJECT(machine), "i2c0", &s->i2c[0], TYPE_IMX_I2C);
+sysbus_realize(SYS_BUS_DEVICE(&s->i2c[0]), &error_abort);
+sysbus_mmio_map(SYS_BUS_DEVICE(&s->i2c[0]), 0,
+                quard_star_memmap[QUARD_STAR_I2C0].base);
+sysbus_connect_irq(SYS_BUS_DEVICE(&s->i2c[0]), 0,
+    qdev_get_gpio_in(DEVICE(s->plic), QUARD_STAR_I2C0_IRQ));
+
+// 在 I2C 总线上挂从设备
+s->at24c_dev = i2c_slave_new("at24c-eeprom", 0x50);
+qdev_prop_set_uint32(DEVICE(s->at24c_dev), "rom-size", 8*1024);
+i2c_slave_realize_and_unref(s->at24c_dev, s->i2c[0].bus, &error_abort);
+```
+
+`object_initialize_child` 把子对象纳入父对象的 ownership（父销毁时自动销毁子），`qdev_get_gpio_in` 从 PLIC 申请一根中断输入引脚——这是 QOM 设备模型的"信号连接"机制。
+
+#### 2.3.10 自定义外设 IP：以 quard_star_syscon 为例
+
+Quard-Star 还示范了如何自己写一个外设 IP。`hw/misc/quard_star_syscon.c` 是一个最小化的 syscon 设备，完成复位/关机控制。它同样遵循 QOM 三段式：
+
+```c
+// hw/misc/quard_star_syscon.c:133  实例初始化: 注册 MMIO
+static void quard_star_syscon_init(Object *obj) {
+    QuardStarSysconState *s = QUARD_STAR_SYSCON(obj);
+    memory_region_init_io(&s->mmio, obj, &quard_star_syscon_ops, s,
+                          TYPE_QUARD_STAR_SYSCON, 0x1000);
+    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
+}
+
+// hw/misc/quard_star_syscon.c:142  类初始化: 注册 realize 与属性
+static void quard_star_syscon_class_init(ObjectClass *klass, void *data) {
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    dc->realize = quard_star_syscon_realize;
+    device_class_set_props(dc, quard_star_syscon_properties);
+}
+
+// hw/misc/quard_star_syscon.c:151  类型描述 + 注册
+static const TypeInfo quard_star_syscon_info = {
+    .name          = TYPE_QUARD_STAR_SYSCON,
+    .parent        = TYPE_SYS_BUS_DEVICE,    // 继承 SysBusDevice
+    .instance_size = sizeof(QuardStarSysconState),
+    .instance_init = quard_star_syscon_init,
+    .class_init    = quard_star_syscon_class_init,
+};
+type_init(quard_star_syscon_register_types)  // 同样用 type_init 登记
+```
+
+`memory_region_init_io` 把 `quard_star_syscon_ops`（read/write 回调）绑到一片 MMIO 区域，guest 读写该地址时 QEMU 回调 `quard_star_syscon_read/write`。写 `0x7777` 触发 `qemu_system_reset_request`（复位），写 `0x5555` 触发 `exit(0)`（关机）——这就是后面 ch18 syscon 复位/关机功能的实现原理。
+
+#### 2.3.11 构建系统接入
+
+最后一步是让构建系统编译 `quard_star.c`。QEMU 8.0 用 meson + Kconfig：
+
+```meson
+# hw/riscv/meson.build
+riscv_ss.add(when: 'CONFIG_QUARD_STAR', if_true: files('quard_star.c'))
+```
+
+```kconfig
+# hw/riscv/Kconfig
+config QUARD_STAR
+    bool
+    select QUARD_STAR_SYSCON
+    select GOLDFISH_RTC
+    select SIFIVE_PLIC
+    select PFLASH_CFI01
+    select SERIAL
+    select VIRTIO_MMIO
+    # ... 选中所有板卡依赖的 IP
+```
+
+`configs/targets/riscv64-softmmu.mak` 中 `CONFIG_QUARD_STAR=y` 启用该板，meson 据此把 `quard_star.c` 及其 `select` 的所有 IP 源码编入 `qemu-system-riscv64`。
+
+#### 2.3.12 全链路总览
+
+<MermaidDiagram chart={`flowchart TD
+    A["编译期: type_init 宏<br/>__attribute__((constructor))<br/>登记到 MODULE_INIT_QOM"] --> B["启动早期: module_call_init(MODULE_INIT_QOM)<br/>type_register_static -> 类型表"]
+    B --> C["命令行: -M quard-star<br/>select_machine 查表 quard-star-machine"]
+    C --> D["object_new_with_class<br/>分配 QuardStarState"]
+    D --> E["type_initialize<br/>class_init 填充 MachineClass<br/>mc->init = quard_star_machine_init"]
+    E --> F["object_init_with_type<br/>instance_init (Quard-Star 为空)"]
+    F --> G["machine_run_board_init<br/>machine_class->init(machine)"]
+    G --> H["quard_star_machine_init<br/>按序创建 CPU/内存/外设"]
+    H --> I1["CPU: 2 簇 8 hart"]
+    H --> I2["内存: maskrom/sram/ddr + reset_vec"]
+    H --> I3["外设: PLIC/串口/pflash/virtio/..."]
+`} />
+
+这一套 QOM 机制把"类型注册—类初始化—实例化—板卡初始化"四阶段解耦，让板卡作者只需关心 `TypeInfo` + `class_init` + `init` 三处代码，其余的内存分配、父子关系、属性系统、命令行解析全由 QOM 框架托管。理解了它，再看 QEMU 里任何一块板（virt、sifive_u、raspi3b……）都是同一套套路。
 
 ## 3. 添加 Quard-Star 仿真板（ch2）
 

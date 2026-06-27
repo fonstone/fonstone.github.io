@@ -23,14 +23,14 @@ RISC-V 提出了标准的 **SBI 规范**（RISC-V Supervisor Binary Interface）
 ![OpenSBI 位于 S/M 模式之间](/images/qemu/ch5-0.png)
 
 <MermaidDiagram chart={`flowchart TD
-    subgraph M模式["M 模式 (Machine)"]
+    subgraph MMode["M 模式 (Machine)"]
         SBI["OpenSBI<br/>最高权限, PMP 域管理"]
     end
-    subgraph S模式["S 模式 (Supervisor)"]
+    subgraph SMode["S 模式 (Supervisor)"]
         UB["U-Boot"]
         KERNEL["Linux Kernel (7核)"]
     end
-    subgraph U模式["U 模式 (User)"]
+    subgraph UMode["U 模式 (User)"]
         RTOS["FreeRTOS / 裸机<br/>trusted-domain (core7)"]
     end
     SBI -->|"mret S模式"| UB
@@ -262,7 +262,7 @@ _start:
 Domain 用于将 SOC 内部硬件人为划分不同权限区域，分别独立运行，使用 RISC-V 的 PMP 等硬件保护单元。好处：可以让一部分 core 在 SMP 模式下跑 Linux，另一部分 core 在 AMP 模式下单独运行裸机或 RTOS，只需划分到不同 Domain。
 
 <MermaidDiagram chart={`flowchart TD
-    subgraph M模式["M模式 OpenSBI"]
+    subgraph MMode["M模式 OpenSBI"]
         DM["Domain Manager<br/>PMP 权限管理"]
     end
     DM -->|"udomain S模式<br/>core0~6 全权限"| U["Linux Kernel SMP"]

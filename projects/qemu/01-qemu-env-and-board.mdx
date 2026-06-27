@@ -20,16 +20,15 @@ tags: ["QEMU", "RISC-V", "嵌入式", "Bootloader", "Quard-Star"]
 
 <MermaidDiagram chart={`flowchart LR
   subgraph SoC["Quard-Star SoC (QEMU 模拟)"]
-    direction TB
-    CPU["8× RISC-V Core<br/>rv64imafdcsu"] 
+    CPU["8x RISC-V Core<br/>rv64imafdcsu"] 
     MROM["maskrom 0x0<br/>32KB"]
     SRAM["sram 0x8000<br/>32KB"]
     DDR["DDR 0x80000000<br/>1GB"]
     FLASH["pflash 0x20000000<br/>32MB"]
-    UART["UART×3<br/>0x10000000"]
+    UART["UART x3<br/>0x10000000"]
     CLINT["CLINT<br/>0x2000000"]
     PLIC["PLIC<br/>0xc000000"]
-    VIRTIO["virtio×8<br/>0x10100000"]
+    VIRTIO["virtio x8<br/>0x10100000"]
     FWCFG["fw_cfg<br/>0x10108000"]
     RTC["RTC<br/>0x10003000"]
     SYSCON["syscon<br/>0x100000"]
@@ -64,24 +63,26 @@ tags: ["QEMU", "RISC-V", "嵌入式", "Bootloader", "Quard-Star"]
 
 内存上，pflash 存放所有低阶固件与设备树资源，DDR 高地址划分出 opensbi 安全域与 trusted-domain 区域，其余供 linux 内核使用。
 
-<MermaidDiagram chart={`memory map pflash 32MB
-0x20000000  lowlevelboot(BL1)
-0x20080000  sbi.dtb
-0x20100000  uboot.dtb
-0x20200000  opensbi fw_jump.bin
-0x20400000  trusted_fw.bin
-0x20800000  u-boot.bin
-
-memory map DDR 1GB
-0x80000000  Linux Kernel 区域
-0x84000000  kernel_addr_r
-0x88000000  fdt_addr_r
-0xB0000000  uboot.dtb / u-boot reloc
-0xB0200000  u-boot.bin (BL0阶段)
-0xBF800000  trusted-domain 区域 (core7)
-0xBFF00000  sbi.dtb
-0xBFF80000  opensbi 安全内存域
-0xC0000000  DDR 顶
+<MermaidDiagram chart={`flowchart TD
+    subgraph PFLASH["pflash 32MB"]
+        P1["0x20000000 lowlevelboot BL1"]
+        P2["0x20080000 sbi.dtb"]
+        P3["0x20100000 uboot.dtb"]
+        P4["0x20200000 opensbi fw_jump.bin"]
+        P5["0x20400000 trusted_fw.bin"]
+        P6["0x20800000 u-boot.bin"]
+    end
+    subgraph DDR["DDR 1GB"]
+        D1["0x80000000 Linux Kernel 区域"]
+        D2["0x84000000 kernel_addr_r"]
+        D3["0x88000000 fdt_addr_r"]
+        D4["0xB0000000 uboot.dtb / u-boot reloc"]
+        D5["0xB0200000 u-boot.bin BL0阶段"]
+        D6["0xBF800000 trusted-domain 区域 core7"]
+        D7["0xBFF00000 sbi.dtb"]
+        D8["0xBFF80000 opensbi 安全内存域"]
+        D9["0xC0000000 DDR 顶"]
+    end
 `} />
 
 ![Quard-Star 启动演示](/images/qemu/img6.gif)
@@ -408,9 +409,9 @@ $SHELL_FOLDER/output/qemu/bin/qemu-system-riscv64 \
 至此完成了第一阶段：从零搭建 QEMU 编译环境、注册自定义 Quard-Star 板卡、添加串口/中断/pflash 三类基础外设，并用一段裸机汇编固件验证了串口通路。这一阶段的关键在于理解 QEMU 的板卡注册机制（TypeInfo/class_init/instance_init）、内存区域（MemoryRegion）映射、以及 RISC-V 上电后的寄存器约定（a0=mhartid, a1=fdt）。
 
 <MermaidDiagram chart={`flowchart TD
-    subgraph 本阶段完成
+    subgraph Stage1["本阶段完成"]
         A["ch1: QEMU 编译环境"] --> B["ch2: Quard-Star 板卡注册<br/>CPU + maskrom/sram/ddr"]
-        B --> C["ch3: 添加外设<br/>串口×3 + CLINT/PLIC + pflash"]
+        B --> C["ch3: 添加外设<br/>串口 x3 + CLINT/PLIC + pflash"]
         C --> D["ch4: lowlevelboot 固件<br/>验证串口打印"]
     end
     D -->|"下一篇"| E["OpenSBI + 设备树 + Domain"]

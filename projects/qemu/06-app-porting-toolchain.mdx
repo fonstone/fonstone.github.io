@@ -87,14 +87,14 @@ ln -s /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 ### 3.1 更换编译器
 
 <MermaidDiagram chart={`flowchart TD
-    subgraph 旧["旧: bootlin 二进制工具链"]
+    subgraph Old["旧: bootlin 二进制工具链"]
         A1["riscv64-linux-gcc<br/>仅 glibc, 无法debug源码"]
     end
-    subgraph 新["新: 自编译 riscv-gnu-toolchain"]
+    subgraph New["新: 自编译 riscv-gnu-toolchain"]
         B1["gcc-riscv64-unknown-elf<br/>带 newlib (裸机/RTOS)"]
         B2["gcc-riscv64-unknown-linux-gnu<br/>带 glibc + gdb (Linux应用)"]
     end
-    A1 -->|"更换"| 新
+    A1 -->|"更换"| New
 `} />
 
 ```bash

@@ -72,25 +72,16 @@ dd of=fw.bin ... seek=8K  if=u-boot.bin            # U-Boot
 
 ![物理内存规划](/images/qemu/ch9-0.png)
 
-<MermaidDiagram chart={`memory map DDR 1GB (重新规划后)
-0x80000000  +-------------------+
-            | Linux Kernel 区域  |
-            | kernel_addr_r      |
-            | fdt_addr_r         |
-0x84000000  | ...               |
-            |                   |
-0xB0000000  +-------------------+
-            | uboot.dtb          |
-0xB0200000  | u-boot.bin (BL0)   |
-            | u-boot reloc (BL1) |  32MB 向下生长
-0xB0400000  +-------------------+
-            | ...               |
-0xBF800000  +-------------------+
-            | trusted_fw (core7) |  4MB
-0xBFC00000  +-------------------+
-0xBFF00000  | sbi.dtb            |
-0xBFF80000  | opensbi 安全域     |  512KB
-0xC0000000  +-------------------+  DDR 顶
+<MermaidDiagram chart={`flowchart TD
+    subgraph DDR["DDR 1GB 重新规划后"]
+        D1["0x80000000 Linux Kernel 区域<br/>kernel_addr_r / fdt_addr_r"]
+        D2["0xB0000000 uboot.dtb"]
+        D3["0xB0200000 u-boot.bin BL0 + reloc BL1<br/>32MB 向下生长"]
+        D4["0xBF800000 trusted_fw core7 4MB"]
+        D5["0xBFF00000 sbi.dtb"]
+        D6["0xBFF80000 opensbi 安全域 512KB"]
+        D7["0xC0000000 DDR 顶"]
+    end
 `} />
 
 整理加载地址：

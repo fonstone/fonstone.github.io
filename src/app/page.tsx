@@ -3,12 +3,12 @@ import Link from "next/link";
 import {
   Bike,
   Brain,
+  Briefcase,
   Box,
   CircuitBoard,
   Coffee,
   Github,
   Globe,
-  Heart,
   Mail,
   MapPin,
   Monitor,
@@ -44,9 +44,9 @@ function getCategoryIcon(category: string): {
       iconClassName: "text-pink-500 dark:text-pink-300",
     };
   }
-  if (key.includes("生活") || key.includes("life")) {
+  if (key.includes("管理") || key.includes("management")) {
     return {
-      Icon: Heart,
+      Icon: Briefcase,
       iconWrapClassName: "bg-red-100 dark:bg-red-500/15",
       iconClassName: "text-red-500 dark:text-red-300",
     };
@@ -344,7 +344,7 @@ export default async function Home() {
                   </div>
                   <div className="flex flex-col">
                     <div className="font-semibold">{p.name}</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                    <div className="text-[11px] leading-tight text-slate-500 dark:text-slate-400">
                       {p.desc}
                     </div>
                   </div>

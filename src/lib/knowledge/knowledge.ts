@@ -38,7 +38,7 @@ const CONTENT_ROOT = path.join(process.cwd(), "content");
 
 const CATEGORY_SLUG_MAP: Record<string, string> = {
   "自动驾驶": "autonomous-driving",
-  "生活": "life",
+  "管理": "management",
   "AI": "ai",
   "OS": "os",
 };
@@ -99,7 +99,7 @@ export async function getKnowledgeCategories(): Promise<KnowledgeCategory[]> {
     .map((e) => e.name)
     .sort((a, b) => a.localeCompare(b));
 
-  const customOrder = ["生活"];
+  const customOrder = ["管理"];
   const insertBefore = ["自动驾驶"];
   for (const cat of customOrder) {
     const idx = categoriesList.indexOf(cat);
@@ -112,8 +112,8 @@ export async function getKnowledgeCategories(): Promise<KnowledgeCategory[]> {
     const idx = categoriesList.indexOf(cat);
     if (idx !== -1) {
       categoriesList.splice(idx, 1);
-      const lifeIdx = categoriesList.indexOf("生活");
-      categoriesList.splice(lifeIdx !== -1 ? lifeIdx : categoriesList.length, 0, cat);
+      const mgmtIdx = categoriesList.indexOf("管理");
+      categoriesList.splice(mgmtIdx !== -1 ? mgmtIdx : categoriesList.length, 0, cat);
     }
   }
 

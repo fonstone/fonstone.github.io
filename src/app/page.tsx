@@ -304,14 +304,14 @@ export default async function Home() {
               {[
                 {
                   name: "AI Infra/Agent",
-                  desc: "大模型推理基础设施与 Agent 编排工程化",
+                  desc: "推理优化、调度与多智能体协作",
                   Icon: Brain,
                   iconWrapClassName: "bg-purple-100 dark:bg-purple-500/15",
                   iconClassName: "text-purple-500 dark:text-purple-300",
                 },
                 {
                   name: "QEMU和CPU架构",
-                  desc: "QEMU 虚拟化与嵌入式 Linux 构建实战",
+                  desc: "虚拟化机制与系统启动流程",
                   Icon: Box,
                   iconWrapClassName: "bg-orange-100 dark:bg-orange-500/15",
                   iconClassName: "text-orange-500 dark:text-orange-300",
@@ -319,14 +319,14 @@ export default async function Home() {
                 },
                 {
                   name: "智能时代OS",
-                  desc: "异构操作系统：多核协同与混合关键性调度",
+                  desc: "多核协同与混合关键性调度",
                   Icon: Monitor,
                   iconWrapClassName: "bg-cyan-100 dark:bg-cyan-500/15",
                   iconClassName: "text-cyan-500 dark:text-cyan-300",
                 },
                 {
                   name: "AUTOSAR和功能安全",
-                  desc: "AUTOSAR 规范解析与车载功能安全实践",
+                  desc: "车载OS实现与安全机制解析",
                   Icon: CircuitBoard,
                   iconWrapClassName: "bg-green-100 dark:bg-green-500/15",
                   iconClassName: "text-green-500 dark:text-green-300",

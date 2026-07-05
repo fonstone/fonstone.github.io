@@ -308,6 +308,7 @@ export default async function Home() {
                   Icon: Brain,
                   iconWrapClassName: "bg-purple-100 dark:bg-purple-500/15",
                   iconClassName: "text-purple-500 dark:text-purple-300",
+                  href: "/projects/ai-infra",
                 },
                 {
                   name: "QEMU和CPU架构",

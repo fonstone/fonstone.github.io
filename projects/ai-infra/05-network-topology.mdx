@@ -1,0 +1,139 @@
+---
+title: "AI 集群网络拓扑"
+description: "Fat-Tree、Dragonfly+、Torus 三大拓扑结构详解，DCN 网络平面划分（Frontend/Backend/存储），AI 集群拓扑对比与选型。"
+date: "2026-07-05"
+order: 5
+tags: ["网络拓扑", "Fat-Tree", "Dragonfly", "DCN", "集群网络", "Torus"]
+est_time: "45 分钟"
+---
+
+## 1 三大集群网络拓扑
+
+### 1.1 Fat-Tree 拓扑
+
+Fat-Tree（Clos 拓扑）是当前 AI 集群最广泛采用的网络架构，源自电话交换网络的 Clos 架构：
+
+**三层 Fat-Tree 结构：**
+- **Leaf（ToR）层**：连接 GPU 服务器的接入交换机。每个 Leaf 交换机上行到多个 Spine 交换机。
+- **Spine（EOR）层**：为 Leaf 交换机提供 Full-bisection 带宽的中间层。
+- **Core 层（可选）**：连接多 Pod，用于集群间扩展。
+
+**Fat-Tree 的关键特性：**
+- **Full-bisection Bandwidth**：任意 Leaf 间总带宽等于 Leaf 下行带宽总和
+- **ECMP 负载均衡**：流到流的哈希均衡，适合 AllReduce 的 Bandwidth-heavy 模式
+- **等长路径**：任意 Leaf 间路径数 = Spine 交换机数
+
+**数学建模。** 给定 Spine 数量 S 和 Leaf 数量 L，每 Leaf 上行端口数 U：
+- 全带宽条件：L × U = S × 下行端口数
+- 过订阅比 = L × U / S × 下行端口数（1:1 为无阻塞）
+
+### 1.2 Dragonfly+ 拓扑
+
+Dragonfly+ 是 HPC 和高阶 AI 集群的高效拓扑，设计目标是**最小化直径和布线成本**：
+
+**Dragonfly 的层次：**
+1. **Group（组）**：一组交换机全互联（All-to-All）
+2. **Global（全局）**：不同 Group 间通过少量 Global 链路互联
+
+**Dragonfly+ 的优势：**
+- **低直径**：任意两个端点的最大跳数远少于 Fat-Tree（O(log N) vs O(N)）
+- **低布线成本**：相比 Fat-Tree 的满带宽 Spine 中心，Dragonfly 的全局连接数更低
+- **高路径多样性**：组内 All-to-All 提供了丰富的备选路径
+
+**对 AI 负载的适用性：**
+Dragonfly 的路径多样性对于通信模式固定的 AllReduce 效果良好，但由于不等长路径的存在，对于需要稳定带宽的 TP 通信（集合 AllReduce）可能出现带宽波动。
+
+### 1.3 Torus 拓扑
+
+Torus（环面）拓扑在 Google TPU Pod 中使用最为广泛：
+
+**3D Torus 的特点：**
+- 每个节点连接到 6 个邻居（三维每个方向有两个）
+- 拓扑直径随维度增长：d = N^(1/3) × 3/2
+- 布线成本低（每节点 6 条链接）
+- 带宽不均等：近邻延迟低，远节点延迟高
+
+**TPU v4 上 Torus 的使用。** Google TPU v4 Pod 采用 4×4×4 的 3D Torus（64 TPU 组成一个逻辑单元），通过环形流水线化的 AllReduce 在同一环内完成梯度同步。
+
+---
+
+## 2 DCN 网络平面划分
+
+### 2.1 三平面模型
+
+AI 集群的数据中心网络（DCN）通常划分为三个逻辑平面：
+
+**Frontend 平面（管理/存储）。** 连接计算节点到外部存储和数据源。使用通用 TCP/IP 协议，带宽要求相对较低（25-100 Gb/s）。主要承载训练数据读取、模型权重保存、日志收集等。
+
+**Backend 平面（计算通信）。** 连接 GPU 节点之间的高速通信平面，承载所有集合通信流量（梯度同步、并行通信）。使用 RDMA 协议（InfiniBand 或 RoCEv2），带宽要求最高（400-800 Gb/s）。
+
+**存储平面**（部分集群独立）。专门连接计算节点到高性能并行文件系统（如 Lustre、GPFS、DeepSeek 3FS）。使用独立端口和网络以隔离 I/O 压力。
+
+<MermaidDiagram chart={`graph TB
+    subgraph FRONT["Frontend 平面<br/>25-100GbE"]
+        ADM["管理节点"]
+        STO["外部存储"]
+        LOG["日志收集"]
+    end
+
+    subgraph BACK["Backend 平面<br/>400-800Gb/s RDMA"]
+        GPU0["GPU 节点 0"]
+        GPU1["GPU 节点 1"]
+        GPU2["GPU 节点 2"]
+        GPU3["GPU 节点 N"]
+        GPU0 --- GPU1
+        GPU1 --- GPU2
+        GPU2 --- GPU3
+    end
+
+    subgraph STORAGE["存储平面<br/>200-400Gb/s"]
+        FS["并行文件系统"]
+    end
+
+    FRONT --- BACK
+    BACK --- STORAGE
+`} />
+
+### 2.2 网络隔离策略
+
+**物理隔离。** 三个平面使用各自独立的交换机、网卡、链路。优势：无争用、故障域隔离。劣势：硬件成本高。
+
+**逻辑隔离（VLAN/VRF）。** 在共享物理网络上通过 VLAN 或 VRF 划分逻辑平面。优势：节省硬件。劣势：无法完全隔离带宽争用。
+
+**混合方案。** Frontend 和存储平面共享低速网络，Backend 平面使用独立物理网络。这是多数大型 AI 集群的推荐方案。
+
+---
+
+## 3 拓扑对比与选型分析
+
+### 3.1 各拓扑对比总结
+
+| 特性 | Fat-Tree | Dragonfly+ | Torus |
+|------|----------|-----------|-------|
+| 扩展规模 | 数千端口 | 数万端口 | 数千端口 |
+| 对分带宽 | 良好 | 良好（适度过订阅） | 各向异性 |
+| 直径 | O(log N) | O(log N) | O(N^(1/3)) |
+| 布线成本 | 中等 | 低 | 低 |
+| 路由复杂度 | 简单（ECMP） | 复杂（自适应路由） | 中等 |
+| AllReduce 带宽 | 稳定 | 波动 | 环内稳定 |
+| 推荐场景 | 通用 AI 训练 | HPC + AI 推理 | 定制 ASIC 集群 |
+
+### 3.2 AI 集群选型建议
+
+**中小集群（64-512 GPU）**：Fat-Tree 最优，布线成本可控，ECMP 路由简单，AllReduce 带宽稳定。推荐 2:1 或 1:1 过订阅比。
+
+**中大型集群（512-4096 GPU）**：Fat-Tree 继续适用，但 Spine 层规模会快速增长。Dragonfly+ 在这个规模显示其低布线成本优势。
+
+**超大规模集群（4096+ GPU）**：Dragonfly+ 的布线成本优势明显。部分超级计算中心采用混合拓扑（组内 Fat-Tree，组间 Dragonfly）。
+
+### 3.3 典型集群拓扑案例
+
+**DGX SuperPod（H100）**：32 台 DGX H100 组成一个 SuperPod（256 GPU）。采用两层 Fat-Tree：8 个 Leaf 交换机（每台连接 4 台 DGX），上行到 8 个 Spine 交换机。256 GPU 内的 AllReduce 在一跳内完成。
+
+**Meta RSC（Research SuperCluster）**：2,000 GPU 集群，采用三层 Clos（Leaf-Spine-Core），每 Leaf 连接 8 GPU，每 Spine 连接 128 Leaf。
+
+**Google TPU v4 Pod**：4096 TPU 通过 4×4×4 Torus × 4（每 Pod 64 TPU 单元）互联，通过 BlueLink 实现机架间互联。
+
+---
+
+> **下一章预告：** 第六章深入高速互联与 RDMA——InfiniBand vs RoCEv2，无损网络原理，拥塞控制机制详解。

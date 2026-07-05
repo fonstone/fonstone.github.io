@@ -1,0 +1,150 @@
+---
+title: "AI 计算集群与 GPU 架构"
+description: "从 H100 到 B200 的 GPU 架构演进，万卡集群构成要素，NVLink 拓扑拓扑，算力指标与量化精度体系详解。"
+date: "2026-07-05"
+order: 2
+tags: ["GPU", "H100", "B200", "NVLink", "集群", "架构", "FP8"]
+est_time: "50 分钟"
+---
+
+## 1 GPU 架构演进：从 H100 到 B200
+
+### 1.1 NVIDIA GPU 架构路线
+
+NVIDIA 的数据中心 GPU 架构沿着清晰的路线演进：
+
+| 架构 | 世代 | SM 核心特性 | 互联 | HBM | 发布 |
+|------|------|------------|------|-----|------|
+| Ampere | A100 | FP8 未支持，第三代 Tensor Core | NVLink 3 (600 GB/s) | HBM2e 2.0 TB/s | 2020 |
+| Hopper | H100 | FP8 支持，Transformer Engine | NVLink 4 (900 GB/s) | HBM3 3.35 TB/s | 2022 |
+| Blackwell | B200 | FP4 支持，第二代 Transformer Engine | NVLink 5 (1800 GB/s) | HBM3e 8 TB/s | 2024 |
+
+这一演进的核心驱动力是 **Transformer 模型的计算特征**：矩阵乘法和 Attention 操作对算力和带宽的饥饿程度不断增加。
+
+### 1.2 Hopper H100 架构深度解析
+
+H100 SXM 包含 144 个 SM（Streaming Multiprocessor），每个 SM 包含 4 个子核心，总共 576 个 FP32 CUDA 核心 + 288 个 FP64 CUDA 核心。其关键创新是 **Transformer Engine**：
+
+**Transformer Engine 的工作原理。** TE 是一个混合精度推理单元，在 Transformer 层的 Forward Pass 中自动选择最优精度：
+
+1. 每层 Forward 前，TE 读取前一层激活值的统计分布
+2. 根据动态范围选择 FP8 格式（E4M3 或 E5M2）
+3. 使用 FP8 执行矩阵乘法，结果累积到 FP16 精度
+4. 反向传播时自动回退到更高精度（FP16/BF16）
+
+**H100 的 CUDA Core 与 Tensor Core 协同。** 每个 SM 包含：
+- 4 个第三代 Tensor Core（每个时钟周期可执行 1024 个 FP16 FMA 操作或 2048 个 FP8 FMA 操作）
+- 64 个 FP32 CUDA Core
+- 32 个 FP64 CUDA Core
+- 256 KB 寄存器文件 + 228 KB L1/Shared Memory
+
+**HBM3 内存子系统。** H100 配备 80 GB HBM3，通过 6 个 HBM stack 提供 3.35 TB/s 带宽。每个 stack 8 个通道，每个通道可提供 1.0-6.5 Gbps 数据传输率。
+
+### 1.3 Blackwell B200 关键升级
+
+B200 在 Hopper 基础上做了几项关键改进：
+
+**FP4 精度支持。** B200 首次支持 FP4（4 位浮点）精度计算，其 Tensor Core 在 FP4 下的吞吐量达到 FP8 的两倍。这对于推理场景——特别是对精度要求弹性较大场景（如代码生成、文本摘要）——有显著收益。
+
+**第二代 Transformer Engine。** 在 H100 TE 基础上增加了更细粒度的精度选择能力，可以为 Attention 和 FFN 子层分别选择不同的精度策略，进一步提升 MFU。
+
+**NVLink 5 与 Scale-Up 域。** NVLink 5 的单条链路带宽提升至 100 GB/s（双向 200 GB/s），每 GPU 最多 18 条链路，总带宽 1800 GB/s。这使得 2 个 B200 组成一个逻辑 GPU（GB200 Superchip）时，GPU-to-GPU 通信延迟显著降低。
+
+---
+
+## 2 万卡集群架构
+
+### 2.1 集群构成要素
+
+一个万卡级 AI 集群的典型构成：
+
+| 组件 | 规格 | 数量 |
+|------|------|------|
+| GPU 节点 | 8× H100 SXM 节点 | 1250 台 |
+| CPU | Intel Xeon / AMD EPYC 双路 | 2500 颗 |
+| 系统内存 | 2 TB DDR5 每节点 | 2.5 PB |
+| NVLink Switch | 每节点内 8 GPU 全互联 | 1250 套 |
+| IB/RoCE NIC | 8× CX-7 400Gb/s 每节点 | 10000 张 |
+| Top-of-Rack 交换机 | 32×400Gb/s | 约 320 台 |
+| Spine 交换机 | 64×800Gb/s | 约 64 台 |
+| 存储 | 分布式并行文件系统 | ~100 PB |
+
+### 2.2 集群内拓扑：SuperPod 模型
+
+NVIDIA 推荐的万卡集群拓扑基于 DGX SuperPod 模型：
+
+**节点内拓扑。** 8 个 GPU 通过 NVSwitch 实现全互联（All-to-All），每 GPU 有 18 条 NVLink 4 链路连接到 NVSwitch ASIC。拓扑为 **Full-mesh**，GPU0 到 GPU7 的任意两节点间一跳可达。
+
+**节点间拓扑。** GPU 通过 CX-7 InfiniBand NIC 连接 ToR 交换机。典型的网络设计采用 **Fat-Tree** 拓扑，两层（Leaf-Spine）或三层架构。
+
+**Scale-Up vs Scale-Out 域。** AI 集群中存在两个独立的通信平面：
+- **Scale-Up 域（NVLink）**：节点内 8 GPU 之间的高速互联，用于模型并行（TP/PP）的通信。延迟 ~1μs，带宽 900 GB/s。
+- **Scale-Out 域（InfiniBand/RoCE）**：跨节点的 GPU 互联，用于数据并行（DP）和 ZeRO 梯度同步。延迟 ~2-5μs，带宽 400 Gb/s × 8 NICs。
+
+<MermaidDiagram chart={`graph TB
+    subgraph NODE["8× GPU 节点内部"]
+        direction LR
+        GPU0["GPU 0"] --- NVSW["NVSwitch"] --- GPU1["GPU 1"]
+        GPU2["GPU 2"] --- NVSW --- GPU3["GPU 3"]
+        GPU4["GPU 4"] --- NVSW --- GPU5["GPU 5"]
+        GPU6["GPU 6"] --- NVSW --- GPU7["GPU 7"]
+    end
+
+    subgraph INTERCONNECT["Scale-Up: NVLink 域"]
+        direction LR
+        NV1["NVSwitch 1"]
+        NV2["NVSwitch 2"]
+    end
+
+    subgraph NETWORK["Scale-Out: IB 域"]
+        direction TB
+        ToR["ToR 交换机<br/>32×400Gb/s"]
+        Spine["Spine 交换机<br/>64×800Gb/s"]
+        ToR --- Spine
+    end
+
+    NODE --- INTERCONNECT
+    NODE --- NETWORK
+`} />
+
+### 2.3 集群调度与资源管理
+
+**Kubernetes + volcano/pod 调度。** AI 集群的资源调度通常基于 K8S 扩展：
+
+- **Gang Scheduling**：保证一组训练任务同时被调度（所有 GPU 同时分配后才启动）
+- **拓扑感知调度**：优先将同一任务的 GPU 分配到同一 NVSwitch 域内，减少跨节点通信
+- **Binpacking**：最小化碎片化，最大化每节点的 GPU 利用率
+
+**Slurm 与 HPC 调度。** 部分传统 HPC 中心使用 Slurm 管理 GPU 资源，通过 GRES（Generic Resource）插件处理 GPU 申请。Slurm 的优势在于对 MPI 和集合通信的底层支持更好，但容器化支持不如 K8S 灵活。
+
+---
+
+## 3 精度与量化体系
+
+### 3.1 浮点精度类型
+
+| 精度 | 位宽 | 指数位 | 尾数位 | 范围 | H100 TFLOPS |
+|------|------|--------|--------|------|------------|
+| FP64 | 64 | 11 | 52 | 1e-308 ~ 1e308 | 60 |
+| FP32 | 32 | 8 | 23 | 1e-38 ~ 1e38 | 989 |
+| FP16 | 16 | 5 | 10 | 6e-5 ~ 6e4 | 1979 |
+| BF16 | 16 | 8 | 7 | 1e-38 ~ 1e38 | 1979 |
+| FP8.E4M3 | 8 | 4 | 3 | 0.0156 ~ 448 | 3958 |
+| FP8.E5M2 | 8 | 5 | 2 | 1e-10 ~ 57344 | 3958 |
+| FP4 | 4 | 2 (或 3) | 1 | 有限 | ~8000 (B200) |
+
+### 3.2 混合精度训练流程
+
+混合精度训练的标准做法（以 BF16/FP32 混合为例）：
+
+1. **Master Weights**：以 FP32 维护参数的副本（精确累积梯度）
+2. **Forward Pass**：将 FP32 weights cast 为 BF16，执行 BF16 矩阵乘法，输出激活值
+3. **Loss Scaling**：计算 loss 后乘以缩放因子（Scale Factor），防止梯度下溢
+4. **Backward Pass**：以 BF16 梯度回传，更新时转为 FP32
+5. **Optimizer Step**：在 FP32 精度下执行 Adam/AdamW 更新，累加到 FP32 master weights
+
+**FP8 训练进一步降低带宽需求。** DeepGEMM 和 Transformer Engine 使 FP8 在后训练适应（PTA）和推理部署中逐步成为标准。FP8 训练的关键挑战是统计处理——FP8 表示范围有限，需要 layer-wise 动态缩放。
+
+---
+
+> **下一章预告：** 第三章深入 GPU 芯片互联与性能建模——Roofline 模型、MFU 计算框架、DeepGEMM 与 FP8 混合精度技术细节。

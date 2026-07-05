@@ -1,0 +1,184 @@
+---
+title: "高速互联与 RDMA 技术"
+description: "RDMA 原理与内核旁路机制，InfiniBand vs RoCEv2 对比，无损网络与拥塞控制（PFC/ECN/DCQCN），CCE 案例分析。"
+date: "2026-07-05"
+order: 6
+tags: ["RDMA", "InfiniBand", "RoCEv2", "无损网络", "拥塞控制", "PFC", "ECN"]
+est_time: "50 分钟"
+---
+
+## 1 RDMA 原理
+
+### 1.1 传统 TCP/IP 的瓶颈
+
+在传统 TCP/IP 网络栈中，数据传输路径是：
+
+```
+应用 → Socket → Kernel TCP/IP → NIC → 网络 → NIC → Kernel TCP/IP → Socket → 应用
+```
+
+每发送一个数据包，系统需要：
+1. `sendmsg()` 系统调用（用户态→内核态切换）
+2. TCP 分段 + 封装（CPU 中断密集）
+3. DMA 到 NIC
+4. 接收端中断通知 CPU
+5. 内核 TCP/IP 协议栈解析
+6. `recvmsg()` 系统调用（内核态→用户态切换）
+
+这个路径的延迟约为 10-50μs，CPU 占用率高。对于 AI 训练这种频繁的细粒度通信场景（每步迭代多次集合通信），TCP/IP 的开销不可接受。
+
+### 1.2 RDMA 的关键特性
+
+RDMA（Remote Direct Memory Access）的核心思想是**内核旁路（Kernel Bypass）**：
+
+```
+应用 → RDMA Device（用户态直接控制） → 网络 → RDMA Device → 应用
+```
+
+**RDMA 数据路径：**
+1. 应用注册内存区域（MR，Memory Region）到 HCA 的页表
+2. 应用直接构造 Work Request（WR），提交到 HCA 的发送队列（SQ）
+3. HCA 通过 DMA 直接从用户态内存读出数据，封装为数据包发送
+4. 接收端 HCA 收到后，通过 DMA 直接将数据写入目标内存区域
+5. 完成通知通过 Completion Queue（CQ）异步返回
+
+**RDMA 的优势：**
+- **零拷贝**：数据从用户缓冲区直接传输到网卡，无需内核缓冲区拷贝
+- **内核旁路**：应用直接控制 HCA，无系统调用开销
+- **CPU 卸载**：HCA 负责协议封装、流控、重传，CPU 不参与数据路径
+
+### 1.3 RDMA 操作类型
+
+**Send/Recv（SEND）。** 传统的发送-接收模型，接收端需要预先发布 Recv WR。适用于长度不确定的消息。
+
+**RDMA Read。** 发起端直接从远程内存读取数据，远程 CPU 不参与。适用于 One-sided 通信——远程端完全不动，本地发起读取。
+
+**RDMA Write。** 发起端直接写入远程内存，远程 CPU 不参与。适用于单边数据推送。
+
+**RDMA Write with Immediate。** 写入数据的同时附带一个 32-bit 立即数，用于通知接收端。
+
+**AI 训练中的典型使用：** NCCL 的 AllReduce 底层使用 RDMA Write/Send 实现多通道 Bandwidth 最大化。RDMA Read 在 M 卡互连场景（如 Ring AllReduce 的 Reduce-Scatter Phase）中被用来从上一节点拉取数据。
+
+---
+
+## 2 InfiniBand vs RoCEv2
+
+### 2.1 InfiniBand
+
+InfiniBand（IB）是 HPC 和 AI 集群中事实标准的高速互联：
+
+**IB 架构层次：**
+- **HCA（Host Channel Adapter）**：服务器端的 IB 网卡
+- **Switch**：IB 交换机，提供无损转发和自适应路由
+- **Subnet Manager（SM）**：管理 IB 子网的拓扑、路由、流控的中心控制器
+
+**IB 的流控与无损特性：**
+- **链路级流控（Link-Level Flow Control）**：基于信用（Credit）机制，确保接收端有缓冲区时才发送，天然无丢包
+- **自适应路由（Adaptive Routing）**：支持基于链路利用率的动态路由决策，避免拥塞热点
+
+**IB 的不足：**
+- 价格高（NVIDIA/Mellanox 垄断供应）
+- 交换机生态封闭，扩展成本高
+
+### 2.2 RoCEv2
+
+RoCEv2（RDMA over Converged Ethernet version 2）是 RDMA 在标准以太网上的实现：
+
+**RoCEv2 的封装：**
+```
+RoCEv2 数据包 = 以太头 + IP/UDP 头 + BTH + 载荷
+```
+
+- 使用 UDP 端口 4791 作为传输协议
+- 利用标准以太网基础设施（交换机、路由器）
+
+**RoCEv2 的挑战：**
+标准以太网是**有损网络**，交换机缓冲区溢出时会丢弃数据包。而 RDMA 依赖底层无损传输——一个丢包导致整个 SEND 操作失败，GRH（全局路由头）要求重试整个 DCT（DCT 段）。
+
+**RoCEv2 必须运行在无损以太网上，依赖：**
+- PFC（Priority Flow Control）：逐跳反压
+- ECN（Explicit Congestion Notification）：端到端拥塞标记
+- DCQCN：拥塞控制算法
+
+### 2.3 对比总结
+
+| 特性 | InfiniBand | RoCEv2 |
+|------|-----------|--------|
+| 延迟 | ~1-2μs | ~2-5μs |
+| 带宽 | 400/800 Gb/s | 400/800 Gb/s |
+| 丢包 | 无（Credit 流控） | 需无损配置 |
+| 拥塞控制 | 链路级 Credit + 自适应路由 | DCQCN + ECN |
+| 成本 | 高（专用硬件） | 中（标准以太网） |
+| 生态 | 封闭（NVIDIA Mellanox） | 开放（多厂商） |
+| AI 部署率 | ~70% | ~30%（增长中） |
+
+---
+
+## 3 无损网络原理
+
+### 3.1 PFC（Priority Flow Control）
+
+PFC（IEEE 802.1Qbb）是经典以太网流控机制，通过逐跳反压（Hop-by-hop Backpressure）防止丢包：
+
+**PFC 工作原理：**
+1. 接收端检测到输入端口缓冲区超过阈值
+2. 发送 PFC PAUSE 帧到上游交换机，指示暂停特定优先级流量
+3. 上游交换机收到 PAUSE 帧后停止发送相应优先级的数据
+4. 缓冲区释放后发送 PAUSE RESUME 帧恢复传输
+
+**PFC 的问题：**
+- **死锁风险**：多个正交流方向上的级联反压可能造成死锁
+- **不公平性**：一个端口的拥塞可能反压到上游所有流量，影响不相关的流
+- **队头阻塞**：一个队列暂停影响该队列上的所有流
+
+### 3.2 ECN（Explicit Congestion Notification）
+
+ECN（RFC 3168）在 IP 层标记拥塞，提供端到端的拥塞信号：
+
+**ECN 工作流程：**
+1. 发送端标记数据包的 ECT(0) 或 ECT(1) 码点
+2. 交换机检测到拥塞时（队列长度超过阈值），将 ECT 改为 CE（Congestion Experienced）
+3. 接收端收到 CE 标记后，在 ACK 中设置 ECE 标志
+4. 发送端收到 ECE，降低发送速率
+
+### 3.3 DCQCN 拥塞控制
+
+DCQCN 是 RoCEv2 场景中使用的端到端拥塞控制算法，结合了 ECN 标记和速率控制：
+
+**DCQCN 的速率控制算法：**
+
+```
+周期性（~100μs）：
+  如果收到 ECN 标记：速率 *= (1 - α/2)，α = α + 1
+  如果未收到 ECN 标记：速率 += (目标 - 当前) × β
+```
+
+其中 α 控制降速响应速度（初始 0），β 控制升速速度（通常 0.125）。
+
+**DCQCN 在 AI 集群中的挑战：**
+AI 集合通信（特别是 AllReduce）产生的多对一流量模式容易触发 incast 拥塞。DCQCN 的响应速度可能不足以在通信步内完成拥塞控制，导致吞吐抖动。
+
+**改进方案：**
+- **SWIFT**（Google）：基于延迟的拥塞控制，适用于数据中心环境
+- **HPCC**（阿里巴巴）：利用交换机 INT（In-band Network Telemetry）精确测量排队延迟，实现更快速的拥塞响应
+- **CCE**（华为）：自适应拥塞控制算法，在 DCQCN 基础上增加了基于 AI 模型的速率预测
+
+---
+
+## 4 案例分析：华为 CCE
+
+华为 CloudEngine 交换机上的 CCE（Cognitive Congestion Control）算法代表了拥塞控制的最新技术方向：
+
+**CCE 的独特设计：**
+1. **AI 预测**：使用轻量级模型预判流量模式（AllReduce 是周期性可预测的）
+2. **多级缓存**：在芯片级分配动态缓存池，PFC 反压仅在极端情况下触发
+3. **智能 ECN 阈值**：根据实时流量特征动态调整 ECN 标记阈值（而非固定阈值）
+
+**CCE 在 RoCEv2 AI 集群中的效果：**
+- PFC PAUSE 帧减少 90%+
+- AllReduce 吞吐提升 15-30%
+- 尾延迟降低 50%+
+
+---
+
+> **下一章预告：** 第七章进入分布式训练——数据并行、张量并行、流水线并行三大策略的原理与组合。

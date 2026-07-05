@@ -1,0 +1,141 @@
+---
+title: "AI 基础设施全景：从芯片到 Agent"
+description: "Scaling Law 演进脉络，AI Infra 全栈分层架构，从 GPU 到 Agent 的四层模型，关键技术栈全景与开源生态格局。"
+date: "2026-07-05"
+order: 1
+tags: ["AI Infra", "Scaling Law", "架构", "全景", "GPU", "Agent"]
+est_time: "40 分钟"
+---
+
+## 1 引言
+
+### 1.1 从 Scaling Law 到大模型爆发
+
+2017 年 Google 提出 Transformer 架构之后，AI 基础设施经历了三次范式转变：
+
+**第一次转变（2017-2020）：Scaling Law 的确立。** 2020 年 OpenAI 发表 Scaling Laws for Neural Language Models，揭示了模型性能与参数量、数据量、计算量之间的幂律关系。这意味着"更大 = 更好"从经验观察上升为可预测的工程规律。
+
+**第二次转变（2020-2022）：训练规模从千卡到万卡。** GPT-3（175B）的训练消耗了数千 GPU 天，LLaMA、PaLM 等模型将训练集群规模推至万卡级别。这催生了分布式训练框架、并行策略和集群网络技术的快速迭代。
+
+**第三次转变（2022-至今）：推理成为主角。** ChatGPT 发布后，推理负载从"边缘需求"变为"核心挑战"。KV Cache、PagedAttention、Continuous Batching、投机采样等技术成为生产级推理服务的标配。
+
+这三次转变形塑了今天 AI Infrastructure 的全栈架构。
+
+### 1.2 AI Infra 全栈四层模型
+
+AI 基础设施可以抽象为从底到顶的四层架构：
+
+| 层次 | 涵盖范围 | 核心挑战 | 代表技术 |
+|------|---------|---------|---------|
+| **L1 硬件层** | GPU/NPU、HBM、NVLink、网络 NIC | 算力密度、带宽瓶颈、功耗 | H100/B200, NVLink Switch, CX-8 |
+| **L2 系统层** | 集合通信、并行策略、调度系统 | 通信效率、显存管理、负载均衡 | NCCL, Megatron, DeepSpeed |
+| **L3 框架层** | 训练框架、推理引擎、量化工具 | 易用性、性能可移植性 | PyTorch, vLLM, TensorRT-LLM |
+| **L4 应用层** | Agent 框架、RAG、工具链 | 可靠性、延迟、成本控制 | LangChain, MCP, A2A |
+
+这四层之间存在紧密的耦合关系：L1 的互联拓扑决定了 L2 的通信模式，L2 的并行策略影响 L3 的内存分配策略，L3 的推理引擎输出格式又约束了 L4 的 Agent 编排方式。
+
+<MermaidDiagram chart={`graph TB
+    subgraph L4["L4 应用层"]
+        Agent["AI Agent<br/>ReAct / Plan-and-Execute"]
+        RAG["RAG<br/>检索增强生成"]
+        MCP["MCP / A2A<br/>协议标准"]
+    end
+
+    subgraph L3["L3 框架层"]
+        HF["HuggingFace Transformers"]
+        vLLM["vLLM / SGLang"]
+        TRTLLM["TensorRT-LLM"]
+        AWQ["量化工具 AWQ / GPTQ"]
+    end
+
+    subgraph L2["L2 系统层"]
+        NCCL["NCCL 集合通信"]
+        Mega["Megatron-LM TP/PP"]
+        DS["DeepSpeed ZeRO"]
+        K8S["Kubernetes 调度"]
+    end
+
+    subgraph L1["L1 硬件层"]
+        GPU["GPU<br/>H100 / B200"]
+        HBM["HBM3e<br/>高速显存"]
+        NVLink["NVLink / NVSwitch"]
+        IB["InfiniBand / RoCEv2"]
+    end
+
+    L1 --> L2
+    L2 --> L3
+    L3 --> L4
+`} />
+
+### 1.3 本课程的定位与路线
+
+本教程将遵循**从底向上的路线**，系统覆盖 AI Infra 全栈：
+
+- **第 1~3 章**（本模块）：硬件基础与性能建模，理解算力的微观基础
+- **第 4~6 章**：通信与网络，理解分布式系统的互联约束
+- **第 7~9 章**：分布式训练，理解并行策略与优化技术
+- **第 10~12 章**：推理优化与 Agent 应用，理解推理部署与 AI 应用
+
+---
+
+## 2 关键概念与度量体系
+
+### 2.1 算力指标
+
+**TFLOPS（Tera FLOPs per second）。** 衡量 GPU 每秒可执行的浮点运算次数，分 FP32、FP16、BF16、FP8 等精度。NVIDIA H100 SXM 的规格为：989 TFLOPS（FP16）、1979 TFLOPS（FP8，Dense）、3958 TFLOPS（FP8，Sparse）。
+
+**HBM 带宽。** 显存带宽决定了数据传输的吞吐上限。H100 配备 HBM3（3.35 TB/s），B200 升级到 HBM3e（8 TB/s）。带宽往往是训练中 Attention 算子的瓶颈。
+
+**NVLink 带宽。** GPU 间互联带宽，H100 NVLink 提供 900 GB/s 双向带宽（每 GPU 18 条 NVLink 4，每条 50 GB/s）。B200 的 NVLink 5 提升至 1800 GB/s。
+
+### 2.2 利用率指标
+
+**MFU（Model FLOPS Utilization）。** 模型训练时 GPU 浮点运算单元的实际利用率。当前大模型训练 MFU 一般在 40%-60% 之间，部分优化可达 70%。计算公式：
+
+```
+MFU = 实际观察到的 FLOPS / GPU 的理论峰值 FLOPS
+```
+
+**HFU（Hardware FLOPS Utilization）。** 按实际运行的算子精度计算利用率，比 MFU 更底层。MFU 与 HFU 的差值反映了低精度算子未被充分利用的程度。
+
+### 2.3 显存消耗模型
+
+大模型训练中，显存消耗来自四个主要部分：
+1. **模型参数**：参数量 × 精度字节数
+2. **优化器状态**：Adam 需维护 m+v 两倍参数量的状态（通常 16 或 32 字节/参数）
+3. **梯度**：与参数等量
+4. **激活值**：取决于序列长度、batch size、hidden size
+
+以 LLaMA-70B 全参数训练为例：
+- 参数：70B × 2 bytes（BF16）= 140 GB
+- 优化器：70B × 12 bytes（ZeRO-2 优化后）= 840 GB
+- 激活值：取决于并行策略，通常 50-200 GB
+
+---
+
+## 3 AI Infra 开源生态
+
+### 3.1 训练生态
+
+- **PyTorch + FSDP**：社区主流选择，FSDP 将 ZeRO-3 引入 PyTorch 核心
+- **Megatron-LM**：NVIDIA 的工业级训练框架，TP/PP/DP 全部支持
+- **DeepSpeed**：微软的优化库，ZeRO 系列、MiCS、Flash Attention 集成
+- **Colossal-AI**：针对 MoE 和异构训练的优化
+
+### 3.2 推理生态
+
+- **vLLM**：PagedAttention 原创者，社区最流行的推理引擎
+- **TensorRT-LLM**：NVIDIA 官方推理引擎，极致优化 + 量化支持
+- **SGLang**：高效结构化推理框架
+- **llama.cpp**：边缘设备推理，量化到 4-bit/2-bit
+
+### 3.3 Agent 生态
+
+- **LangChain / LangGraph**：Agent 编排框架
+- **MCP（Model Context Protocol）**：Anthropic 发起的工具/数据源连接标准
+- **A2A（Agent-to-Agent）**：Google 发起的跨 Agent 通信协议
+- **AutoGen**：微软的多 Agent 协作框架
+
+---
+
+> **下一章预告：** 第二章深入 AI 计算集群与 GPU 架构——从 H100 到 B200，从单卡到万卡集群的架构演进，理解算力的工程实现。

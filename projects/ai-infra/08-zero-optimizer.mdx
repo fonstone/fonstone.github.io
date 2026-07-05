@@ -1,0 +1,225 @@
+---
+title: "ZeRO 优化器与显存优化"
+description: "ZeRO 1/2/3 三个阶段原理与显存节省分析，通信开销与显存节省的权衡，ZeRO-offload CPU offload 策略，代码级实现理解。"
+date: "2026-07-05"
+order: 8
+tags: ["ZeRO", "DeepSpeed", "显存优化", "ZeRO-3", "Offload", "Adam"]
+est_time: "50 分钟"
+---
+
+## 1 模型训练的显存消耗模型
+
+### 1.1 四元组显存构成
+
+大模型训练中，显存主要由四部分组成：
+
+| 组件 | 大小公式 | 说明 |
+|------|---------|------|
+| 模型参数 | P × D | P=参数量，D=精度字节 |
+| 梯度 | P × D | 与参数等量 |
+| 优化器状态 | P × S | S=状态大小（Adam 约 12-16 字节） |
+| 激活值 | 取决于序列长度 | 训练中最大项，可能远超参数 |
+
+**LLaMA-70B 显存预算（BF16 训练）：**
+- 参数：70B × 2 bytes = 140 GB
+- 梯度：70B × 2 bytes = 140 GB
+- Adam 状态（m+v）：70B × 2 × 4 bytes = 560 GB
+- 激活值：估算 60-200 GB
+- **总计：约 900-1040 GB**
+
+单卡 H100/80GB 显然无法承载。ZeRO 的核心理念：**每个 GPU 只存储参数/梯度/优化器状态的一个分片，而不是完整副本。**
+
+### 1.2 传统 DP 的问题
+
+标准数据并行（DDP）中，每个 GPU 存储完整的参数、梯度、优化器状态：
+
+```
+单卡显存 = 全部参数 + 全部梯度 + 全部优化器状态 + 激活值/P
+总显存 = N × (全量)
+```
+
+这意味着 DDP 无法训练超出单卡容量的模型——显存浪费严重，因为 N 个副本持有完全相同的数据。
+
+---
+
+## 2 ZeRO 三阶段：显存 vs 通信权衡
+
+### 2.1 ZeRO-1：优化器状态分片
+
+**原理。** 只对优化器状态（Adam 的 m 和 v）做分片，参数和梯度保持完整。
+
+```
+单卡显存 = 全量参数 + 全量梯度 + 优化器状态/N
+```
+
+**通信模式。** 与 DDP 相同：每步一次 AllReduce 传输完整梯度。各 GPU 在优化器 step 完成后，持有自己分片的优化器状态更新的部分参数块。
+
+**显存节省对比（70B, BF16, Adam, N=64）：**
+
+| 状态 | DDP | ZeRO-1 | 节省比例 |
+|------|-----|--------|---------|
+| 参数 | 140 GB | 140 GB | 0% |
+| 梯度 | 140 GB | 140 GB | 0% |
+| 优化器 | 560 GB | 560/64 ≈ 9 GB | 98.4% |
+| 合计 | 840 GB | 289 GB | 65.6% |
+
+**通信开销。** 与 DDP 完全相同——AllReduce 梯度，每步通信量 140 GB（BF16 梯度）。ZeRO-1 是零通信开销的显存优化。
+
+### 2.2 ZeRO-2：梯度分片
+
+**原理。** 在 ZeRO-1 的基础上增加梯度分片：
+
+```
+单卡显存 = 全量参数 + 梯度/N + 优化器状态/N
+```
+
+**通信模式。** ZeRO-2 在 Backward 后不等待所有梯度计算完成就启动 ReduceScatter（而非 AllReduce）。每个 GPU 只计算并持有自己分片的梯度。
+
+**通信量分析：**
+- 通信总量 = 梯度大小 × (N-1)/N（与 Ring AllReduce 相同）
+- 但 ZeRO-2 在 Backward 中就开始通信，与计算重叠
+- 实际通信时间 ≈ 0（完全重叠时）
+
+**显存节省（70B, N=64）：**
+
+| 状态 | DDP | ZeRO-2 | 节省 |
+|------|-----|--------|------|
+| 参数 | 140 GB | 140 GB | 0% |
+| 梯度 | 140 GB | 140/64 ≈ 2 GB | 98.6% |
+| 优化器 | 560 GB | 560/64 ≈ 9 GB | 98.4% |
+| 合计 | 840 GB | 151 GB | 82% |
+
+### 2.3 ZeRO-3：参数分片
+
+**原理。** 参数、梯度、优化器状态全部分片：
+
+```
+单卡显存 = 参数/N + 梯度/N + 优化器状态/N
+```
+
+**通信模式——最大的变化！** ZeRO-3 中，参数不再完整持有。每层 Forward 前，需要：
+1. **AllGather**：获取本层所需参数的全量副本
+2. 使用完整参数执行 Forward
+3. Forward 完成后释放非本分片的参数
+4. Backward 时再次 AllGather 参数
+
+**通信量分析：**
+- 每步额外通信：每层参数被 AllGather 两次（Forward + Backward）
+- 总通信量比 DDP 多 50%
+- 对于大模型（70B），增加的通信可能使训练速度降低 20-40%
+
+**显存节省（70B, N=64）：**
+
+| 状态 | DDP | ZeRO-3 | 节省 |
+|------|-----|--------|------|
+| 参数 | 140 GB | 140/64 ≈ 2 GB | 98.6% |
+| 梯度 | 140 GB | 140/64 ≈ 2 GB | 98.6% |
+| 优化器 | 560 GB | 560/64 ≈ 9 GB | 98.4% |
+| 合计 | 840 GB | 13 GB | 98.5% |
+
+**ZeRO-3 的适用场景：** 模型超大、GPU 数多（64+）且 NVLink 带宽充足。对于 8 GPU 节点内，ZeRO-3 的额外通信开销可能使 MFU 从 50% 降至 30%+。
+
+---
+
+## 3 ZeRO-offload 与 CPU 卸载
+
+### 3.1 ZeRO-offload 原理
+
+当 GPU 显存仍然不足时，ZeRO-offload 将部分数据卸载到 CPU 内存：
+
+**CPU 卸载策略：**
+- 优化器状态 → CPU（因为 CPU 更新权重是最慢的）
+- 参数 → CPU（Forward 时搬回 GPU）
+- 梯度 → GPU（GPU 计算，就地规约）
+
+**通信模型：**
+
+```
+GPU ↔ CPU 数据传输（PCIe 带宽：约 32-64 GB/s）
+```
+
+PCIe 带宽远低于 GPU HBM 带宽，因此 CPU offload 会显著增加延迟。
+
+### 3.2 NVMe offload
+
+ZeRO-Infinity 进一步支持卸载到 NVMe 存储：
+
+```
+GPU HBM → CPU DDR → NVMe SSD
+带宽：3.35 TB/s → 64 GB/s → 7 GB/s
+```
+
+这使超大模型（万亿参数级别）的训练成为可能，但带宽的急剧下降意味着每分钟只能完成很少的训练步骤。
+
+---
+
+## 4 代码级实现理解
+
+### 4.1 PyTorch FSDP vs DeepSpeed ZeRO
+
+PyTorch FSDP（Fully Sharded Data Parallel）在 PyTorch 2.0 中引入，实现了 ZeRO-3 的语义：
+
+```python
+from torch.distributed.fsdp import (
+    FullyShardedDataParallel as FSDP,
+    ShardingStrategy,
+)
+model = FSDP(
+    model,
+    sharding_strategy=ShardingStrategy.FULL_SHARD,  # ZeRO-3
+    auto_wrap_policy=transformer_auto_wrap_policy,
+)
+```
+
+**DeepSpeed ZeRO：**
+
+```python
+import deepspeed
+model_engine, optimizer, _, _ = deepspeed.initialize(
+    model=model,
+    optimizer=optimizer,
+    config_params={
+        "zero_optimization": {
+            "stage": 3,
+            "offload_optimizer": {
+                "device": "cpu"
+            }
+        }
+    }
+)
+```
+
+### 4.2 ZeRO 通信模式实现
+
+DeepSpeed ZeRO-3 的实现中，参数 AllGather 的通信路径：
+
+```python
+# 简化伪代码
+class ZeRO3Layer(torch.nn.Module):
+    def forward(self, x):
+        # AllGather 本层参数
+        with self._all_gather_params():
+            output = F.linear(x, self.weight, self.bias)
+        # 参数分片自动恢复
+        return output
+```
+
+关键点：ZeRO-3 使用 `torch.distributed._all_gather_base` 和 `torch.distributed._reduce_scatter_base` 作为底层通信原语，它们在一个 NCCL 调用中完成整块数据的分片操作。
+
+---
+
+### 4.3 显存与速度的 Pareto 边界
+
+ZeRO 三阶段展示了显存与速度的根本权衡：
+
+| ZeRO 阶段 | 每卡显存 | 通信开销 | 适用 N (GPU 数) |
+|-----------|---------|---------|----------------|
+| Stage 1 | 中 | 0% | 8-32 |
+| Stage 2 | 低 | 低于 10% | 16-64 |
+| Stage 3 | 极低 | 20-40% | 64-1024 |
+
+实际部署建议：**能不用 ZeRO-3 就不用 ZeRO-3**。优先通过 TP+PP 的 3D 并行将模型显存需求降至单卡容量以下，再使用 ZeRO-2 做数据并行。ZeRO-3 应视为最后的显存节省手段。
+
+---
+
+> **下一章预告：** 第九章深入训练优化——Flash Attention 演进、Ring Attention 长序列、Domino/FLUX 计算通信重叠。

@@ -1,0 +1,196 @@
+---
+title: "大模型推理优化"
+description: "KV Cache 原理与优化，PagedAttention 与 vLLM，Continuous Batching 调度策略，投机采样与推理加速技术全景。"
+date: "2026-07-05"
+order: 10
+tags: ["推理", "KV Cache", "PagedAttention", "vLLM", "Continuous Batching", "投机采样"]
+est_time: "55 分钟"
+---
+
+## 1 推理的计算特征
+
+### 1.1 自回归解码的两阶段
+
+大模型推理遵循自回归模式：逐个 token 生成，每个 token 依赖前面所有 token。
+
+**Prefill 阶段（预填充）：**
+- 输入：用户 prompt 的所有 tokens（如 512 tokens）
+- 计算：一次完整的 Forward（矩阵运算密集）
+- 特征：计算受限，需要快速 FFN 算力
+
+**Decode 阶段（解码）：**
+- 输入：当前新 token 的 embedding（1 token）
+- 计算：一次 Forward 中的 Attention 部分需要与所有已有 tokens 的 K/V 做计算
+- 特征：内存受限（每次 decode 需读取已有 K/V 缓存）
+
+### 1.2 推理的独特挑战
+
+- **延迟敏感**：用户期望的首 token 延迟低于 500ms
+- **内存瓶颈**：KV Cache 随序列长度和并发数线性增长
+- **批处理低效**：各请求解码步数差异大，静态 batching 浪费算力
+- **显存碎片**：KV Cache 的动态增长导致显存碎片化
+
+---
+
+## 2 KV Cache 原理与优化
+
+### 2.1 KV Cache 的显存消耗
+
+对于每个请求，KV Cache 的计算：
+
+```
+KV Cache 大小 = 2（K 和 V）× num_layers × num_heads × d_head × seq_len × precision_bytes
+```
+
+**LLaMA-70B 的 KV Cache：**
+- 层数：80
+- 注意力头：64（使用 GQA，key/value heads = 8）
+- d_head：128
+- seq_len：4096
+- 精度：FP16 (2 bytes)
+- **每请求 KV Cache：~10 GB**
+
+100 个并发请求 = 1 TB KV Cache，远超单 GPU 显存。
+
+### 2.2 KV Cache 优化技术
+
+**GQA (Grouped Query Attention)**：
+- MHA（Multi-Head Attention）：每 query head 有独立的 key/value 头
+- GQA：多 query head 共享一组 key/value 头，减少 K/V 投影矩阵参数量
+- KV Cache 降低比例 = GQA 的 key/value 数 / query 数
+- LLaMA-2 70B 使用 GQA-8（64 query / 8 key-value），KV Cache 减少 8x
+
+**MQA (Multi-Query Attention)**：
+- MQA 使用单组 K/V 头，所有 query 共享
+- KV Cache 减少比例 = 1/64（8 位头时下降 8 倍，但精度损失更大）
+
+**MLA (Multi-head Latent Attention)**：
+- DeepSeek 提出的低秩 KV 压缩方法
+- 在投影空间而非原始维度存储 KV Cache
+- KV Cache 降低约 80-90%
+
+### 2.3 KV Cache 量化
+
+KV Cache 可被量化到 FP8 甚至 INT8：
+
+**FP8 KV Cache：**
+- 每元素 1 字节，降低 50% 缓存占用
+- 精度损失在 Decode 阶段可接受（Q/K 精度影响大，V 影响小）
+- 实现：对每层 K 和 V 分别做 per-tensor 量化
+
+**INT8 KV Cache：**
+- 每元素 1 字节
+- 需要额外的 scale factor，但压缩率更高
+- 精度损失略大于 FP8
+
+---
+
+## 3 PagedAttention 与 vLLM
+
+### 3.1 传统 KV Cache 管理的问题
+
+传统推理引擎（如 HuggingFace Transformers）的 KV Cache 管理：
+
+1. **预分配连续内存**：为最大可能序列长度（max_seq_len）预先分配连续显存
+2. **内存浪费**：大部分请求实际序列长度远小于 max_seq_len
+3. **碎片化**：请求结束后释放的空间被分割成小碎片，无法被其他请求有效使用
+4. **复制开销**：batching 时涉及大量 cache 拼接操作
+
+### 3.2 PagedAttention 的设计
+
+PagedAttention 借鉴操作系统的虚拟内存分页思想：
+
+**核心概念：**
+- **Logical KV Block**：逻辑 KV Cache 块（逻辑上连续的 token 序列）
+- **Physical KV Block**：物理显存块（物理上不连续的显存页）
+- **Block Table**：逻辑块到物理块的映射表（类似页表）
+
+**工作流程：**
+```
+逻辑视角：  [Block 0] - [Block 1] - [Block 2] - [...]
+                ↓            ↓            ↓
+物理视角：  [Page 17]    [Page 3]     [Page 42]
+                ↓            ↓            ↓
+            Block Table: {0→17, 1→3, 2→42, ...}
+```
+
+**优势：**
+1. **零碎片化**：所有物理块等大，释放的块可被任意请求复用
+2. **按需分配**：只分配已经生成的 token 的缓存，不做预分配
+3. **高效复制**：多个请求共享相同 Prompt 时，Block Table 共享物理块
+4. **Copy-on-Write**：Beam Search 场景下只需复制 Block Table，不复制实际数据
+
+### 3.3 vLLM 推理引擎
+
+vLLM 是 PagedAttention 的开源实现，当前社区最流行的推理引擎：
+
+**vLLM 的核心调度策略：**
+
+1. **Incremental Batching**：支持请求的动态加入和离开
+2. **Memory-aware Scheduling**：根据当前空闲页数决定是否接受新请求
+3. **Preemption**：显存不足时抢占低优先级请求，释放其物理块（优先级调度 + copy-on-write 恢复）
+4. **Chunked Prefill**：长 prompt 的 Prefill 分块执行，避免阻塞 decode 请求
+
+**性能指标：**
+- 相比 HuggingFace Transformers：吞吐提升 2-4 倍
+- 相比 TensorRT-LLM 静态 batching：吞吐接近，但灵活性更高
+- 显存利用率：可达 95%+
+
+---
+
+## 4 推理调度策略
+
+### 4.1 Continuous Batching
+
+传统推理的 batching 方式：**静态 batching**——在开始解码前，收集若干请求组成一个 batch，全部解码完成后一起释放。
+
+Continuous Batching 的改进：
+1. **迭代级调度（Iteration-level Scheduling）**：每次解码步骤完成时，允许请求的增删
+2. **请求完成即离开**：不再等待 batch 中所有请求完成
+3. **新请求立即加入**：新请求的 Prefill 与已有 decode 步骤并发执行
+
+**实现方式：**
+
+```
+迭代 1: [ReqA(d1), ReqB(d1), ReqC(p1)]    -- ReqC 做 Prefill，ReqA/B 做 Decode
+迭代 2: [ReqA(d2), ReqB(d2), ReqC(d1), ReqD(p1)]
+迭代 3: [ReqA(d3), ReqC(d2), ReqD(d1)]
+                            -- ReqB 完成退出，ReqD 加入
+```
+
+### 4.2 投机采样（Speculative Decoding）
+
+投机采样的核心理念：**草案模型多预测，目标模型做验证**。
+
+**SSD（Speculative Sampling/Decoding）流程：**
+
+```
+1. 草案模型（轻量，如 7B）快速预测 γ 个 token
+2. 目标模型（大模型，如 70B）一次性验证这 γ 个 token
+3. 如果验证通过，一次 Forward 生成 γ 个 token（加速 γ 倍）
+4. 如果验证不全通过，部分回退，至少保证一个正确 token
+```
+
+**加速原理：** 目标模型的 γ 个 token 的验证只需一次 Forward（因为可以并行处理），而标准解码需要 γ 次 Forward。理想情况下加速比 = γ。
+
+**影响加速比的关键因素：**
+- 草案模型与目标模型的**准确性一致性**：高一致性 → 高接受率
+- 草案模型的**生成速度**：足够快才能让加速有意义
+- γ 的选择：越大理论加速越大，但验证失败回退越多
+
+**生产部署：** DeepMind 在 LLM 服务中的投机采样实现了 2-3x 加速，谷歌 Med-PaLM 2 使用投机采样达到接近实时性能。
+
+---
+
+## 5 推理引擎对比
+
+| 引擎 | KV Cache 管理 | Batching 策略 | 量化支持 | 优势场景 |
+|------|-------------|--------------|---------|---------|
+| vLLM | PagedAttention | Continuous | AWQ/GPTQ/FP8 | 高并发动态请求 |
+| TensorRT-LLM | 连续预分配 | In-flight batching | FP8/INT4/INT8 | 极致性能/批处理 |
+| SGLang | RadixAttention | Structured | AWQ/FP8 | 结构化输出 |
+| llama.cpp | 类 Paged | 简单 batching | GGUF 量化 | 边缘部署 |
+
+---
+
+> **下一章预告：** 第十一章深入 Transformer 与 MoE 架构——从标准 Transformer 到 DeepSeek MoE/MLA，GQA，MoE 分布式部署挑战。

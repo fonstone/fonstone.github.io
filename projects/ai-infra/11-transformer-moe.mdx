@@ -1,0 +1,194 @@
+---
+title: "Transformer 与 MoE 架构"
+description: "从标准 Transformer 到 DeepSeek MoE/MLA，GQA 与 MQA 注意力优化，MoE 架构的分布式部署挑战，Top-k 路由与负载均衡。"
+date: "2026-07-05"
+order: 11
+tags: ["Transformer", "MoE", "DeepSeek", "MLA", "GQA", "稀疏模型", "路由"]
+est_time: "55 分钟"
+---
+
+## 1 Transformer 架构回顾
+
+### 1.1 标准 Transformer Layer
+
+现代 LLM 的 Transformer Layer 由两个核心子层组成：
+
+**Self-Attention 层：**
+```
+Attention(Q, K, V) = Softmax(Q × K^T / √d) × V
+```
+
+其中 Q、K、V 由输入经过三个投影矩阵得到。计算复杂度 O(N² × d)，N 为序列长度，d 为隐藏维度。
+
+**FFN（Feed-Forward Network）层：**
+```
+FFN(x) = SiLU(x × W_gate) × (x × W_up) × W_down  (SwiGLU 变体)
+```
+
+SwiGLU 是 LLaMA 系列使用的 FFN 结构，包含三个权重矩阵（gate、up、down）。计算复杂度 O(N × d²)，当 d 较大时，FFN 层占总计算量的 ~60%。
+
+### 1.2 位置编码
+
+**RoPE（Rotary Position Embedding）：**
+RoPE 将位置信息直接编码到 Attention 的 Q/K 向量中，通过对 Q/K 向量应用旋转矩阵实现：
+
+```
+q_m = R(m) × q
+k_n = R(n) × k
+(q_m)·(k_n) = q^T × R(m - n) × k
+```
+
+RoPE 的优势在于：
+1. **相对位置编码**：Attention 分数只依赖 token 间的相对距离 m-n
+2. **外推能力**：可以处理比训练时更长的序列
+3. **高效**：仅需对 Q/K 做一次旋转运算，无额外参数
+
+---
+
+## 2 注意力优化：GQA 与 MLA
+
+### 2.1 MHA → GQA 的演进
+
+**MHA（Multi-Head Attention）**：原始 Transformer 设计，每个注意力头有独立的 Key、Value 投影。总 K/V 参数 = num_heads × d_head × d × 2。
+
+**MQA（Multi-Query Attention）**：所有 query head 共享一组 K/V。K/V 参数量降低 num_heads 倍。质量损失可接受但并非最优。
+
+**GQA（Grouped Query Attention）**：折中方案——将 query head 分组，组内共享 K/V。LLaMA-2/3 70B 使用 8 组 K/V head（GQA-8），64 个 query head。
+
+```
+MHA:  Q₁ K₁ V₁│Q₂ K₂ V₂│...│Q₆₄ K₆₄ V₆₄
+GQA: Q₁ Q₂...Q₈│K₁ V₁│Q₉...Q₁₆│K₂ V₂│...│K₈ V₈
+MQA: Q₁ Q₂...Q₆₄│K₁ V₁
+```
+
+**GQA 的显存收益：** K/V 参数量降低 8 倍（64→8），KV Cache 缩小 8 倍，对推理场景的收益尤其显著。
+
+### 2.2 DeepSeek MLA（Multi-head Latent Attention）
+
+DeepSeek 提出的 MLA 是注意力机制的进一步优化，核心是在**潜在空间**做注意力计算：
+
+**Traditional MHA：**
+```
+K = X × W_K  (d_model → num_heads × d_head)
+V = X × W_V  (d_model → num_heads × d_head)
+```
+
+**MLA：**
+```
+C = X × W_C  (d_model → d_latent, 降维)
+K = C × W_K' (d_latent → num_heads × d_head, 升维)
+V = C × W_V' (d_latent → num_heads × d_head, 升维)
+```
+
+**KV Cache 在 MLA 中的存储方式：**
+- 不需要存储完整的 K、V 矩阵（num_heads × d_head × layers × 2）
+- 只存储低维潜在向量 C（d_latent × layers）
+- 推理时从 C 动态恢复 K、V
+
+**MLA 的 KV Cache 降低比例：**
+```
+d_latent / (num_heads × d_head)
+```
+
+当 d_latent = 256、num_heads = 64、d_head = 128 时，降低比例 = 256 / 8192 ≈ 97%。
+
+**MLA 的权衡：** 额外引入了一次低秩投影（计算量增加 5% 以下），对于推理 KV Cache 瓶颈场景，这是值得的取舍。
+
+---
+
+## 3 MoE（混合专家模型）
+
+### 3.1 MoE Layer 结构
+
+MoE 将标准 FFN 替换为多个 Expert FFN 和一个 Router：
+
+```
+MoE(x) = Σ g_i(x) × FFN_i(x)
+g(x) = Softmax(TopK(W_g × x))
+```
+
+其中：
+- FFN_i：第 i 个专家（一个标准 FFN Layer）
+- g_i：路由分数——输入 x 分配给专家 i 的概率
+- TopK：只激活 K 个专家（K 远小于 N，通常 K=2, N=8-64）
+- W_g：路由器的权重矩阵
+
+### 3.2 Top-k 路由
+
+**Router 计算：**
+```
+g(x) = Softmax(TopK(W_g × x, k))
+
+TopK(v, k)[i] = v[i]  如果 v[i] 是 top-k 元素之一
+              = -∞     否则
+```
+
+TopK 之后只有 K 个专家的激活值非零，其余专家的输出为 0。这意味着：
+
+```
+计算量 ≈ K × FFN(一个专家) + Router 开销
+        ≈ FFN(完整模型) × K/N
+```
+
+**参数量：** MoE 模型的总参数 = N × FFN 参数 + Router 参数 + Attention 参数。虽然参数量是密集模型的 N 倍，但每次 Forward 的计算量只与 K 相关。
+
+### 3.3 负载均衡
+
+MoE 训练的核心挑战：**负载均衡**——防止某些专家被过度使用，某些专家闲置。
+
+**辅助损失（Auxiliary Loss）：**
+
+DeepSeek MoE 使用的负载均衡损失：
+
+```
+L_balance = α × N × Σ(f_i × P_i)
+
+f_i = 该 batch 中被选到专家 i 的 token 比例
+P_i = 该 batch 中所有 token 分配到专家 i 的 Softmax 概率均值
+```
+
+当 f_i × P_i 在各个专家的分布均匀时，L_balance 最小。α 控制正则化强度。
+
+**Token Dropping：** 某些实现（如 Mixtral）在容量超过专家 capacity_factor 时直接丢弃超额 token，是负载均衡的硬约束方案。
+
+**辅助损失加权的挑战：**
+- 过强：影响主损失收敛
+- 过弱：负载不均衡，Token 被打回
+
+### 3.4 MoE 分布式部署的挑战
+
+**专家放置。** 单 GPU 放不下所有专家时，需要跨 GPU 放置：
+
+- **EP（Expert Parallelism）**：专家在不同 GPU 间分片
+- **全交换（All-to-All Communication）**：每个 token 需要将数据发送到目标专家的 GPU
+
+**All-to-All 通信瓶颈：**
+
+对于 MoE 模型，每层需要一次 All-to-All 通信：
+1. Router 决定 token 到专家的映射
+2. Token 通过 All-to-All 发送到对应 GPU
+3. 专家在 GPU 上计算
+4. 计算结果通过 All-to-All 送回原 GPU
+
+**通信量：** token 数量 × hidden_size × 2（发送 + 回收）
+
+**通信调优策略：**
+- **Token Grouping**：将相同路由结果的 token 打包，减少消息数量
+- **Capacity Factor 调优**：控制每 GPU 处理的 token 上限
+- **计算-通信重叠**：一组 token 的专家计算与下一组 token 的 All-to-All 通信并发
+
+### 3.5 DeepSeek MoE 关键技术
+
+DeepSeek-V2/V3 中 MoE 的关键创新：
+
+**Fine-grained Expert：** 使用大量的细粒度专家（如 160 个）而非少量粗粒度专家，使每个专家更专注、路由精度更高。
+
+**Shared Expert（共享专家）：** 在所有 token 上激活一个共享专家 + K 个路由选中的专家。共享专家学习所有 token 的共同知识，路由专家学习差异化知识。
+
+**Device-limited Routing：** 限制每个 token 只能路由到同一个 GPU 上的最多 M 个专家，减少跨 GPU All-to-All 通信量。
+
+**Auxiliary-loss-free Load Balancing：** 通过动态调整各专家的 bias 值实现负载均衡，无需辅助损失项。
+
+---
+
+> **下一章预告：** 最后一章聚焦 AI Agent 与 LLM 应用——Agent 架构模式、MCP 与 A2A 协议、RAG 模式，以及从 AI Infra 到 AI Agent 的全栈思考。

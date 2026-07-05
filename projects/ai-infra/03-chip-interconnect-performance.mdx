@@ -1,0 +1,144 @@
+---
+title: "AI 芯片互联与性能建模"
+description: "NVLink/NVSwitch 互联拓扑，Roofline 性能分析模型，MFU/HFU 建模框架，DeepGEMM 与 FP8 混合精度实现。"
+date: "2026-07-05"
+order: 3
+tags: ["NVLink", "Roofline", "MFU", "性能建模", "DeepGEMM", "FP8", "芯片互联"]
+est_time: "45 分钟"
+---
+
+## 1 GPU 芯片互联技术
+
+### 1.1 NVLink 代际演进
+
+NVLink 是 NVIDIA 的 GPU-to-GPU 高速互联技术，经历了五代演进：
+
+| 代际 | 发布 | 单链路带宽 | 每 GPU 链路数 | 总带宽 | GPU 间拓扑 |
+|------|------|-----------|--------------|--------|-----------|
+| NVLink 1 | Pascal P100 | 20 GB/s | 4 | 80 GB/s | Hybrid Cube Mesh |
+| NVLink 2 | Volta V100 | 50 GB/s | 6 | 300 GB/s | Hybrid Cube Mesh |
+| NVLink 3 | Ampere A100 | 50 GB/s | 12 | 600 GB/s | Full Mesh with Switch |
+| NVLink 4 | Hopper H100 | 50 GB/s | 18 | 900 GB/s | NVSwitch Full Mesh |
+| NVLink 5 | Blackwell B200 | 100 GB/s | 18 | 1800 GB/s | NVSwitch 2 Full Mesh |
+
+**NVLink 与 PCIe 的差异。** NVLink 是直连的高带宽低延迟互联，而 PCIe 是 CPU 连接外设的总线。NVLink 延迟 (~1μs) 远低于 PCIe Gen5 (~10μs)，带宽高出数倍。在跨 GPU 通信场景中，NVLink 相比 PCIe P2P 有 5-10 倍性能优势。
+
+### 1.2 NVSwitch 架构
+
+NVSwitch 是 NVIDIA 的 GPU 互联交换机 ASIC，连接同一节点内的 8 个 GPU（DGX 节点）：
+
+**NVSwitch 4（H100 配套）。** 每个 DGX H100 节点包含 4 个 NVSwitch 4 ASIC，每个 ASIC 提供 64 个 NVLink 4 端口。8 个 GPU × 18 条链路 = 144 条链路连接到 4 个 NVSwitch（每个 GPU 到每个 NVSwitch 约 4-5 条链路）。NVSwitch 4 的聚合带宽为 64 × 50 GB/s = 3.2 TB/s（单向）。
+
+**NVSwitch 拓扑。** 当节点扩展到 8 个 GPU 时，不存在 GPU→GPU 直连，所有跨 GPU 流量经过 NVSwitch。NVSwitch 背板实现的是 **Full Crossbar** 交换——任何 GPU 到任何 GPU 之间的路径是一跳的，延迟极低。
+
+### 1.3 Scale-Up 域与 Scale-Out 域
+
+**Scale-Up 域。** 节点内 GPU 互联，目标是将多个 GPU 组合成逻辑上的"超大 GPU"。适用于张量并行（TP）和流水线并行（PP）这种高通信密度的并行模式。Scale-Up 域的特点是：
+- 高带宽（900-1800 GB/s）
+- 低延迟（1-2μs）
+- 拓扑固定（节点内全互联）
+
+**Scale-Out 域。** 跨节点 GPU 互联，目标是连接集群中的全部 GPU。适用于数据并行（DP）和 ZeRO 梯度同步。Scale-Out 域的特点是：
+- 相对低带宽（每 GPU 200-400 Gb/s = 25-50 GB/s）
+- 较高延迟（2-10μs）
+- 拓扑可变（Fat-Tree / Dragonfly）
+
+---
+
+## 2 Roofline 性能模型
+
+### 2.1 Roofline 模型基础
+
+Roofline 模型是衡量计算内核性能的经典框架。它将操作强度（Operational Intensity，单位：FLOPs/Byte）作为横轴，性能（FLOPS）作为纵轴，在一个图上可视化性能瓶颈：
+
+**核心公式：**
+
+```
+实现性能 = min(峰值算力, 峰值带宽 × 操作强度)
+```
+
+**两个区域：**
+- **内存受限区（Memory-bound）**：操作强度低于 Ridge Point，性能被带宽限制
+- **计算受限区（Compute-bound）**：操作强度高于 Ridge Point，性能被算力限制
+
+### 2.2 AI 算子的 Roofline 分析
+
+典型的 Transformer 层包含两种主要算子：
+
+**矩阵乘法（GEMV/GEMM）。** 操作强度随矩阵尺寸增长。对于一个 M×K×N 的 GEMM：
+- 计算量 = 2 × M × N × K FLOPs（乘加各一）
+- 数据移动量 = (M×K + K×N + M×N) × 精度字节
+- 操作强度 = 2×M×N×K / (M×K + K×N + M×N) × 精度字节
+
+当矩阵尺寸较小时（如 TP 分片后的矩阵），GEMM 进入内存受限区；当矩阵尺寸大时（如完整 layer 的 FFN），进入计算受限区。
+
+**Attention 算子（Flash Attention）。** Attention 的核心瓶颈是 HBM 带宽。标准 Attention 中，Q×K^T 和 Softmax 都需要读写完整的 HBM 中间结果。Flash Attention 通过 tiling 将中间结果保留在 SRAM 中，大幅降低 HBM 访问量，使操作强度提升数十倍。
+
+<MermaidDiagram chart={`graph LR
+    subgraph ROOFLINE["Roofline 模型示意"]
+        direction TB
+        PERF["性能 (FLOPS)"]
+        CP["计算受限区<br/>斜率=0"]
+        MB["内存受限区<br/>斜率=带宽"]
+        RP["Ridge Point<br/>算力/带宽交叉点"]
+        GEMM["大矩阵 GEMM<br/>(计算受限)"]
+        ATTN["Attention<br/>(内存受限)"]
+        SP["稀疏操作<br/>(内存受限)"]
+    end
+
+    ROOFLINE --> CP
+    ROOFLINE --> MB
+    MB --> RP --> CP
+`} />
+
+### 2.3 MFU 与 HFU 建模框架
+
+**MFU（Model FLOPS Utilization）。** 模型级利用率，衡量整个训练过程中 GPU 算力的实际使用效率。MFU 的估算方法：
+
+1. 计算训练一次迭代的理论 FLOPs 数
+2. 度量实际耗时
+3. MFU = 理论 FLOPs / (实际耗时 × 峰值 FLOPs)
+
+以 LLaMA-7B 为例（序列长度 4096，batch size 4M tokens）：
+- 一次 Forward 的理论 FLOPs ≈ 6 × 参数 × 序列长度 × batch size = 6 × 7B × 4096 × 1024
+- HFU 通常在 45%-55%，MFU 略低
+
+**影响 MFU 的关键因素：**
+1. **计算-通信重叠**：梯度 AllReduce 能否与下一轮 Forward 重叠
+2. **显存带宽瓶颈**：Attention 和 LayerNorm 等带宽敏感算子
+3. **负载不均衡**：序列变长场景下的 padding 浪费
+4. **框架开销**：Python 运行时、算子启动延迟
+
+---
+
+## 3 FP8 混合精度与 DeepGEMM
+
+### 3.1 FP8 精度体系
+
+FP8 是 8 位浮点格式，包含两个主要变体：
+
+| 格式 | 指数位 | 尾数位 | 最大表示值 | 最小正规格化值 | 适用场景 |
+|------|--------|--------|-----------|--------------|---------|
+| E4M3 | 4 | 3 | 448 | 0.0156 | Forward 激活/权重 |
+| E5M2 | 5 | 2 | 57344 | 0.000000465 | 梯度和 Backward |
+
+**FP8 训练的挑战。** FP8 表示范围远小于 FP16/BF16，梯度累积过程中容易溢出或下溢。解决方案包括：
+- **层次缩放（Per-tensor Scaling）**：每个 tensor 根据统计分布动态选择缩放因子
+- **块缩放（Block-wise Scaling）**：将 tensor 分为 128×128 子块，每块独立缩放
+- **延迟缩放（Delayed Scaling）**：记录训练过程中的 scale factor 变化，减少重新计算的频率
+
+### 3.2 DeepGEMM 库
+
+DeepGEMM 是 DeepSeek 开源的 FP8 GEMM 库，在 CUDA 上实现了高效的 FP8 矩阵乘法：
+
+**设计要点：**
+1. **Tiling 策略**：将大矩阵分块到共享内存中，每块 128×128 元素
+2. **Warp 级调度**：每个 warp 处理一个输出 tile，通过 warp shuffle 指令减少共享内存访问
+3. **异步拷贝**：使用 `cp.async` 指令将数据从 HBM 预取到共享内存，与计算流水化
+4. **块量化（Block-wise Quantization）**：每个 128×128 子块维护独立的 FP8 scale factor
+
+**性能优势。** 在 H100 上，DeepGEMM 的 FP8 GEMM 实现了约 3200 TFLOPS（接近理论峰值的 80%），比 cuBLAS FP8 实现高出 10-15%。
+
+---
+
+> **下一章预告：** 第四章进入通信基础——集合通信原理，AllReduce/Ring/Tree 算法，通信域建模，PyTorch 分布式原语详解。

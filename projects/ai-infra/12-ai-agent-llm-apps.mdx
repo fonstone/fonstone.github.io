@@ -1,0 +1,269 @@
+---
+title: "AI Agent 与 LLM 应用"
+description: "Agent 架构模式（ReAct/Plan-and-Execute），MCP 与 A2A 互操作协议，RAG 检索增强生成模式，从 AI Infra 到 AI Agent 的全栈视角。"
+date: "2026-07-05"
+order: 12
+tags: ["AI Agent", "MCP", "A2A", "RAG", "ReAct", "LangChain", "Tool Use"]
+est_time: "50 分钟"
+---
+
+## 1 AI Agent 架构模式
+
+### 1.1 什么是 AI Agent
+
+AI Agent 是一个使用 LLM 作为推理引擎，通过感知环境、制定计划、使用工具来完成复杂任务的自治系统。
+
+**Agent 的核心组件：**
+
+```
+Agent = LLM(推理引擎) + Memory(记忆) + Tools(工具) + Orchestration(编排)
+```
+
+| 组件 | 功能 | 实现方式 |
+|------|------|---------|
+| LLM | 理解、推理、决策 | 大规模语言模型 API/本地部署 |
+| Memory | 短期和长期信息存储 | 上下文窗口 + Vector DB |
+| Tools | 与环境交互的能力 | Function Calling / API / Code Interpreter |
+| Orchestration | 控制 Agent 行为循环 | ReAct / Plan-and-Execute / Reflection |
+
+### 1.2 ReAct 模式
+
+ReAct（Reasoning + Acting）是最广泛使用的单 Agent 架构：
+
+```
+循环：
+  1. Thought：LLM 分析当前状态，确定下一步行动
+  2. Action：调用工具执行具体操作
+  3. Observation：获取工具的返回结果
+  4. 返回 Step 1，直到任务完成
+```
+
+**ReAct 的实现机制：**
+
+LLM 的输出格式为结构化的 Action 调用：
+
+```
+Thought: 用户想知道今天北京的天气，我需要查询天气 API
+Action: {
+  "name": "get_weather",
+  "params": {"city": "Beijing", "date": "2026-07-05"}
+}
+```
+
+工具执行的返回注入到后续 prompt 中作为 Observation：
+
+```
+Observation: {"temp": 32, "condition": "sunny", "humidity": "65%"}
+Thought: 已获取天气数据，现在可以为用户生成回答
+Final Answer: 今天北京天气晴朗，气温 32°C，湿度 65%...
+```
+
+**Tool Calling 的底层：** LLM 的 Tool Calling 本质是一个 constrained generation 问题。模型在特定的 logits 位置上被强制选择工具名称和参数 tokens，而非自由文本。
+
+### 1.3 Plan-and-Execute 模式
+
+Plan-and-Execute 将规划（planning）和执行（execution）分离：
+
+**规划阶段：**
+```
+Task: "比较今年销售额和去年，生成报告"
+Plan:
+  Step 1: 获取今年销售额数据 (use: get_sales_data, params: {year: 2026})
+  Step 2: 获取去年销售额数据 (use: get_sales_data, params: {year: 2025})
+  Step 3: 比较并计算差异 (use: calculate_diff, params: void)
+  Step 4: 生成报告 (use: generate_report, params: void)
+```
+
+**执行阶段：** 按计划顺序执行每个步骤，不依赖中间的 LLM 重新推理。
+
+**Plan-and-Execute vs ReAct：**
+
+| 特性 | ReAct | Plan-and-Execute |
+|------|-------|-----------------|
+| 灵活性 | 高（每步可重新规划） | 中（按计划执行） |
+| 可靠性 | 低（可能陷入循环） | 高（可验证计划） |
+| 延迟 | 高（每步一次 LLM 调用） | 低（执行无需 LLM） |
+| 适用场景 | 探索性任务 | 确定性多步骤任务 |
+
+---
+
+## 2 互操作协议：MCP 与 A2A
+
+### 2.1 MCP（Model Context Protocol）
+
+MCP 是 Anthropic 发起的开放协议，定义 LLM 应用与外部数据源/工具之间的标准化接口。
+
+**MCP 架构：**
+
+```
+MCP Client (LLM 应用)
+      │
+      ├── MCP Protocol (JSON-RPC over stdio/HTTP)
+      │
+      ├── MCP Server (文件系统)
+      ├── MCP Server (数据库)
+      ├── MCP Server (API 网关)
+      └── MCP Server (自定义工具)
+```
+
+**MCP Server 的资源类型：**
+
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| Resources | 只读数据源 | 文件、数据库表 |
+| Tools | 可执行操作 | 读写文件、调用 API |
+| Prompts | 模板化对话 | 调试模板、诊断模板 |
+
+**MCP Client 生命周期：**
+
+```
+1. 发现（Discovery）：Client 通过 Server 的 /info 获取能力清单
+2. 协商（Negotiation）：确定协议版本、认证方式
+3. 调用（Invocation）：Client 调用 Tool，传递参数
+4. 通知（Notification）：Server 主动发送事件（可选）
+```
+
+### 2.2 A2A（Agent-to-Agent）
+
+A2A 是 Google 发起的跨 Agent 通信协议。
+
+**A2A 的核心设计：**
+
+```
+Agent A  ──── A2A Card ──── Agent B
+   │                            │
+   └──── A2A Protocol ──────────┘
+         - Task 创建与分发
+         - 状态查询与更新
+         - 流式结果传递
+```
+
+**Agent Card（A2A Card）：** 每个 Agent 公开一个 JSON 格式的能力声明，包括：
+- Agent 的身份和能力描述
+- 支持的技能列表（每个技能包含 Input/Output Schema）
+- 安全策略和认证方式
+
+**Task Oriented Protocol：** A2A 以 Task 为基本通信单元：
+```
+Agent A → Agent B: CreateTask(task_spec)
+Agent B → Agent A: TaskAccepted(task_id, status_url)
+Agent A → Agent B: GetTaskStatus(task_id)
+Agent B → Agent A: TaskUpdate(status="running", output=partial)
+Agent B → Agent A: TaskCompleted(task_id, result)
+```
+
+### 2.3 MCP vs A2A 对比
+
+| 特性 | MCP | A2A |
+|------|-----|-----|
+| 定位 | LLM ⇄ 工具/数据源 | Agent ⇄ Agent |
+| 协议 | JSON-RPC | REST + SSE |
+| 核心角色 | Client-Server | Peer-to-Peer |
+| 状态管理 | 无状态 | 有状态（Task） |
+| 发起方 | Anthropic | Google |
+
+两者是互补关系：MCP 让 LLM 连接工具，A2A 让 Agent 之间协作。
+
+---
+
+## 3 RAG 检索增强生成
+
+### 3.1 RAG 的基本流程
+
+RAG 的核心思想：**不依赖 LLM 的内部知识，而是从外部知识库中检索相关文档，提供给 LLM 作为上下文生成答案。**
+
+```
+1. 索引阶段：
+   文档 → Chunking → Embedding → Vector DB
+
+2. 查询阶段：
+   用户 query → Embedding → Vector Search → Top-K chunks
+   
+3. 生成阶段：
+   Prompt = query + 检索到的 chunks + 指令
+   LLM → 基于检索内容的生成
+```
+
+### 3.2 RAG 的关键挑战
+
+**Chunking 策略。** Chunk 大小直接影响检索质量：
+- 过小：缺乏完整语义
+- 过大：包含噪声，超过上下文限制
+
+**推荐的 Chunking 策略：**
+- 语义分块（Semantic Chunking）：按自然段落/语义边界拆分
+- 层级分块（Hierarchical Chunking）：同一文档多粒度索引
+- 滑动窗口分块：段落重叠，避免边界截断
+
+**检索策略：**
+
+| 策略 | 原理 | 适用场景 |
+|------|------|---------|
+| 朴素向量检索 | KNN 在 embedding 空间搜索 | 通用 RAG |
+| 混合检索 | 向量 + BM25 关键词 | 专有名词多场景 |
+| HyDE | 先 LLM 生成虚拟文档再检索 | query-chunk 语义差距大 |
+| 多轮检索 | 先检索再基于结果二次检索 | 复杂问题分解 |
+
+**上下文窗口管理。** RAG 生成阶段面临的挑战是上下文窗口限制。对于需要输入超长相关内容的场景，需要：
+- 对检索结果进行 rerank 筛选
+- 压缩/摘要检索内容
+- 使用支持长上下文的 LLM 架构
+
+---
+
+## 4 从 AI Infra 到 AI Agent 的全栈视角
+
+### 4.1 全栈链路
+
+回顾本课程的 12 章，我们可以看到从底层硬件到顶层 Agent 的完整链路：
+
+```
+L4 Agent:      12. AI Agent / MCP / A2A / RAG
+                    ↑
+L3 Inference:  10. 推理优化 / vLLM / PagedAttention
+               11. Transformer / MoE 架构
+                    ↑
+L2 Training:    7. 分布式并行策略
+                8. ZeRO 优化器
+                9. Flash Attention / 训练优化
+                    ↑
+L1 Networking:  4. 集合通信
+                5. 网络拓扑
+                6. RDMA / 无损网络
+                    ↑
+L0 Hardware:    1. AI 基础设施全景
+                2. GPU 集群与架构
+                3. 芯片互联与性能建模
+```
+
+### 4.2 成本模型
+
+一个完整的 AI 生产系统涉及的成本构成：
+
+```
+总成本 = 训练成本 + 推理成本 + 数据成本 + 人力成本
+
+训练成本 = GPU 数 × 训练时长 × GPU 单价
+推理成本 = 请求次数 × 推理时延 × GPU 单价
+数据成本 = 数据采集 + 清洗 + 标注
+人力成本 = 算法 + 工程 + Infra
+```
+
+**优化方向：**
+- 通过并行策略提高 MFU → 降低训练成本
+- 通过 KV Cache 优化 + 量化 + Continuous Batching → 降低推理成本
+- 通过 MoE 稀疏激活 → 同等算力规模下获得更大模型容量
+
+---
+
+### 4.3 未来的方向
+
+**推理成本持续下降。** 硬件演进（FP4、更高效的 Transformer Engine）和软件优化（PagedAttention、投机采样）将持续降低推理成本，LLM 应用将从"能不能用"进入"能多便宜用"的阶段。
+
+**Agent 系统日趋复杂。** 从单 Agent 到多 Agent 协作（A2A、AutoGen），从单一工具到 MCP 标准协议，AI 应用的架构正在对标传统分布式系统。
+
+**AI Infra 的全栈工程师。** 理解从 GPU 到 Agent 每一层的系统和工程知识，将成为 AI 时代的核心竞争力。
+
+---
+
+> **恭喜你完成本课程！** 你已系统掌握了 AI 基础设施的全栈知识。建议你回到上级页面标记已完成各章的进度，并尝试在真实环境中实践本章所学的技术方案。

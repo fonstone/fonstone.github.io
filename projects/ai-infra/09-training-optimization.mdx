@@ -1,0 +1,209 @@
+---
+title: "训练优化：Flash Attention 与计算通信重叠"
+description: "Flash Attention 1/2/3 演进，Ring Attention 超长序列支持，计算通信重叠技术（Domino/FLUX），梯度检查点与重计算优化。"
+date: "2026-07-05"
+order: 9
+tags: ["Flash Attention", "Ring Attention", "计算通信重叠", "Domino", "FLUX", "梯度检查点"]
+est_time: "50 分钟"
+---
+
+## 1 Flash Attention 演进
+
+### 1.1 标准 Attention 的内存瓶颈
+
+标准 Attention 计算公式为：
+
+```
+Attention(Q, K, V) = Softmax(Q × K^T / √d) × V
+```
+
+标准实现的内存瓶颈：Q×K^T 的中间结果需要写入 HBM（大小为 N×N，N 为序列长度）。对于 8K 序列长度，N×N = 64M 元素（~256 MB 在 FP16），而对于 128K 序列，这激增至 16G 元素（~32 GB），完全无法装入 HBM。
+
+标准 Attention 的计算流程：
+
+```
+1. 从 HBM 读取 Q, K（N×d 矩阵）
+2. 计算 Q×K^T → 写入 HBM
+3. 从 HBM 读取 Q×K^T
+4. 计算 Softmax → 写入 HBM
+5. 从 HBM 读取 Softmax 输出和 V
+6. 计算 Softmax × V → 写入 HBM
+```
+
+HBM 访问次数：4×N×d + 2×N² + N² + N²
+= 4Nd + 4N² 次读写（N² 项是瓶颈）
+
+### 1.2 Flash Attention 的核心思想
+
+Flash Attention 的关键洞察：利用 GPU 的 SRAM（每 SM 约 192-256 KB）作为高速缓存，通过 **Tiling（分块）** 在 SRAM 中完成注意力计算，仅将最终结果写回 HBM：
+
+**计算流程：**
+
+```
+对于每个 tile（B_r × B_c 块）：
+  1. 从 HBM 读入 K 的一个 tile 到 SRAM
+  2. 从 HBM 读入 Q 的一个 tile 到 SRAM
+  3. 在 SRAM 中计算局部 S = Q × K^T
+  4. 在 SRAM 中计算局部 Softmax + 归一化
+  5. 在 SRAM 中更新输出 O = Softmax × V（使用在线 Softmax）
+  6. 合并跨 tile 的 Softmax 统计信息（m,l）
+```
+
+**在线 Softmax 算法：** Flash Attention 不保存完整 N×N 注意力矩阵，而是维护每个 tile 的局部 max 和 sum（m, l），在 tile 间合并时重新调整输出。
+
+**Flash Attention 的 HBM 访问量：**
+
+```
+O(3×N×d + N²/B_c + N²/B_r) ≈ O(N×d)
+```
+
+相比标准 Attention 的 O(N²)，当 N=8K 时减少约 10x HBM 访问。
+
+### 1.3 Flash Attention 2/3 优化
+
+**Flash Attention 2**（2023）：
+
+1. **减少非矩阵乘法操作**：重新编排计算流程，增加矩阵乘法（GEMM）占比，减少 element-wise 操作
+2. **更好的 tiling 策略**：调整 tile 在 Q 和 K 维度的划分比例，匹配 GPU warp 调度器特性
+3. **序列维度并行**：在序列维度上也做 tiling 并行，支持更长的序列
+
+**性能提升：** FA2 在 H100 上相比 FA1 提升约 2x，达到理论带宽的 70-80%。
+
+**Flash Attention 3**（2024）：
+
+1. **FP8 支持**：内嵌 FP8 Attention 计算，与 Transformer Engine 协同
+2. **异步处理**：使用硬件 `async TM` 指令，将 SRAM 加载与 SRAM 计算完全流水化
+3. **Block-Sparse Attention**：支持稀疏注意力模式（如 SWA、Variable Selection）
+
+---
+
+## 2 Ring Attention 与超长序列
+
+### 2.1 Ring Attention 的原理
+
+Ring Attention 将 Flash Attention 的 tiling 思想扩展到**跨 GPU 的多级 tiling**：
+
+**核心挑战：** 当序列长度超过单个 GPU 的显存容量时，标准 Flash Attention 无法处理。
+
+**Ring Attention 的解决方案：**
+
+1. **序列维度并行**：将完整序列切分到多个 GPU，每个 GPU 持有 Q、K、V 的子序列切片
+2. **环状通信+计算流水化**：每个 GPU 循环处理所有其他 GPU 的 K/V tiles，通过 P2P 通信（send/recv）在环中传递 K/V 切片
+3. **局部 Attention + 合并**：类似 Flash Attention 的 tile 合并策略，但在 GPU 间扩展
+
+**通信模式：**
+
+```
+阶段 0: 每 GPU 处理本地 K/V，计算局部 Attention
+阶段 1: 每 GPU 将本地 K/V 发送到下一节点，接收前一节点的 K/V，计算新的局部 Attention
+...
+阶段 N-1: 环上所有节点完成后，每 GPU 持有全局序列的完整 Attention 输出
+```
+
+### 2.2 Ring Attention vs. Flash Attention
+
+| 特性 | Flash Attention | Ring Attention |
+|------|----------------|---------------|
+| 序列上限 | 单 GPU 显存 | 不限（线性扩展） |
+| GPU 间通信 | 无 | O(N) P2P 传输 |
+| 可支持序列 | 8K-32K | 128K-1M+ |
+| 计算效率 | ~70% HBM 带宽 | ~50% HBM 带宽 |
+| 框架支持 | 原生 PyTorch >2.0 | 需自定义实现 |
+
+---
+
+## 3 计算通信重叠
+
+### 3.1 问题定义
+
+分布式训练中，通信操作（如 AllReduce 梯度同步）往往占用可观的时间。计算通信重叠的思想：**在 Backward 过程中，不等所有梯度计算完成，就开始梯度同步**。
+
+**不重叠的情况：**
+
+```
+[Forward] [Backward] [AllReduce] [Optimizer Step]
+```
+
+**重叠后：**
+
+```
+[Forward] [Backward(layer_N)]+[AllReduce(layer_N)] [Backward(layer_N-1)]+[AllReduce(layer_N-1)] ... [Optimizer Step]
+```
+
+### 3.2 Bucket 机制
+
+PyTorch DDP 使用 Bucket 机制实现计算通信重叠：
+
+1. 将模型参数划分为 bucket（默认 25 MB 每组）
+2. Backward 过程中，当一个 bucket 的所有梯度计算完成，立即启动该 bucket 的 AllReduce
+3. 后续 layer 的 Backward 与已完成的 bucket 通信并发执行
+
+这种策略可以**隐藏 60-80% 的通信延迟**，前提是通信带宽与计算时间匹配。
+
+### 3.3 重叠阈值分析
+
+计算通信重叠的效果取决于计算和通信的相对耗时：
+
+```
+重叠效率 = min(通信时间 / 计算时间, 1)
+```
+
+- 当 通信时间 ≤ 计算时间：通信完全隐藏，训练速度不受影响
+- 当 通信时间 > 计算时间：部分通信可见，训练速度受限
+
+**影响通信与计算比的因素：**
+- 模型越大（param 多），AllReduce 通信量越大
+- 序列越长，激活值计算量越大
+- GPU 带宽越高，通信越快
+
+### 3.4 Domino / FLUX：通算融合架构
+
+**Domino（Microsoft DeepSpeed）。** DeepSpeed 的 Domino 架构将计算与通信在**算子级别**融合：
+
+1. 将 Backward Pass 中的梯度计算和 AllReduce 作为依赖图分析
+2. 识别可并行的计算节点和通信节点
+3. 自动调度为重叠的依赖顺序
+
+**FLUX（NVIDIA）。** FLUX 是 Megatron-LM 中的计算通信流水线调度器：
+
+1. 分析分布式并行策略（TP/PP/DP）的通信模式
+2. 识别所有通信事件（AllGather、ReduceScatter、AllReduce、P2P）
+3. 按依赖关系调度到 CUDA stream
+4. 使用多 stream 并发执行计算 kernel 和通信 kernel
+
+**效果：** FLUX 在 Megatron 8×TP 场景中实现了接近 100% 的通信隐藏，MFU 从 40% 提升至 55%+。
+
+---
+
+## 4 梯度检查点
+
+### 4.1 重计算原理
+
+梯度检查点（Gradient Checkpointing / Activation Recomputation）通过**以计算换显存**，在显存受限时节省激活值：
+
+**标准训练：**
+```
+Forward: 保留所有中间激活值 → 显存占用高
+Backward: 使用保留的激活值计算梯度
+```
+
+**梯度检查点训练：**
+```
+Forward: 保存 checkpoints（每隔 N 层保存一次激活）
+Backward: 每组激活值在需要时从 checkpoint 重新计算
+```
+
+### 4.2 显存与计算权衡
+
+| 策略 | 显存 | 计算开销 |
+|------|------|---------|
+| 无检查点 | 100% | 0% |
+| 逐层检查点 | ~60% | ~33% |
+| 每 2 层检查点 | ~40% | ~50% |
+| 每 N 层检查点 | ~O(1/N) | ~O(N) |
+
+**典型配置：** 每 4-6 层设置一个 checkpoint，显存节省约 60-70%，额外计算开销约 25%。
+
+---
+
+> **下一章预告：** 第十章进入推理优化——KV Cache、PagedAttention、Continuous Batching、投机采样在生产级推理中的实践。

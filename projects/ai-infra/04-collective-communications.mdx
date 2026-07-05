@@ -1,0 +1,177 @@
+---
+title: "集合通信原理"
+description: "AllReduce/Ring/Tree/Butterfly 算法详解，通信域与通信组模型，NCCL 架构与 API，PyTorch 分布式原语。"
+date: "2026-07-05"
+order: 4
+tags: ["集合通信", "AllReduce", "NCCL", "Ring", "通信域", "PyTorch"]
+est_time: "50 分钟"
+---
+
+## 1 集合通信基础
+
+### 1.1 点对点通信 vs 集合通信
+
+**点对点通信（Point-to-Point）。** 两个节点之间的数据发送/接收，如 `send()` / `recv()`。Send 是阻塞的（同步语义）或非阻塞的（异步语义）。
+
+**集合通信（Collective Communication）。** 涉及通信组（Communicator）中所有参与者的通信操作。集合通信是分布式训练的核心原语，因为 AI 训练中的同步需求天然是集合性的——所有 worker 需要同步梯度才能更新模型。
+
+### 1.2 三种核心集合通信操作
+
+**Broadcast。** 根节点向所有其他节点发送同一份数据。用于模型初始化参数分发、同步 seed 等。
+
+**Reduce。** 每个节点提供一份数据，通过指定规约操作（SUM/AVG/MAX/MIN）合并为一个结果，汇集到根节点。用于 loss 汇总等。
+
+**AllReduce。** Reduce + Broadcast 的组合：每个节点提供一份数据，所有节点获得规约后的完整结果。用于梯度同步——每个 worker 计算完本地梯度后，AllReduce 求各节点梯度的均值。
+
+**AllGather。** 每个节点将自己的数据块发送出去，所有节点收集到所有节点的数据拼接而成的完整数据。用于 Megatron 张量并行的输出收集。
+
+**ReduceScatter。** 每个节点先按块做 Reduce，再分发给各节点。Reduce 后数据和 Reduce 前数据等大，只是每个节点只持有部分块。
+
+### 1.3 AllReduce 算法对比
+
+| 算法 | 通信量 | 延迟特征 | 适用场景 |
+|------|--------|---------|---------|
+| 环形 AllReduce | 2 × (N-1) × D | 高延迟，带宽线性 | 大消息（梯度同步） |
+| 树形 AllReduce | 2 × log(N) × D | 低延迟，对数带宽 | 小消息（控制信号） |
+| Butterfly AllReduce | 2 × D | 低延迟，带宽恒定 | 中消息 |
+| Ring（2× 折半） | (N-1)/N × D | 带宽近似最优 | 超大消息 |
+
+其中 D 为数据大小（字节），N 为节点数。
+
+---
+
+## 2 环形 AllReduce 详解
+
+### 2.1 Ring AllReduce 算法
+
+Ring AllReduce 是分布式训练中梯度同步的事实标准（NCCL、OpenMPI 均默认使用）。它将 N 个节点组织成逻辑环，分为两个阶段：
+
+**第一阶段：Reduce-Scatter。** 将数据等分为 N 个块，每个块在环上做一次 partial sum：
+
+```
+Size of each chunk = D / N
+Steps: N-1 轮发送+接收，每轮移动一个块
+Total data sent: (N-1) × D/N
+```
+
+**第二阶段：AllGather。** 每个节点将 partial sum 结果在环上广播，N-1 轮后每个节点拥有完整的 AllReduce 结果：
+
+```
+Steps: N-1 轮发送+接收
+Total data sent: (N-1) × D/N
+```
+
+**总通信量 = 2 × (N-1)/N × D**。当 N 较大时，总通信量接近 2D——即每节点的带宽效率接近 100%。
+
+### 2.2 Ring AllReduce 的带宽利用
+
+Ring AllReduce 的关键优势在于**流水线化**：每个节点同时进行发送、接收和计算（累加）。理想情况下，AllReduce 的总时间约为 2D/B（B 为带宽），不随 N 增加而显著增长（除了 N-1 个步的额外延迟开销）。
+
+**饱和带宽条件：** Ring AllReduce 的带宽利用率取决于 chunk size。当 chunk size 过小时，消息的固定开销（帧头、握手、中断）占主导；当 chunk size 足够大时，带宽利用率接近线速。
+
+这也是为什么 NCCL 中的 AllReduce 通常需要 1MB 以上的输入尺寸才能达到最优效率——小消息的 Ring 算法效率下降，会回退到树形算法。
+
+### 2.3 Ring AllReduce 的延迟开销
+
+每轮通信包含三部分延迟：
+```
+T_total = N × (α + β × chunk_size + γ)
+```
+
+其中：
+- α：节点间的固定延迟（RDMA ~2μs，TCP/IP ~10μs）
+- β：传输速率（倒数 = 带宽）
+- γ：计算延迟（累加操作，通常可忽略）
+- chunk_size = D/N
+
+---
+
+## 3 NCCL 架构与实现
+
+### 3.1 NCCL 通信栈
+
+NVIDIA NCCL（NVIDIA Collective Communications Library）是 GPU 上集合通信的事实标准库：
+
+```
+应用层
+  └── PyTorch / JAX / Megatron
+        └── NCCL API
+              ├── NVLink 通道 (节点内 P2P)
+              ├── InfiniBand 通道 (节点间 RDMA)
+              ├── TCP/IP 通道 (回退/控制)
+              └── PCIe P2P (节点内备选)
+```
+
+**NCCL 的关键设计：**
+1. **拓扑感知**：NCCL 自动检测 GPU 间的拓扑连接（NVSwitch、NVLink、PCIe），选择最优通信路径
+2. **多通道并行**：当存在多条链路的 GPU 时，NCCL 自动将数据拆分为多个并行的 Ring
+3. **异步执行**：NCCL 使用 CUDA stream 模型，GPU kernel 与通信操作在同一个 stream 上执行，无需 CPU 介入
+
+### 3.2 NCCL 通信域（Communicator）
+
+NCCL Communicator 是通信组的抽象：
+
+- **ncclCommInitRank**：初始化每个 GPU 的 communicator，传入世界大小、rank ID
+- **ncclAllReduce**：在 communicator 内执行 AllReduce
+- **ncclBroadcast / ncclAllGather / ncclReduceScatter**：其他集合操作
+
+**PyTorch 封装：** `torch.distributed` 在底层调用 NCCL：
+
+```python
+import torch.distributed as dist
+dist.init_process_group(backend="nccl")
+# dist.all_reduce(tensor) 等
+```
+
+### 3.3 NCCL 性能调优关键参数
+
+| 参数 | 作用 | 推荐值 |
+|------|------|--------|
+| NCCL_IB_DISABLE | 禁用 IB 通道 | 0（启用） |
+| NCCL_NET_GDR_LEVEL | GPU Direct RDMA 级别 | 5（开启） |
+| NCCL_BUFFSIZE | 通信缓冲区大小 | 4MB-8MB |
+| NCCL_NCHANNELS | 通道数量 | 自动（根据拓扑检测） |
+| NCCL_DEBUG | 调试信息 | INFO（仅调优时开启） |
+| NCCL_MIN_NCHANNELS | 最小通道数 | 通常 2-4 |
+
+---
+
+## 4 通信域建模
+
+### 4.1 Communicator 层次结构
+
+分布式训练中存在多级 communicator：
+
+- **世界级 Communicator（World）**：包含所有 worker
+- **节点级 Communicator（Node）**：每个节点内部的 GPU 组
+- **TP 组**：同一个张量并行组的 GPU（通常在同一节点内）
+- **DP 组**：跨节点的数据并行分组
+
+```python
+# PyTorch 中的 communicator 分拆
+world_pg = dist.new_group(ranks=list(range(world_size)))
+node_pg = dist.new_group(ranks=node_ranks)
+tp_pg = dist.new_group(ranks=tp_ranks)
+dp_pg = dist.new_group(ranks=dp_ranks)
+```
+
+### 4.2 通信量分析框架
+
+给定并行策略，每轮迭代的通信量可建模为：
+
+```
+V_total = V_grad_sync + V_fwd_comm + V_reduce + V_overhead
+```
+
+以纯数据并行为例：
+- V_grad_sync = 2 × param_size × (N-1)/N （Ring AllReduce 通信量）
+- V_fwd_comm = 0 （无前向通信）
+- V_reduce = 0
+
+以张量并行为例：
+- V_fwd_comm = 2 × hidden_size × seq_len × layer_count （前向 AllReduce）
+- V_reduce = 0
+
+---
+
+> **下一章预告：** 第五章深入 AI 集群网络拓扑——Fat-Tree、Dragonfly、Torus 三大拓扑原理与对比，DCN 网络平面划分设计。

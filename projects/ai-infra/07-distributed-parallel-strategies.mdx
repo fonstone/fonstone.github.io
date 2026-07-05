@@ -1,0 +1,176 @@
+---
+title: "分布式并行策略"
+description: "数据并行、张量并行、流水线并行、序列并行的原理与实现，Megatron-LM 与 DeepSpeed 框架对比，3D 并行组合策略。"
+date: "2026-07-05"
+order: 7
+tags: ["数据并行", "张量并行", "流水线并行", "Megatron", "DeepSpeed", "3D并行"]
+est_time: "55 分钟"
+---
+
+## 1 并行策略概述
+
+### 1.1 为什么需要并行
+
+单 GPU 无法承载大模型训练的根本原因有两个：
+1. **显存不足**：LLaMA-70B 至少需要 140 GB（BF16）存储参数，单张 H100 仅 80 GB
+2. **算力不足**：单卡训练 LLaMA-70B 需要数十年
+
+分布式并行策略将模型拆解到多个 GPU 上，实现：
+
+```
+显存 = 总显存 / 分片数
+速度 = 理论算力 × GPU 数 × 并行效率
+```
+
+### 1.2 四种基本并行维度
+
+| 并行维度 | 等价描述 | 拆分对象 | 通信模式 | 通信频率 |
+|---------|---------|---------|---------|---------|
+| 数据并行（DP） | 复制模型，拆分数据 | Batch 维度 | AllReduce 梯度 | 每步迭代 |
+| 张量并行（TP） | 拆分参数矩阵 | 参数矩阵行列 | AllReduce 前向/后向 | 每层 |
+| 流水线并行（PP） | 按层拆分 | Transformer Layer | P2P 激活传输 | 每 Micro-batch |
+| 序列并行（SP） | 拆分序列维度 | 序列长度 | AllGather + ReduceScatter | 每层 |
+
+---
+
+## 2 各并行策略详解
+
+### 2.1 数据并行（Data Parallelism）
+
+**原理。** 每个 GPU 持有完整的模型副本，只拆分数据 batch。每个 GPU 在本地数据上做 Forward+Backward，然后与所有 GPU 同步梯度。
+
+**梯度同步。** 每步迭代结束时，AllReduce 操作求各 GPU 梯度的均值，各 GPU 使用均化后的梯度独立更新本地模型。
+
+**梯度累积。** 为减少通信频率，可在多次 Micro-batch 上累积梯度，每 N 步做一次 AllReduce。这是通信效率和收敛速度的权衡。
+
+**通信量。** 纯 DP 每步发送的数据量约为：2 × 参数量 × 精度字节 × (N-1)/N。对于 LLaMA-70B 约 140 GB 每步。
+
+```
+DP 通信开销 = 2 × param_size / 每步时间
+```
+
+当模型增大时，参数量的增长使 DP 通信量线性增长，而每步计算时间只随层数增长。因此**大模型场景下 DP 的通信占比会降低**。
+
+### 2.2 张量并行（Tensor Parallelism / Megatron-LM 风格）
+
+**原理。** 将单个 Transformer 层内的矩阵乘法拆分为多个 GPU。Megatron-LM 采用列并行和行并行交替模式：
+
+**列并行（Column-wise）：**
+```
+Y = X × W  →  Y = [X × W1 | X × W2 | ... | X × WN]
+```
+输入 X 广播给所有 TP 组内 GPU，每个 GPU 持有 W 的部分列，输出是各 GPU 输出的拼接。
+
+**行并行（Row-wise）：**
+```
+Y = Z × W  →  各 GPU 持有 W 的部分行，AllReduce 求和
+```
+
+**通信模式：** 每个 Megatron 层有 2 次 AllReduce（Forward 和 Backward 各一次），一次 AllReduce + 一次 Forward 的列拼接。
+
+**通信量：** 前后各传输一次 hidden_size × seq_len × batch_size 的激活值。对于 H100 8-GPU 节点内 TP，使用 NVLink 传输，带宽足够接近线速。
+
+### 2.3 流水线并行（Pipeline Parallelism）
+
+**原理。** 将模型按层拆分到多个 GPU/Stage，按序执行 Forward，反向传播时逆向执行。
+
+**GPipe 策略。** 将 batch 再分为多个 Micro-batch，流水化执行：
+
+```
+Micro Batch 0: F0→F1→F2→F3  B3→B2→B1→B0
+Micro Batch 1:     F0→F1→F2→F3  B3→B2→B1→B0
+```
+
+**流水线气泡（Pipeline Bubble）。** GPipe 的空泡比例为 (P-1)/(M+P-1)，其中 P 为 stage 数，M 为 micro-batch 数。当 M >> P 时，气泡比接近 0。
+
+**1F1B（One-Forward-One-Backward）策略。** 优化版流水线调度：一个 micro-batch 的 Forward 和 Backward 交替执行，而非全部 Forward 完成后再 Backward。减少内存消耗：激活值无需保留所有 micro-batch。
+
+**Interleaved 1F1B。** 进一步将每个 stage 再分，在每个设备上交替执行多个 layer chunk，减少气泡。在 8 卡、56 层的场景下，气泡比从 3/7 ≈ 43% 降至约 20%。
+
+### 2.4 序列并行（Sequence Parallelism）
+
+**原理。** 在序列维度上拆分处理。标准 Flash Attention 在同一 GPU 上处理完整序列；序列并行将序列切分到多个 GPU，每个 GPU 只处理子序列的 Q，但需要全局 K/V。
+
+**通信模式。** 每个 Attention 层前需要 AllGather 获取完整 K/V，Attention 计算完成后 ReduceScatter 分发输出。
+
+**适用场景。** 超长序列（128K-1M tokens）训练或推理，LRM（Long Range Model）场景。
+
+---
+
+## 3 3D 并行组合策略
+
+### 3.1 并行策略组合模型
+
+现代大模型训练通常组合 2-3 种并行策略，形成 3D 并行：
+
+```
+3D 并行 = DP(数据) × TP(张量) × PP(流水线)
+```
+
+**推荐的组合分析：**
+
+| 模型规模 | 推荐组合 | 说明 |
+|---------|---------|------|
+| 7B-13B | DP | 模型可装入单卡 |
+| 13B-70B | DP+TP 或 DP+PP | 需要跨节点 TP 或 PP |
+| 70B-180B | TP+PP+DP | 3D 并行 |
+| 180B+ | TP+PP+DP+SP | 4D 并行 |
+
+### 3.2 Megatron-LM 的并行实现
+
+NVIDIA Megatron-LM 是一个开源大型 Transformer 模型训练框架，其核心设计：
+
+**并行层次组织：**
+```
+世界通信器（World Communicator）
+  ├── TP 组（张量并行）：节点内，NVLink
+  ├── PP 组（流水线并行）：跨节点，IB
+  └── DP 组（数据并行）：跨 TP 组，IB
+```
+
+**VM（Virtual Model）抽象。** Megatron 通过 VM 屏蔽并行细节，模型开发者在 VM 上定义层，VM 自动处理并行拆分和通信。
+
+**梯度累积 + DP 优化。** Megatron 的梯度同步不阻塞计算：在 Backward 完成一部分层后立即启动该层的 AllReduce，与后续层的 Backward 同时进行。
+
+### 3.3 DeepSpeed 并行框架
+
+DeepSpeed 在 Megatron 的并行基础上增加了 ZeRO 优化：
+
+**ZeRO-1（优化器分片）**：只切分 Adam 状态，参数和梯度完整。通信量：原始梯度大小 × N。
+
+**ZeRO-2（梯度分片）**：切分梯度和优化器状态。通信量基本不变，但显存节省显著。
+
+**ZeRO-3（参数分片）**：切分参数、梯度、优化器状态三者。通信量大为增加（每层 Forward 前需要 AllGather 参数），但显存极省。
+
+**混合 ZeRO + TP。** DeepSpeed 可以将 ZeRO-3 与 Megatron TP 组合：TP 组内使用张量并行和 NVLink，组间使用 ZeRO-3 数据并行。
+
+---
+
+## 4 并行策略选型分析
+
+### 4.1 节点内 vs 节点间通信
+
+| 并行策略 | 通信频次 | 每次通信量 | 推荐链路 |
+|---------|---------|-----------|---------|
+| DP | 每步 1 次 | 参数量 | IB（跨节点） |
+| TP | 每层 2 次 | 激活值 × 2 | NVLink |
+| PP | 每 micro-batch 多次 | 激活值（微） | IB 或 NVLink |
+| SP | 每层 2 次 | K/V 缓存 | NVLink |
+
+### 4.2 实践建议
+
+**72 GPU（9 节点 × 8 卡）配比：**
+- TP=2（节点内 2 卡一组，使用 NVLink）
+- PP=4（跨 4 节点，4 stage 流水线）
+- DP=9（9 组并行数据副本）
+- 微调 micro-batch 数使气泡最小
+
+**显存溢出场景处理：**
+1. 优先增加 DP（不影响显存按需）
+2. 其次增加 TP 分片数（减少每卡参数）
+3. 再次启用 PP（需要处理气泡）
+4. 最后启用 ZeRO-3 offload（CPU offload 增加延迟）
+
+---
+
+> **下一章预告：** 第八章深入 ZeRO 优化器——ZeRO 1/2/3 三阶段原理，显存节省与通信开销权衡，代码级理解。

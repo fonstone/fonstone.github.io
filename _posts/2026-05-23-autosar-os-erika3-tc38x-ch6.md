@@ -1,0 +1,551 @@
+---
+title: "基于 ERIKA v3 与 TC38x 深入理解 AUTOSAR OS（六）：内存保护与 OS Application 隔离"
+date: 2026-05-23
+categories: [自动驾驶, 汽车电子, AUTOSAR]
+tags: [AUTOSAR OS, OSEK, ERIKA Enterprise, TriCore, TC38x, AURIX, 内存保护, OS Application, MPU, MemMap]
+---
+
+# 基于 ERIKA v3 与 TC38x 深入理解 AUTOSAR OS（六）：内存保护与 OS Application 隔离
+
+AUTOSAR OS Scalability Class 3（SC3）和 Class 4（SC4）的核心安全特征之一，是 **OS Application**——将 OS 对象（Task、ISR、Resource、Counter 等）分组隔离，限制 Non-Trusted Application 对其他 Application 资源的访问。这需要硬件内存保护单元（MPU）的支撑。本章将深入 AUTOSAR 规范对内存保护与 Application 隔离的要求，再对照 ERIKA v3 在 TC38x 上的实现现状——哪些已实现、哪些仅有脚手架、哪些完全缺失——及 TriCore 硬件层面可提供的保护手段。
+
+---
+
+## 6.1 AUTOSAR OS 规范视角：OS Application 与内存保护
+
+### 6.1.1 OS Application 概念模型
+
+AUTOSAR OS 将所有 OS 对象（Task、ISR、Alarm、Counter、Resource、Spinlock、Schedule Table 等）归属到 **OS Application** 中。每个 OS Application 有两种信任级别：
+
+| 信任级别 | 权限 | 内存访问 |
+|---|---|---|
+| **Trusted Application** | 可访问所有 OS 服务、不受内存保护限制、可调用所有 API | 可访问所有内存区域 |
+| **Non-Trusted Application** | 只能访问自己 Application 内的对象、受限的 API 子集 | 仅可访问分配给本 Application 的内存区域 |
+
+OS Application 的核心约束规则（[SWS_Os_00455] ~ [SWS_Os_00500]）：
+
+1. **Object Access Control**：Non-Trusted Application 中的 Task/ISR 只能访问属于同一 Application 的对象（ActivateTask 只能激活同 Application 的 Task、GetResource 只能获取同 Application 的 Resource）。
+2. **Cross-Application Access**：若需要跨 Application 访问，必须在 OIL 中通过 `ACCESS` 属性显式授权。
+3. **TerminateApplication**：OS 可终止一个 Non-Trusted Application 的所有 Task 和 ISR，同时释放其占用的 Resource。
+4. **ProtectionHook**：当 Non-Trusted Application 违反保护规则时，OS 调用 `ProtectionHook()`，由 Hook 决定是 `TerminateApplication()` 还是 `ShutdownOS()`。
+5. **Memory Isolation**：Non-Trusted Application 的代码段、数据段、栈必须通过 MPU/DMPU 限制访问范围，Trusted Application 不受此限制。
+
+### 6.1.2 Os_MemMap 宏体系
+
+AUTOSAR OS 规范定义了一套 **Memory Mapping 宏体系**（`Os_MemMap.h`），用于将 OS 内核和应用代码分配到不同的内存段（Section），使 MPU/DMPV 可以按段设置访问权限：
+
+```c
+/* AUTOSAR OS MemMap 宏示例（规范定义） */
+#define OS_START_SEC_CODE
+#define OS_STOP_SEC_CODE
+
+#define OS_START_SEC_VAR_NO_INIT
+#define OS_STOP_SEC_VAR_NO_INIT
+
+#define OS_START_SEC_VAR_POWER_ON_INIT
+#define OS_STOP_SEC_VAR_POWER_ON_INIT
+
+#define OS_START_SEC_VAR_FAST
+#define OS_STOP_SEC_VAR_FAST
+
+#define OS_START_SEC_CONST_UNSPECIFIED
+#define OS_STOP_SEC_CONST_UNSPECIFIED
+
+/* 使用方式 */
+OS_START_SEC_CODE
+FUNC(StatusType, OS_CODE) ActivateTask(VAR(TaskType, AUTOMATIC) TaskID) {
+  /* ... */
+}
+OS_STOP_SEC_CODE
+
+OS_START_SEC_VAR_NO_INIT
+VAR(uint8, OS_APPL_DATA) osEE_app_stack[APP_STACK_SIZE];
+OS_STOP_SEC_VAR_NO_INIT
+```
+
+每个宏对展开为编译器特定的 `#pragma section` 或 `__attribute__((section("...")))` 指令，将代码或数据放入命名的 linker section。MPU/DMPU 按 section 地址范围设置访问权限，实现 Non-Trusted Application 之间的内存隔离。
+
+### 6.1.3 CheckObjectAccess / CheckObjectOwnership / CheckISROccess
+
+AUTOSAR OS 定义了三个运行时访问检查 API：
+
+| API | 功能 | 返回值 |
+|---|---|---|
+| `CheckObjectAccess(ApplicationType ApplID, ObjectType ObjType, ObjectIdType ObjID)` | 检查 ApplID 对 ObjID 指定对象的访问权限 | `ACCESS`（允许）/ `NO_ACCESS`（拒绝） |
+| `CheckObjectOwnership(ObjectType ObjType, ObjectIdType ObjID)` | 返回对象所属的 Application ID | `ApplicationType` |
+| `CheckISROccess(ISRType ISRID)` | 检查当前 ISR 是否有权限访问给定 ISR | `ACCESS` / `NO_ACCESS` |
+
+这些 API 在 Trusted Application 中可自由调用，在 Non-Trusted Application 中仅能查询自身 Application 的权限。
+
+---
+
+## 6.2 TriCore TC38x 的内存保护硬件
+
+### 6.2.1 硬件保护单元
+
+TC387（AURIX 2G）提供了以下内存保护机制：
+
+| 保护单元 | 作用范围 | 寄存器 | 条目数 |
+|---|---|---|---|
+| **CSFR PSW.PRS** | 当前特权级（User-0 / User-1 / Supervisor） | PSW[17:16] | 3 级 |
+| **DPR0~DPR3** | 数据段保护范围寄存器（Data Protection Range） | 配对 DSADB/DAEB 寄存器 | 4 组 |
+| **CPR0~CPR3** | 代码段保护范围寄存器（Code Protection Range） | 配对 CSADB/CAEB 寄存器 | 4 组 |
+| **SCP** | 系统保护控制（对 SFR 访问的限制） | CPUCON 寄存器 | 核心 |
+| **SMPU** | 系统 MPU（覆盖整个地址空间的全局保护） | 16/32 个保护范围 | — |
+| **PMPU** | 每个 CPU 的 Platform MPU（Per-CPU Memory Protection Unit） | 16 个保护范围 | 16 |
+
+**关键特性**：
+
+- **PSW.PRS**（Protection Register Set）：TriCore 有 4 组 DPR/CPR 寄存器（寄存器集 0~3），PSW 的 PRS 字段（bit[17:16]）选择当前活动的寄存器集。不同特权级（Supervisor/User-0/User-1）使用不同的寄存器集，从而实现代码/数据段的权限隔离。
+- **DPR/CPR**：每对 DPR 寄存器定义一个数据段保护范围（起始地址 + 结束地址 + 访问权限：读/写/执行），CPR 类似但针对代码段。
+- **SMPU/PMPU**：AURIX 2G 新增的更强大的 MPU，支持 16/32 个保护范围，支持更细粒度的权限控制（包括 Non-Cacheable、Shareable 等属性）。
+
+### 6.2.2 ERIKA v3 对 TriCore MPU 的当前使用
+
+**当前状态：ERIKA v3 在 TC38x 分支中没有配置任何 MPU/DPR/CPR 寄存器。**
+
+`ee_tc_cstart.c` 中的 Core0 启动代码仅做了：
+
+```c
+void osEE_tc_core0_start(void) {
+  osEE_tc_setareg(a10, __USTACK0);         /* 栈指针 */
+  osEE_tc_setareg(a9, &osEE_cdb_var_core0); /* CDB 指针 */
+  osEE_tc_set_csfr(OSEE_CSFR_PSW, 0x00000BFF); /* PSW: IO=0b11, IS=1 */
+  /* ... PLL 配置、CSA 初始化、中断向量表设置 ... */
+  osEE_tc_set_csfr(OSEE_CSFR_BTV, __TRAPTAB0);
+  osEE_tc_set_csfr(OSEE_CSFR_BIV, __INTTAB0);
+  osEE_tc_set_csfr(OSEE_CSFR_ISP, __ISP0);
+  /* 无 DPR/CPR/SMPU/PMPU 配置 */
+}
+```
+
+PSW 初始化为 `0x00000BFF`：`IO[1:0] = 0b11`（Supervisor 模式，所有 I/O 权限开放）、`IS = 1`（中断栈使能）。所有任务和 ISR 均运行在 Supervisor 模式下——没有切换到 User-0 或 User-1 模式的代码。
+
+**这意味着当前所有代码和数据具有完全访问权限，无任何内存隔离。**
+
+---
+
+## 6.3 ERIKA v3 的 OS Application 实现现状
+
+### 6.3.1 脚手架：OSEE_HAS_OSAPPLICATIONS 编译开关
+
+ERIKA v3 的源码中存在 `OSEE_HAS_OSAPPLICATIONS` 条件编译宏，但仅在 **占位（placeholder）** 意义上使用：
+
+```c
+/* ee_kernel_types.h — SchedTabDB 中的 ApplID 字段 */
+typedef struct OsEE_SchedTabDB_tag {
+  /* ... */
+#if (defined(OSEE_HAS_OSAPPLICATIONS))
+  VAR(ApplicationType, TYPEDEF)   ApplID;   /* Application ID — 类型未定义 */
+#endif
+} OSEE_CONST OsEE_SchedTabDB;
+```
+
+```c
+/* ee_oo_api_osek.c — StartOS() 中的 TODO 注释 */
+osEE_call_startup_hook(p_ccb);
+
+#if (defined(OSEE_HAS_OSAPPLICATIONS))
+/* [SWS_Os_00582] The OS-Application-specific StartupHooks shall be called
+    after the global StartupHook but only on the cores to which the
+    OS-Application is bound. (SRS_Os_80006, SRS_Os_80008) */
+/* TODO: Implement this when OS-Applications will be implemented */
+#endif
+```
+
+`ApplicationType` 类型本身在代码中 **从未被定义**。即使定义了 `OSEE_HAS_OSAPPLICATIONS`，编译也会因 `ApplicationType` 未定义而失败。
+
+### 6.3.2 缺失的数据结构
+
+以下 AUTOSAR OS 规范要求的 OS Application 数据结构在 ERIKA v3 中完全不存在：
+
+| 规范要求 | ERIKA v3 状态 |
+|---|---|
+| `OsEE_AppDB`（Application Descriptor Block） | 不存在 |
+| `OsEE_AppCB`（Application Control Block） | 不存在 |
+| `ApplicationType`（Application ID 类型） | 不存在 |
+| TDB/TCB 中的 `ApplID` 字段 | 不存在 |
+| `CheckObjectAccess()` | 不存在 |
+| `CheckObjectOwnership()` | 不存在 |
+| `CheckISROccess()` | 不存在 |
+| `TerminateApplication()` | 不存在 |
+| `AllowAccess()` / `QueryPermission()` | 不存在 |
+| `ProtectionHook()` | 仅有 `#error` 占位（未实现） |
+| `Os_MemMap.h` section 宏 | 不存在 |
+
+### 6.3.3 Service Protection 的部分实现
+
+尽管完整的 OS Application 隔离不存在，ERIKA v3 实现了 **服务调用保护（Service Protection）**——基于调用上下文（而非 Application）的检查：
+
+```c
+typedef enum {
+  OSEE_KERNEL_CTX,          /* 内核上下文 */
+  OSEE_IDLE_CTX,            /* Idle 任务上下文 */
+  OSEE_TASK_CTX,            /* Task 上下文 */
+  OSEE_TASK_ISR2_CTX,       /* ISR2 上下文 */
+  OSEE_ERRORHOOK_CTX,       /* ErrorHook 上下文 */
+  OSEE_PROTECTIONHOOK_CTX,  /* ProtectionHook 上下文 */
+  OSEE_PRETASKHOOK_CTX,     /* PreTaskHook 上下文 */
+  OSEE_POSTTASKHOOK_CTX,    /* PostTaskHook 上下文 */
+  OSEE_STARTUPHOOK_CTX,     /* StartupHook 上下文 */
+  OSEE_SHUTDOWNHOOK_CTX,    /* ShutdownHook 上下文 */
+  OSEE_ALARMCALLBACK_CTX    /* AlarmCallback 上下文 */
+} OsEE_os_context;
+```
+
+每个 CCB 维护一个 `os_context` 字段，在 API 入口检查：
+
+```c
+/* ee_oo_api_osek.c — ActivateTask 中的服务保护检查（简化） */
+#if (defined(OSEE_HAS_SERVICE_PROTECTION))
+  if (osEE_check_disableint(p_ccb)) {
+    ev = E_OS_DISABLEDINT;
+  } else if (p_ccb->os_context > OSEE_TASK_ISR2_CTX) {
+    ev = E_OS_CALLEVEL;   /* 从非法上下文调用（如 Hook 中） */
+  }
+#endif
+```
+
+这是 **称为级别**的保护，而非 **Application 级别**的保护。它防止从 ErrorHook 调用 `ActivateTask()`，但不防止 Application A 的 Task 调用 `ActivateTask()` 激活 Application B 的 Task。
+
+### 6.3.4 ProtectionHook：仅有占位
+
+```c
+/* ee_oo_api_osek.c — 栈溢出检测中的 ProtectionHook 占位 */
+#if (defined(OSEE_HAS_PROTECTIONHOOK))
+#error Add ProtectionHook call here once it has been implemented
+#else
+  osEE_shutdown_os(p_cdb, E_OS_STACKFAULT);
+#endif
+```
+
+定义了 `OSEE_HAS_PROTECTIONHOOK` 宏时，编译直接报错——明确告知此功能未实现。当前栈溢出时直接调用 `ShutdownOS()`。
+
+### 6.3.5 错误码定义：有壳无瓤
+
+`ee_api_types.h` 中定义了 AUTOSAR OS 规范的保护类错误码：
+
+```c
+E_OS_PROTECTION_MEMORY,    /* ((StatusType)15) 内存访问违规 */
+E_OS_PROTECTION_TIME,       /* ((StatusType)16) 执行时间超限 */
+E_OS_PROTECTION_ARRIVAL,    /* ((StatusType)17) 到达率超限 */
+E_OS_PROTECTION_LOCKED,     /* ((StatusType)18) 互锁违规 */
+E_OS_PROTECTION_EXCEPTION, /* ((StatusType)19) 处理器异常 */
+```
+
+但内核中 **没有任何代码路径会产生这些错误码**。它们是 AUTOSAR OS 规范要求的占位定义，为未来实现预留接口。
+
+---
+
+## 6.4 动态 API：部分实现
+
+### 6.4.1 CreateTask 与静态对象池
+
+ERIKA v3 的动态 API（`ee_oo_api_dynamic.c`）提供了 `CreateTask()`：
+
+```c
+FUNC(StatusType, OS_CODE) CreateTask(
+  VAR(TaskRefType, AUTOMATIC)       taskIdRef,
+  VAR(TaskExecutionType, AUTOMATIC) taskType,
+  VAR(TaskFunc, AUTOMATIC)          taskFunc,
+  VAR(TaskPrio, AUTOMATIC)          readyPrio,
+  VAR(TaskPrio, AUTOMATIC)          dispatchPrio,
+  VAR(TaskActivation, AUTOMATIC)    maxNumOfAct,
+  VAR(MemSize, AUTOMATIC)           stackSize
+) {
+  StatusType ev;
+  OsEE_KDB * const p_kdb = osEE_get_kernel();
+  OsEE_KCB * const p_kcb = p_kdb->p_kcb;
+
+  if (p_kcb->free_task_index >= p_kdb->tdb_array_size) {
+    ev = E_OS_LIMIT;           /* 静态池已满 */
+  } else {
+    OsEE_TDB * const p_tdb = (*p_kdb->p_tdb_ptr_array)[p_kcb->free_task_index];
+    OsEE_TCB * const p_tcb = p_tdb->p_tcb;
+
+    p_tcb->status = OSEE_TASK_SUSPENDED;
+    p_tcb->current_prio = readyPrio;
+    p_tcb->current_num_of_act = 0U;
+
+    p_tdb->task_func = taskFunc;
+    p_tdb->ready_prio = readyPrio;
+    p_tdb->dispatch_prio = dispatchPrio;
+    p_tdb->max_num_of_act = maxNumOfAct;
+
+    /* ... 栈分配 ... */
+    *taskIdRef = p_tdb->tid;
+    ++p_kcb->free_task_index;
+    ev = E_OK;
+  }
+  return ev;
+}
+```
+
+关键约束：`CreateTask()` 并非真正动态分配内存——它从 **预分配的 TDB/TCB 静态池** 中按索引取用。`p_kdb->p_tdb_ptr_array` 的大小在编译期确定，`free_task_index` 指向池中下一个可用位置。
+
+### 6.4.2 缺失的动态 API
+
+| AUTOSAR 规范 API | ERIKA v3 状态 |
+|---|---|
+| `CreateTask()` | 已实现（静态池） |
+| `DestroyTask()` | 未实现 |
+| `AddResource()` | 未实现 |
+| `AddEvent()` | 未实现 |
+| `SetISR2Source()` | 已实现 |
+| `SetIdleHook()` | 已实现 |
+| `InitOS()` | 已实现（动态模式必需） |
+
+---
+
+## 6.5 从规范到实现：差距分析图
+
+```mermaid
+graph TB
+    subgraph AUTOSAR["AUTOSAR OS SC3/SC4 规范要求"]
+        APP["OS Application<br/>Trusted / Non-Trusted"]
+        ACCESS["CheckObjectAccess()<br/>CheckObjectOwnership()<br/>CheckISROccess()"]
+        TERM["TerminateApplication()"]
+        PROTECT["ProtectionHook()<br/>E_OS_PROTECTION_MEMORY<br/>E_OS_PROTECTION_TIME"]
+        MEMMAP["Os_MemMap.h<br/>OS_START_SEC_CODE<br/>OS_START_SEC_VAR_NO_INIT<br/>等 Section 宏"]
+        MPU_CFG["MPU/DPR/CPR 配置<br/>Supervisor ↔ User 模式切换"]
+        DYN["DestroyTask()<br/>AddResource()<br/>AddEvent()"]
+    end
+
+    subgraph ERIKA["ERIKA v3 (tc38x) 实现现状"]
+        CTX["服务调用保护<br/>OsEE_os_context<br/>E_OS_CALLEVEL 检查"]
+        DYN_IMPL["CreateTask()<br/>静态池分配"]
+        STUB["OSEE_HAS_OSAPPLICATIONS<br/>占位宏（TODO 注释）<br/>SchedTabDB.ApplID 条件编译"]
+        ERRCODE["E_OS_PROTECTION_*<br/>错误码定义（从未产生）"]
+        ProtHook["ProtectionHook<br/>#error 占位"]
+        NO_APP["无 OsEE_AppDB<br/>无 ApplicationType<br/>无检查 API<br/>无 TerminateApplication<br/>无 MPU 配置"]
+    end
+
+    APP -.->|"完全缺失"| NO_APP
+    ACCESS -.->|"完全缺失"| NO_APP
+    TERM -.->|"完全缺失"| NO_APP
+    PROTECT -.->|"仅占位 + 错误码"| ERRCODE
+    PROTECT -.->|"仅 #error"| ProtHook
+    MEMMAP -.->|"完全缺失"| NO_APP
+    MPU_CFG -.->|"完全缺失"| NO_APP
+    DYN -.->|"部分实现"| DYN_IMPL
+    CTX -->|"已实现"| CTX
+
+    style AUTOSAR fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style ERIKA fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style NO_APP fill:#ffcdd2,stroke:#c62828,stroke-width:2px
+    style CTX fill:#c8e6c9,stroke:#2e7d32
+    style DYN_IMPL fill:#c8e6c9,stroke:#2e7d32
+    style STUB fill:#fff9c4,stroke:#f57f17
+    style ERRCODE fill:#fff9c4,stroke:#f57f17
+    style ProtHook fill:#fff9c4,stroke:#f57f17
+```
+
+上图清晰地展示了 AUTOSAR OS SC3/SC4 规范要求与 ERIKA v3 实现之间的 **6 类差距**：
+
+| 差距类别 | 规范要求 | ERIKA v3 现状 | 实现难度 |
+|---|---|---|---|
+| OS Application 数据结构 | AppDB/AppCB/ApplID 字段 | 完全缺失 | 中（需设计数据结构、修改 TDB/TCB） |
+| 访问控制 API | CheckObjectAccess/Ownership/ISR | 完全缺失 | 高（需 OIL 生成访问权限表 + 运行时检查） |
+| TerminateApplication | 终止 Application 所有 Task/ISR | 完全缺失 | 高（需跟踪 Application 拥有的所有对象） |
+| ProtectionHook & 保护错误码 | ProtectionHook 回调 + 5 类保护错误 | 错误码已定义、Hook 仅有 `#error` 占位 | 中（需实现栈保护、时间保护、内存保护触发链路） |
+| Os_MemMap.h Section 宏 | 代码/数据段分配到命名 Section | 完全缺失 | 低（模板化 `#pragma section` 生成） |
+| MPU/DPR/CPR 配置 | Kernel 运行 Supervisor、App 运行 User | 完全缺失（所有代码 Supervisor 模式） | 高（需修改启动代码、任务切换时切换 PRS/DPR/CPR） |
+
+---
+
+## 6.6 理论上的实现路径：OS Application 隔离在 ERIKA v3 上的可行性
+
+尽管 ERIKA v3 当前未实现 OS Application，其数据结构体系和 TriCore 硬件为后续实现提供了可行的基础。以下是一个 **概念性** 的实现方案（非当前代码）。
+
+### 6.6.1 数据结构扩展
+
+```c
+/* 概念性扩展 — 非 ERIKA v3 当前代码 */
+
+typedef enum {
+  OSEE_APP_TRUSTED,         /* Trusted Application */
+  OSEE_APP_NON_TRUSTED      /* Non-Trusted Application */
+} OsEE_app_trust_level;
+
+typedef struct OsEE_AppDB_tag {
+  VAR(ApplicationType, TYPEDEF)  app_id;          /* Application ID */
+  VAR(OsEE_app_trust_level, TYPEDEF) trust_level; /* 信任级别 */
+#if (!defined(OSEE_SINGLECORE))
+  VAR(CoreMaskType, TYPEDEF)     core_mask;       /* 绑定的核心掩码 */
+#endif
+  /* 允许访问的对象列表（由 OIL 生成） */
+  P2VAR(OsEE_TDB OSEE_CONST, TYPEDEF, OS_APPL_DATA)  *allowed_tasks;
+  P2VAR(OsEE_ResourceDB OSEE CONST, TYPEDEF, OS_APPL_DATA) *allowed_resources;
+  /* ... 其他对象 ... */
+} OSEE_CONST OsEE_AppDB;
+
+/* TDB 扩展 */
+typedef struct OsEE_TDB_tag {
+  /* ... 现有字段 ... */
+#if (defined(OSEE_HAS_OSAPPLICATIONS))
+  VAR(ApplicationType, TYPEDEF)  app_id;  /* 此 Task 所属的 Application */
+#endif
+} OSEE_CONST OsEE_TDB;
+```
+
+### 6.6.2 DPR/CPR 配置方案
+
+在 `osEE_tc_core0_start()` 中增加 Application 内存段配置：
+
+```c
+/* 概念性 — Non-Trusted Application 的 DPR/CPR 配置 */
+void osEE_configure_app_memory_protection(ApplicationType app_id) {
+  const OsEE_AppDB *app_db = &osEE_app_db_array[app_id];
+
+  /* 配置 DPR0：Non-Trusted App 数据段（读/写） */
+  __mtcr(CPU_DPR0Lower(app_id), app_db->data_start);
+  __mtcr(CPU_DPR0Upper(app_id), app_db->data_end);
+  __mtcr(CPU_DPR0RWX(app_id), DPR_RW);  /* 允许读写，禁止执行 */
+
+  /* 配置 CPR0：Non-Trusted App 代码段（读/执行） */
+  __mtcr(CPU_CPR0Lower(app_id), app_db->code_start);
+  __mtcr(CPU_CPR0Upper(app_id), app_db->code_end);
+  __mtcr(CPU_CPR0RWX(app_id), CPR_RX);  /* 允许读/执行，禁止写 */
+}
+```
+
+在任务切换时切换 PSW.PRS（Protection Register Set）：
+
+```c
+/* 概念性 — 任务切换时切换特权级 */
+void osEE_switch_app_context(OsEE_TDB *from_tdb, OsEE_TDB *to_tdb) {
+  if (to_tdb->app_trust == OSEE_APP_NON_TRUSTED) {
+    /* 切换到 User-0 模式（PSW.PRS = 0b00），使用 DPR/CPR 寄存器集 0 */
+    osEE_tc_modify_psw_prs(0x00);
+  } else {
+    /* 切换到 Supervisor 模式（PSW.PRS = 0b11），使用寄存器集 3 */
+    osEE_tc_modify_psw_prs(0x03);
+  }
+}
+```
+
+### 6.6.3 CheckObjectAccess 的概念实现
+
+```c
+/* 概念性 — 非当前代码 */
+FUNC(AccessType, OS_CODE) CheckObjectAccess(
+  VAR(ApplicationType, AUTOMATIC) ApplID,
+  VAR(ObjectType, AUTOMATIC) ObjType,
+  VAR(ObjectIdType, AUTOMATIC) ObjID)
+{
+  CONSTP2VAR(OsEE_AppDB, AUTOMATIC, OS_APPL_CONST) p_app_db =
+    &osEE_app_db_array[ApplID];
+
+  if (p_app_db->trust_level == OSEE_APP_TRUSTED) {
+    return ACCESS;   /* Trusted Application 可访问所有对象 */
+  }
+
+  /* Non-Trusted Application：检查 OIL 生成的访问权限表 */
+  switch (ObjType) {
+    case OBJECT_TASK:
+      return osEE_check_task_access(p_app_db, ObjID);
+    case OBJECT_RESOURCE:
+      return osEE_check_resource_access(p_app_db, ObjID);
+    /* ... 其他对象类型 ... */
+    default:
+      return NO_ACCESS;
+  }
+}
+```
+
+### 6.6.4 TerminateApplication 的概念实现
+
+```c
+/* 概念性 — 非当前代码 */
+FUNC(StatusType, OS_CODE) TerminateApplication(
+  VAR(ApplicationType, AUTOMATIC) ApplID,
+  VAR(TerminateApplicationErrorType, AUTOMATIC) Error)
+{
+  osEE_lock_kernel();
+
+  /* 1. 终止该 Application 的所有 Task */
+  for (i = 0U; i < p_kdb->tdb_array_size; ++i) {
+    OsEE_TDB *p_tdb = (*p_kdb->p_tdb_ptr_array)[i];
+    if (p_tdb->app_id == ApplID) {
+      /* 强制终止：释放 Resource、归还 Spinlock、清除 Event */
+      osEE_force_terminate_task(p_tdb);
+    }
+  }
+
+  /* 2. 释放该 Application 持有的所有 Resource / Spinlock */
+  /* 3. 停止该 Application 的所有 Alarm / Schedule Table */
+  /* 4. 调用 ProtectionHook 或直接 ShutdownOS */
+
+  osEE_unlock_kernel();
+  return E_OK;
+}
+```
+
+---
+
+## 6.7 自动驾驶中的安全考量：即使没有 OS Application 隔离
+
+在当前 ERIKA v3 缺少 OS Application 隔离和内存保护的情况下，自动驾驶系统中的安全关键软件仍需通过其他手段实现隔离：
+
+### 6.7.1 多核物理隔离
+
+利用 TC387 的多核架构，将安全关键软件与非安全关键软件分配到不同 Core：
+
+```
+Core0: AUTOSAR OS + 安全关键控制（制动、转向）
+Core1: 通信栈（CAN、Ethernet）
+Core2: 感知融合（低安全等级）
+Core3: 诊断与标定（UDS、XCP）
+Core4: 高性能计算（视觉算法）
+Core6: 辅助计算
+```
+
+不同 Core 拥有独立的 CDB/CCB 和 CSA，Task 默认不可跨核激活（除非显式配置 `CPU_ID`），这提供了 **物理级隔离**——一个 Core 上的任务崩溃不会直接影响另一个 Core。
+
+### 6.7.2 Watchdog 与栈监控
+
+ERIKA v3 实现了栈溢出检测（`OSEE_HAS_STACK_MONITORING`），在任务切换时检查栈水印：
+
+```c
+#if (defined(OSEE_HAS_STACK_MONITORING))
+osEE_stack_monitoring(p_cdb);    /* 检查当前任务的栈溢出 */
+#endif
+```
+
+检测到溢出时调用 `ShutdownOS(E_OS_STACKFAULT)`——这是当前最接近内存保护的做法，但仅限于栈溢出，不覆盖代码段篡改或数据段越界访问。
+
+### 6.7.3 ASIL-D 系统的补充措施
+
+对于需要满足 ISO 26262 ASIL-D 的系统，在 ERIKA v3 之上需额外实施：
+
+| 措施 | 对应 ISO 26262 要求 | 实施位置 |
+|---|---|---|
+| 外部 Watchdog 窗口监控 | FTTI 内必须检测到故障 | 硬件看门狗 |
+| 端到端通信保护 | 数据完整性校验 | COM 层 |
+| 程序流监控 | 逻辑执行序列校验 | 应用代码 |
+| RAM/ROM 校验 | 内存完整性定期检验 | E2E Protection |
+| 多核冗余执行 | Safety Manual 要求 | 安全机制层 |
+
+---
+
+## 6.8 小结
+
+本章揭示了 ERIKA v3 在 OS Application 隔离方面的 **全面缺失** 现状：
+
+1. **`OSEE_HAS_OSAPPLICATIONS` 仅为占位宏**：`ApplicationType` 未定义、AppDB/AppCB 不存在、SchedTabDB.ApplID 条件编译无法通过。
+
+2. **访问控制 API 完全缺失**：`CheckObjectAccess()`、`CheckObjectOwnership()`、`CheckISROccess()`、`TerminateApplication()`、`AllowAccess()`、`QueryPermission()` 均未实现。
+
+3. **Os_MemMap.h section 宏完全缺失**：没有 `OS_START_SEC_CODE` / `OS_STOP_SEC_VAR_NO_INIT` 等内存段分配宏。
+
+4. **TriCore MPU/DPR/CPR 未配置**：所有代码运行在 Supervisor 模式，PSW.PRS = 0b11，无 User 模式切换。
+
+5. **ProtectionHook 仅有 `#error` 占位**：保护类错误码已定义但从未产生。
+
+6. **仅有的保护机制**是基于 `OsEE_os_context` 的服务调用级别检查（防止从 Hook 中调用非法 OS API），以及栈溢出检测。
+
+对于自动驾驶 ASIL-B 及以上等级的应用，当前 ERIKA v3 的隔离能力不足，需要依赖多核物理隔离、外部 Watchdog、以及应用层安全机制来补充。若要达到 AUTOSAR OS SC3/SC4 的完整内存保护合规性，需要从数据结构（AppDB）、MPU 配置（DPR/CPR）、特权级切换（PSW.PRS）、段分配（Os_MemMap.h）四个层面进行系统性扩展。
+
+---
+
+> **系列结语：** 六章连载覆盖了从 OSEK 到 AUTOSAR OS 的规范演进、TC38x 硬件与 ERIKA v3 的多核映射、任务管理、中断处理与资源同步、多核启动与核间通信、Alarm/Counter 定时子系统、到内存保护与 OS Application 隔离的完整技术栈。ERIKA v3 作为一个 GPL 开源 RTOS，在多核调度、优先级天花板协议、CSA 上下文切换等内核机制上已达到生产可用水平；但在 OS Application 隔离、动态 API 完整性、内存保护等 AUTOSAR OS Scalability Class 3/4 特性上仍有明确差距——这既是开源社区的机遇，也是汽车功能安全认证的现实边界。

@@ -1,0 +1,784 @@
+---
+title: "基于 ERIKA v3 与 TC38x 深入理解 AUTOSAR OS（五）：Alarm 与 Counter 定时子系统"
+date: 2026-05-23
+categories: [自动驾驶, 汽车电子, AUTOSAR]
+tags: [AUTOSAR OS, OSEK, ERIKA Enterprise, TriCore, TC38x, AURIX, Alarm, Counter, Schedule Table, STM, 定时器]
+---
+
+# 基于 ERIKA v3 与 TC38x 深入理解 AUTOSAR OS（五）：Alarm 与 Counter 定时子系统
+
+定时是汽车 ECUs 的脉搏——从 10ms 周期采样到曲轴信号的超时检测，从CAN 报文的周期发送到复杂相位序列的编排，全部依赖 Counter/Alarm/Schedule Table 三层抽象。本章从 TC38x 的 STM 硬件定时器出发，逐层追踪一个 tick 如何穿越 Counter 递增、触发队列扫描、Alarm 动作分发，直到任务被激活的全部路径。
+
+---
+
+## 5.1 硬件定时器到软件 Counter：驱动链路
+
+### 5.1.1 STM（System Timer Module）与 OIL 配置
+
+TC38x 的 STM（System Timer Module）是一个 32 位自由运行递增计数器，外设总线时钟驱动，提供 Compare Match 中断。ERIKA v3 将其作为系统 Counter 的硬件源：
+
+```oil
+COUNTER system_timer_master {
+  CPU_ID = 0x0;
+  MINCYCLE = 1;
+  MAXALLOWEDVALUE = 2147483647;   /* 32 位最大值 */
+  TICKSPERBASE = 1;                /* 每 1 个硬件 tick 递增 1 */
+  TYPE = HARDWARE {
+    DEVICE = "STM_SR0";            /* STM Service Request 0 */
+    SYSTEM_TIMER = TRUE;           /* 系统定时器标志 */
+    PRIORITY = 2;                  /* ISR2 虚拟优先级 */
+  };
+  SECONDSPERTICK = 0.01;           /* 10ms per tick */
+};
+```
+
+关键属性解读：
+
+| OIL 属性 | 含义 | CounterDB 字段 |
+|---|---|---|
+| `MAXALLOWEDVALUE` | Counter 最大值（溢出归零） | `info.maxallowedvalue` |
+| `TICKSPERBASE` | 多少个硬件 tick 对应一个 Counter tick | `info.ticksperbase` |
+| `MINCYCLE` | Alarm 最短周期（Extended Status 模式下校验用） | `info.mincycle` |
+| `SECONDSPERTICK` | 主观时间与 tick 的换算系数 | 仅供 RT-Druid 代码生成，不存入 CounterDB |
+| `TYPE = HARDWARE` | 硬件驱动 Counter（vs SOFTWARE 手动驱动） | 生成 `p_counter_hard` 字段 |
+| `SYSTEM_TIMER = TRUE` | 标记为系统定时器 | 用于 RT-Druid 生成自动 tick 驱动 |
+
+### 5.1.2 STM 初始化与 tick 中断
+
+在 `StartOS()` 的 `osEE_cpu_startos()` 中，系统定时器的初始化流程为：
+
+```c
+/* ee_tc_hal.c — osEE_cpu_startos() 中的系统定时器初始化 */
+if (curr_core_id == OS_CORE_ID_0) {
+  osEE_tc_stm_set_clockpersec();    /* Master Core: 配置 STM 时钟频率 */
+}
+
+for (i = 0U; i < tdb_size; ++i) {
+  OsEE_TDB * const p_tdb = (*p_kdb->p_tdb_ptr_array)[i];
+  if (p_tdb->orig_core_id == curr_core_id) {
+    if (p_tdb->task_type == OSEE_TASK_TYPE_ISR2) {
+      if (p_tdb->task_func == &osEE_tricore_system_timer_handler) {
+        osEE_tc_initialize_system_timer(p_tdb);  /* 配置 STM compare 值和 SRN */
+      }
+    }
+  }
+}
+```
+
+`osEE_tc_stm_set_clockpersec()` 设置 STM 的时钟分频因子。`osEE_tc_initialize_system_timer()` 配置 STM 的 compare match 寄存器（设置下一次中断的 tick 间隔），并使能 STM_SR0 的中断请求。
+
+当 STM 计数值匹配 compare 寄存器时，触发优先级为 `PRIORITY = 2` 的 ISR2：
+
+```c
+/* 系统定时器 ISR2 的执行路径 */
+void osEE_tricore_system_timer_handler(void) {
+  osEE_counter_increment(p_sys_counter_db);  /* 驱动软件 Counter 递增 */
+}
+```
+
+### 5.1.3 Counter 数据结构
+
+```c
+/* CounterDB (Flash) — 静态配置描述符 */
+typedef struct {
+  P2VAR(OsEE_CounterCB, TYPEDEF, OS_APPL_DATA)   p_counter_cb;  /* RAM 控制块指针 */
+  P2VAR(OsEE_CounterHardDB, TYPEDEF, OS_APPL_CONST) p_counter_hard; /* 硬件定时器描述 */
+  AlarmBaseType   info;            /* {maxallowedvalue, ticksperbase, mincycle} */
+#if (!defined(OSEE_SINGLECORE))
+  CoreIdType      core_id;         /* 所属核心编号 */
+#endif
+} OSEE_CONST OsEE_CounterDB;
+
+/* CounterCB (RAM) — 运行时状态 */
+typedef struct {
+  OsEE_TriggerQ   trigger_queue;   /* 触发器有序链表头指针 */
+  TickType        value;           /* 当前计数值 */
+#if (defined(OSEE_HAS_COUNTER_PRESCALER))
+  TickType        prescaler;        /* 预分频计数器 (ticksperbase > 1 时) */
+#endif
+} OsEE_CounterCB;
+```
+
+`trigger_queue` 是一个按绝对触发时刻排序的单向链表，头节点始终是最早触发的 Trigger。
+
+---
+
+## 5.2 Counter Tick 机制：从递增到触发
+
+### 5.2.1 osEE_counter_increment() 完整流程
+
+```c
+FUNC(void, OS_CODE) osEE_counter_increment(
+  P2VAR(OsEE_CounterDB, AUTOMATIC, OS_APPL_DATA) p_counter_db)
+{
+  CONSTP2VAR(OsEE_CounterCB, ...) p_counter_cb = p_counter_db->p_counter_cb;
+
+#if (defined(OSEE_HAS_COUNTER_PRESCALER))
+  TickType ticksperbase = p_counter_db->info.ticksperbase;
+  OsEE_bool is_real_tick = OSEE_TRUE;
+  if (ticksperbase > 1U) {
+    ++p_counter_cb->prescaler;
+    if (p_counter_cb->prescaler >= ticksperbase) {
+      p_counter_cb->prescaler = 0U;  /* 归零，产生一个真实 tick */
+    } else {
+      is_real_tick = OSEE_FALSE;       /* 预分频未满，跳过 */
+    }
+  }
+  if (is_real_tick)
+#endif
+  {
+    TickType counter_value;
+    P2VAR(OsEE_TriggerDB, ...) p_triggered_db;
+
+    CONSTP2VAR(OsEE_CDB, ...) p_cdb = osEE_get_curr_core();
+
+    /* 1. 计数器递增（溢出归零） */
+    if (p_counter_cb->value >= p_counter_db->info.maxallowedvalue) {
+      counter_value = 0U;
+      p_counter_cb->value = 0U;
+    } else {
+      ++p_counter_cb->value;
+      counter_value = p_counter_cb->value;
+    }
+
+    /* 2. 检查触发队列头部 */
+    osEE_lock_core(p_cdb);
+    p_triggered_db = p_counter_cb->trigger_queue;
+
+    if (p_triggered_db != NULL) {
+      P2CONST(OsEE_TriggerCB, ...) p_triggered_cb = p_triggered_db->p_trigger_cb;
+
+      if (p_triggered_cb->when == counter_value) {
+        /* 3. 弹出所有在此 tick 触发的 Trigger（可能有多个） */
+        P2VAR(OsEE_TriggerDB, ...) p_current = p_triggered_db;
+        P2VAR(OsEE_TriggerDB, ...) p_previous;
+
+        do {
+          p_previous = p_current;
+          p_previous->p_trigger_cb->status = OSEE_TRIGGER_EXPIRED;
+          p_current = p_current->p_trigger_cb->p_next;
+        } while ((p_current != NULL) &&
+                 (p_current->p_trigger_cb->when == counter_value));
+
+        p_previous->p_trigger_cb->p_next = NULL;
+        p_counter_cb->trigger_queue = p_current;
+
+        osEE_unlock_core(p_cdb);
+
+        /* 4. 逐个处理触发的 Alarm / Schedule Table（在临界区外） */
+        do {
+          CONSTP2VAR(OsEE_TriggerDB, ...) p_trigger = p_triggered_db;
+          p_triggered_db = p_triggered_db->p_trigger_cb->p_next;
+
+#if (defined(OSEE_COUNTER_TRIGGER_TYPES))
+          if (osEE_trigger_get_alarm_db(p_trigger) != NULL) {
+            osEE_counter_handle_alarm(p_counter_db, p_trigger);
+          } else {
+            osEE_counter_handle_st_expiry_point(p_counter_db, p_trigger);
+          }
+#elif (defined(OSEE_HAS_ALARMS))
+          osEE_counter_handle_alarm(p_counter_db, p_trigger);
+#endif
+        } while (p_triggered_db != NULL);
+
+      } else {
+        osEE_unlock_core(p_cdb);
+      }
+    } else {
+      osEE_unlock_core(p_cdb);
+    }
+  }
+}
+```
+
+流程中的关键设计决策：
+
+1. **预分频（Prescaler）**：当 `TICKSPERBASE > 1` 时，每 `ticksperbase` 个硬件中断才产生一个 Counter tick。例如 `TICKSPERBASE = 10` 意味着 STM 每 10 次中断才递增 Counter 一次——这对于 1ms STM 中断驱动 10ms OS tick 的场景很常见。
+
+2. **环形排序触发队列**：Trigger 链表按绝对触发时刻排序，但需要处理 Counter 溢出归零的情况。`osEE_counter_insert_abs_trigger()` 的排序算法使用 `current_when > counter_value` 和 `current_when <= counter_value` 两个分支正确处理环绕。
+
+3. **批量弹出**：同一 tick 可能有多个 Trigger 到期（如周期不同的两个 Alarm 同时触发），全部弹出后在临界区外逐个处理，避免长时间持锁。
+
+4. **Trigger 状态机**：`OSEE_TRIGGER_EXPIRED` 表明正在处理中。若在处理期间调用了 `SetRelAlarm()` 或 `CancelAlarm()`，状态会变为 `OSEE_TRIGGER_REENABLED` 或 `OSEE_TRIGGER_CANCELED`，处理完毕后根据状态决定是重新入队、使用新参数还是置为 INACTIVE。
+
+### 5.2.2 触发队列的环形排序算法
+
+Counter 的 `value` 在 0 到 `maxallowedvalue` 之间循环。触发队列中的 `when` 值可能跨越归零点。`osEE_counter_insert_abs_trigger()` 使用巧妙的双分支逻辑处理环绕：
+
+```c
+/* 简化的插入逻辑（while 循环体内） */
+while ((p_current != NULL) && work_not_done) {
+  TickType current_when = p_current->p_trigger_cb->when;
+
+  if (current_when > counter_value) {
+    // 当前节点在当前循环内（未环绕）
+    if ((when >= current_when) || (when <= counter_value)) {
+      // 新节点在当前节点之后（或已环绕），继续遍历
+      p_previous = p_current;
+      p_current = p_current->p_trigger_cb->p_next;
+    } else {
+      work_not_done = OSEE_FALSE;  // 找到插入位置
+    }
+  } else {
+    // 当前节点已环绕（current_when < counter_value）
+    if ((when <= counter_value) && (when >= current_when)) {
+      p_previous = p_current;
+      p_current = p_current->p_trigger_cb->p_next;
+    } else {
+      work_not_done = OSEE_FALSE;
+    }
+  }
+}
+```
+
+---
+
+## 5.3 Alarm：触发器的配置与动作
+
+### 5.3.1 Alarm 数据结构
+
+Alarm 在 ERIKA v3 中由两层结构组成——Trigger 层（负责定时排序）和 Alarm 层（负责动作分发）：
+
+```c
+/* TriggerDB (Flash) — 触发器描述符（Alarm 和 Schedule Table 共享） */
+typedef struct OsEE_TriggerDB_tag {
+  P2VAR(OsEE_TriggerCB, TYPEDEF, OS_APPL_DATA)  p_trigger_cb;  /* RAM 控制块 */
+  P2VAR(OsEE_CounterDB, TYPEDEF, OS_APPL_DATA)  p_counter_db;  /* 所属 Counter */
+#if (defined(OSEE_COUNTER_TRIGGER_TYPES))
+  P2VAR(OsEE_AlarmDB OSEE_CONST, ...)   p_alarm_db;   /* 非 NULL = Alarm 触发器 */
+  P2VAR(OsEE_SchedTabDB OSEE_CONST, ...) p_st_db;     /* 非 NULL = ST 触发器 */
+#endif
+} OSEE_CONST OsEE_TriggerDB;
+
+/* TriggerCB (RAM) — 触发器运行时状态 */
+typedef struct {
+  P2VAR(OsEE_TriggerDB OSEE_CONST, ...)  p_next;  /* 队列中的下一个 Trigger */
+  TickType           when;     /* 绝对触发时刻 */
+  OsEE_trigger_status status;  /* 触发器状态机 */
+} OsEE_TriggerCB;
+
+/* AlarmDB (Flash) — Alarm 描述符 */
+typedef struct OsEE_AlarmDB_tag {
+  P2VAR(OsEE_AlarmCB, TYPEDEF, OS_APPL_DATA)  p_alarm_cb;
+  P2VAR(OsEE_TriggerDB OSEE_CONST, ...)        p_trigger_db;
+  OsEE_action  action;      /* 通知动作：ACTIVATETASK / SETEVENT / ... */
+} OSEE_CONST OsEE_AlarmDB;
+
+/* AlarmCB (RAM) — Alarm 控制块 */
+typedef struct {
+  TickType  cycle;    /* 周期（0 = 单次触发） */
+} OsEE_AlarmCB;
+```
+
+`OsEE_action` 是一个联合体，承载四种动作类型：
+
+```c
+typedef struct {
+  OsEE_action_type  type;       /* OSEE_ACTION_TASK / EVENT / COUNTER / CALLBACK */
+  union {
+    TaskType          task_id;      /* ACTIVATETASK */
+    struct {
+      TaskType  task_id;
+      EventMaskType mask;
+    } event;                       /* SETEVENT */
+    CounterType  counter_id;       /* INCREMENTCOUNTER */
+    void (*callback)(void);         /* CALLBACK */
+  } param;
+} OsEE_action;
+```
+
+### 5.3.2 Trigger 状态机
+
+```
+                  SetRelAlarm() / SetAbsAlarm()
+                  (首次设置)
+    INACTIVE ───────────────────────► ACTIVE
+                                        │
+                       counter_value    │  counter_value
+                       == when          │  == when
+                                        ▼
+                              osEE_counter_increment()
+                              弹出并标记 ──► EXPIRED
+                                                  │
+                                    ┌──────────────┤
+                                    │              │
+                              cycle > 0        cycle == 0
+                              (周期性)          (单次)
+                                    │              │
+                                    ▼              ▼
+                              重新入队         INACTIVE
+                              (cycle 递增)
+                                    │
+                                    │ CancelAlarm()
+                              SetRelAlarm()        └────► CANCELED
+                              (重设)                     │
+                                    │                    │ 处理完毕
+                                    ▼                    ▼
+                              REENABLED ──► 用新 when 入队 ──► ACTIVE
+```
+
+四个核心状态：
+
+| 状态 | 含义 | 可发生的操作 |
+|---|---|---|
+| `OSEE_TRIGGER_INACTIVE` | 未启动或已结束 | SetRelAlarm / SetAbsAlarm |
+| `OSEE_TRIGGER_ACTIVE` | 在触发队列中等待 | CancelAlarm |
+| `OSEE_TRIGGER_EXPIRED` | 正在被处理 | CancelAlarm → 变为 CANCELED；SetRelAlarm → 变为 REENABLED |
+| `OSEE_TRIGGER_CANCELED` | 已取消但正在处理 | 处理完毕 → INACTIVE |
+| `OSEE_TRIGGER_REENABLED` | 处理期间被重设 | 处理完毕 → 用新 when 入队 |
+
+### 5.3.3 Alarm 动作分发
+
+当 Alarm 触发后，`osEE_counter_handle_alarm()` 首先调用 `osEE_handle_action()` 执行配置的动作，然后根据 `cycle` 值决定是否重新入队：
+
+```c
+/* osEE_handle_action() — 四种动作类型的分发 */
+switch (p_action->type) {
+  case OSEE_ACTION_TASK:
+    /* 激活任务 */
+    ev = osEE_task_activated(p_tdb);
+    if (ev == E_OK) {
+      (void)osEE_scheduler_task_insert(osEE_get_kernel(), p_tdb);
+    }
+    break;
+
+  case OSEE_ACTION_EVENT:
+    /* 在目标任务上设置事件 */
+    p_sn = osEE_task_event_set_mask(p_tdb, mask, &ev);
+    if (p_sn != NULL) {
+      (void)osEE_scheduler_task_unblocked(osEE_get_kernel(), p_sn);
+    }
+    break;
+
+  case OSEE_ACTION_COUNTER:
+    /* 递增另一个 Counter（级联计数器） */
+    osEE_counter_increment(p_counter_db);
+    break;
+
+  case OSEE_ACTION_CALLBACK:
+    /* 在 ALARMCALLBACK 上下文中调用用户函数 */
+    p_ccb->os_context = OSEE_ALARMCALLBACK_CTX;
+    p_action->param.f();
+    p_ccb->os_context = prev_os_context;
+    break;
+}
+```
+
+四种动作对应的 OIL 配置：
+
+```oil
+/* ACTIVATETASK */
+ALARM AlarmTask {
+  COUNTER = system_timer;
+  ACTION = ACTIVATETASK { TASK = TaskA; };
+};
+
+/* SETEVENT */
+ALARM AlarmEvent {
+  COUNTER = system_timer;
+  ACTION = SETEVENT { TASK = TaskB; EVENT = EventX; };
+};
+
+/* INCREMENTCOUNTER（级联） */
+ALARM AlarmCascade {
+  COUNTER = system_timer;
+  ACTION = INCREMENTCOUNTER { COUNTER = slow_counter; };
+};
+
+/* CALLBACK */
+ALARM AlarmCallback {
+  COUNTER = system_timer;
+  ACTION = CALLBACK { CALLBACKFUNC = my_callback; };
+};
+```
+
+### 5.3.4 Alarm 处理后的周期行为
+
+```c
+static FUNC(void, OS_CODE) osEE_counter_handle_alarm(
+  P2VAR(OsEE_CounterDB, ...) p_counter_db,
+  P2VAR(OsEE_TriggerDB, ...) p_trigger_to_be_handled_db)
+{
+  /* 1. 在临界区外执行动作 */
+  (void)osEE_handle_action(
+    &osEE_trigger_get_alarm_db(p_trigger_to_be_handled_db)->action);
+
+  /* 2. 重新进入临界区 */
+  p_cdb = osEE_lock_and_get_curr_core();
+  p_trigger_cb = p_trigger_to_be_handled_db->p_trigger_cb;
+
+  switch (p_trigger_cb->status) {
+    case OSEE_TRIGGER_EXPIRED:
+      TickType cycle = osEE_alarm_get_cb(
+        osEE_trigger_get_alarm_db(p_trigger_to_be_handled_db))->cycle;
+      if (cycle > 0U) {
+        /* 周期性：以 cycle 为间隔重新入队 */
+        p_trigger_cb->status = OSEE_TRIGGER_ACTIVE;
+        osEE_counter_insert_rel_trigger(p_counter_db,
+          p_trigger_to_be_handled_db, cycle);
+      } else {
+        /* 单次触发：变为 INACTIVE */
+        p_trigger_cb->status = OSEE_TRIGGER_INACTIVE;
+      }
+      break;
+
+    case OSEE_TRIGGER_REENABLED:
+      /* 被重设：用保存的新 when 入队 */
+      p_trigger_cb->status = OSEE_TRIGGER_ACTIVE;
+      osEE_counter_insert_abs_trigger(p_counter_db,
+        p_trigger_to_be_handled_db, p_trigger_cb->when);
+      break;
+
+    case OSEE_TRIGGER_CANCELED:
+      /* 被取消：变为 INACTIVE */
+      p_trigger_cb->status = OSEE_TRIGGER_INACTIVE;
+      break;
+  }
+  osEE_unlock_core(p_cdb);
+}
+```
+
+---
+
+## 5.4 Alarm 生命周期：从 OIL 到运行时
+
+### 5.4.1 完整数据流图
+
+```mermaid
+flowchart TB
+    subgraph HW["硬件层 — STM"]
+        STM["STM 定时器<br/>32 位自由运行计数器<br/>Compare Match 中断"]
+    end
+
+    subgraph ISR["ISR2 层"]
+        TIMER_ISR["osEE_tricore_system_timer_handler()<br/>ISR2 优先级 2"]
+    end
+
+    subgraph COUNTER["Counter 层"]
+        CNT_INC["osEE_counter_increment()<br/>1. 预分频检查<br/>2. 递增 value（溢出归零）<br/>3. 扫描 trigger_queue"]
+        CNT_CB["CounterCB<br/>value = 当前 tick<br/>trigger_queue → 按时刻排序"]
+        CNT_DB["CounterDB<br/>info.maxallowedvalue<br/>info.ticksperbase<br/>info.mincycle<br/>core_id"]
+    end
+
+    subgraph TRIGGER["Trigger 层"]
+        TQ["trigger_queue<br/>TriggerDB 链表<br/>按 when 排序"]
+        TRIGGER_STATE{"Trigger 状态？"}
+    end
+
+    subgraph ALARM["Alarm 层"]
+        ALM_DB["AlarmDB<br/>p_trigger_db → TriggerDB<br/>action → OsEE_action"]
+        ALM_CB["AlarmCB<br/>cycle = 周期间隔<br/>0 = 单次"]
+        ALM_FIRE["osEE_counter_handle_alarm()"]
+    end
+
+    subgraph ACTION["动作分发"]
+        ACT_TASK["ACTIVATETASK<br/>osEE_task_activated()<br/>+ osEE_scheduler_task_insert()"]
+        ACT_EVENT["SETEVENT<br/>osEE_task_event_set_mask()<br/>+ osEE_scheduler_task_unblocked()"]
+        ACT_CNT["INCREMENTCOUNTER<br/>osEE_counter_increment()"]
+        ACT_CB["CALLBACK<br/>os_context = ALARMCALLBACK_CTX<br/>调用用户函数"]
+    end
+
+    subgraph ST["Schedule Table 层"]
+        ST_DB["SchedTabDB<br/>expiry_point_array[]<br/>duration / repeated / sync_strategy"]
+        ST_CB["SchedTabCB<br/>position / start / deviation / st_status"]
+        ST_EXPIRY["osEE_counter_handle_st_expiry_point()"]
+    end
+
+    subgraph REQUEUE["重新入队"]
+        CYCLE{"cycle > 0 ?"}
+        REINSERT["osEE_counter_insert_rel_trigger()<br/>以 cycle 为间隔重新入队"]
+        INACTIVE["status = INACTIVE<br/>（单次触发结束）"]
+    end
+
+    STM -->|"Compare Match<br/>中断"| TIMER_ISR
+    TIMER_ISR -->|"调用"| CNT_INC
+    CNT_INC -->|"value == when ?"| TRIGGER_STATE
+    CNT_INC --> CNT_CB
+    CNT_CB --> TQ
+    CNT_DB --> CNT_CB
+
+    TRIGGER_STATE -->|"when == counter_value<br/>弹出并标记 EXPIRED"| ALM_FIRE
+    TRIGGER_STATE -->|"否"| CNT_INC
+
+    ALM_FIRE -->|"执行 action"| ALM_DB
+    ALM_DB --> ACTION
+    ALM_DB --> ALM_CB
+
+    ACTION --> ACT_TASK
+    ACTION --> ACT_EVENT
+    ACTION --> ACT_CNT
+    ACTION --> ACT_CB
+
+    ACT_CNT -->|"级联递增"| CNT_INC
+
+    ALM_FIRE --> CYCLE
+    CYCLE -->|"> 0（周期性）"| REINSERT
+    CYCLE -->|"== 0（单次）"| INACTIVE
+
+    ACT_EVENT -->|"可能唤醒<br/>Extended Task"| ACT_TASK
+
+    STM -->|"也可以触发"| ST_EXPIRY
+    ST_EXPIRY --> ST_DB
+    ST_EXPIRY --> ST_CB
+    ST_EXPIRY --> ACTION
+
+    style HW fill:#ffcdd2,stroke:#c62828
+    style COUNTER fill:#e8f4f8,stroke:#2c7fb8
+    style TRIGGER fill:#fff3e0,stroke:#e65100
+    style ALARM fill:#e8f5e9,stroke:#2e7d32
+    style ACTION fill:#fce4ec,stroke:#c62828
+    style ST fill:#ede7f6,stroke:#4527a0
+```
+
+---
+
+## 5.5 Schedule Table：相位序列编排
+
+### 5.5.1 从 Alarm 到 Schedule Table
+
+Alarm 是单触发点机制——一个 Alarm 在一个时刻执行一个动作。Schedule Table 是多触发点机制——一张表按时间轴排列多个 **Expiry Point**，每个 Expiry Point 可执行多个动作。
+
+| 特性 | Alarm | Schedule Table |
+|---|---|---|
+| 触发点 | 单一 | 多个（Expiry Point 数组） |
+| 动作 | 1 个（ACTIVATETASK / SETEVENT / INCREMENTCOUNTER / CALLBACK） | 每个Expiry Point 可有多个动作 |
+| 周期 | cycle 字段（0=单次） | `REPEATING = TRUE/FALSE` + `DURATION` |
+| 同步 | 无 | IMPLICIT / EXPLICIT 同步策略 |
+| 切换 | 无 | `NextScheduleTable` 机制，支持无缝切换 |
+| 适用 | 简单周期激活 | 复杂时序链（如发动机喷油相位序列） |
+
+### 5.5.2 Schedule Table 数据结构
+
+```c
+/* Expiry Point — 单个触发时刻 */
+typedef struct OsEE_st_exipiry_point_tag {
+  TickType                 offset;            /* 相对于表起始的偏移 */
+  P2SYM_VAR(OsEE_action, OS_APPL_DATA, p_action_array)[]; /* 动作数组 */
+  MemSize                  action_array_size;  /* 动作数量 */
+  TickType                 max_shorten;       /* 同步缩短上限 */
+  TickType                 max_lengthen;       /* 同步延展上限 */
+} OSEE_CONST OsEE_st_exipiry_point;
+
+/* SchedTabDB (Flash) — Schedule Table 描述符 */
+typedef struct OsEE_SchedTabDB_tag {
+  P2VAR(OsEE_SchedTabCB, ...)             p_st_cb;        /* RAM 控制块 */
+  P2VAR(OsEE_TriggerDB OSEE_CONST, ...)   p_trigger_db;   /* 关联的 Trigger */
+  P2SYM_VAR(OsEE_st_exipiry_point, OS_APPL_CONST, p_expiry_point_array)[];
+  MemSize            expiry_point_array_size;
+  SynchStrategyType  sync_strategy;   /* NONE / IMPLICIT / EXPLICIT */
+  TickType           duration;         /* 表总长度（tick） */
+  TickDeltaType      precision;        /* 同步精度阈值 */
+  OsEE_bool          repeated;         /* TRUE = 周期性 */
+} OSEE_CONST OsEE_SchedTabDB;
+
+/* SchedTabCB (RAM) — 运行时状态 */
+typedef struct OsEE_SchedTabCB_tag {
+  P2VAR(OsEE_SchedTabDB OSEE_CONST, ...)  p_next_table; /* NextScheduleTable */
+  TickType                 start;      /* 表启动时的 counter 值 */
+  ScheduleTableStatusType  st_status;  /* 运行状态 */
+  MemSize                  position;   /* 当前 Expiry Point 索引 */
+  TickDeltaType            deviation;  /* 同步偏差 */
+} OsEE_SchedTabCB;
+```
+
+### 5.5.3 Schedule Table 状态
+
+```c
+#define SCHEDULETABLE_STOPPED                         (0x00U)
+#define SCHEDULETABLE_NEXT                            (0x01U)
+#define SCHEDULETABLE_WAITING                         (0x02U)
+#define SCHEDULETABLE_RUNNING                         (0x03U)
+#define SCHEDULETABLE_SYNCHRONOUS                     (0x04U)
+#define SCHEDULETABLE_RUNNING_AND_SYNCHRONOUS  (SCHEDULETABLE_RUNNING | SCHEDULETABLE_SYNCHRONOUS)
+#define SCHEDULETABLE_ASYNC                            (0x08U)
+```
+
+状态转换：
+
+`STOPPED` → `StartScheduleTableRel/Abs/Synch()` → `RUNNING` → 处理完所有 Expiry Point → `STOPPED`（单次）或 回到 `position = 0`（重复）
+
+### 5.5.4 OIL 配置示例
+
+```oil
+SCHEDULETABLE SchedTab1 {
+  COUNTER = system_timer;
+  DURATION = 400;                 /* 表总长度 400 ticks */
+  REPEATING = TRUE;               /* 周期性 */
+  SYNCHRONIZATION = IMPLICIT;     /* 隐式同步 */
+  AUTOSTART = TRUE {
+    TYPE = ABSOLUTE;
+    START_VALUE = 0;
+  };
+
+  EXPIRE_POINT = ACTION {
+    EXPIRE_VALUE = 25;             /* 第 25 tick 处触发 */
+    ACTION = ACTIVATETASK { TASK = Task2; };
+    ACTION = SETEVENT { TASK = Task1; EVENT = Event2; };
+    SYNC_ADJUSTMENT = FALSE;
+  };
+
+  EXPIRE_POINT = ACTION {
+    EXPIRE_VALUE = 300;           /* 第 300 tick 处触发 */
+    ACTION = SETEVENT { TASK = Task1; EVENT = Event1; };
+    SYNC_ADJUSTMENT = FALSE;
+  };
+};
+```
+
+### 5.5.5 三种启动模式
+
+| 模式 | API | 参数含义 | 初始 position |
+|---|---|---|---|
+| 相对启动 | `StartScheduleTableRel(ScheduleTableID, Offset)` | 从当前 counter 值 + Offset 开始 | `STARTING_POSITION`（特殊值） |
+| 绝对启动 | `StartScheduleTableAbs(ScheduleTableID, StartValue)` | 从 counter 值 = StartValue 开始 | 0 或由首个 Expiry Point 决定 |
+| 同步启动 | `StartScheduleTableSynch(ScheduleTableID, SyncValue)` | 与外部同步源对齐 | IMPLICIT 同步的起始点 |
+
+```c
+/* StartScheduleTableRel — 相对启动 */
+FUNC(StatusType, OS_CODE) StartScheduleTableRel(
+  VAR(ScheduleTableType, AUTOMATIC) ScheduleTableID,
+  VAR(TickType, AUTOMATIC) Offset)
+{
+  // 校验 ScheduleTable 状态为 STOPPED
+  // 计算: when_start = current_counter_value + Offset
+  // 设置: position = STARTING_POSITION
+  // 设置: st_status = RUNNING
+  // 插入 Trigger 到 Counter 的 trigger_queue
+  // 若 Offset == 0: 触发 delta = first_expiry_point.offset
+  //                                            (若也为 0: delta = 1)
+}
+```
+
+### 5.5.6 同步模式：IMPLICIT vs EXPLICIT
+
+**IMPLICIT 同步**：Schedule Table 参考 Counter 的硬件时间基准自动调整。当外部同步信号到来时调用 `SyncScheduleTable()`，内核计算偏差（deviation），在 Expiry Point 的 `max_shorten` / `max_lengthen` 范围内微调下一个触发时刻。
+
+```c
+/* SyncScheduleTable — 同步调整 */
+FUNC(StatusType, OS_CODE) SyncScheduleTable(
+  VAR(ScheduleTableType, AUTOMATIC) ScheduleTableID,
+  VAR(TickType, AUTOMATIC) SyncValue)
+{
+  // 1. 计算偏差: deviation = expected_tick - actual_tick
+  // 2. 若 |deviation| <= precision: 标记为 SYNCHRONOUS
+  //    否则: 标记为 ASYNC
+  // 3. 缩短或延展下一个 Expiry Point 的触发时刻:
+  //    next_when = original_next_when + clamp(deviation, -max_shorten, max_lengthen)
+  // 4. 取消旧 Trigger，插入新 Trigger
+}
+```
+
+**EXPLICIT 同步**：同步偏差由应用通过 `SyncScheduleTable()` 显式提供，Schedule Table 不自动跟踪硬件时间基准。
+
+### 5.5.7 Expiry Point 处理流程
+
+`osEE_counter_handle_st_expiry_point()` 是 Schedule Table 的核心处理函数：
+
+```
+1.  取出当前 Expiry Point
+2.  遍历 action_array，逐个调用 osEE_handle_action()
+3.  推进 position 到下一个 Expiry Point
+4.  若 position == FINAL_DELAY_POSITION:
+      a. 若 repeated: 回到 position 0，重新入队
+      b. 若 p_next_table != NULL: 切换到 NextScheduleTable
+      c. 若 单次且无 NextScheduleTable: st_status = STOPPED
+5.  否则: 计算下一次触发时刻，入队 trigger_queue
+```
+
+### 5.5.8 NextScheduleTable：无缝切换
+
+```oil
+SCHEDULETABLE SchedTab1 {
+  /* ... */
+  NEXT_SCHEDULETABLE = SchedTab2;  /* SchedTab1 结束后自动切换到 SchedTab2 */
+};
+```
+
+在 SchedTabCB 中，`p_next_table` 指向 `SchedTab2` 的 SchedTabDB。当 SchedTab1 处理完最后一个 Expiry Point 后，自动将 `p_next_table` 指向的 Schedule Table 设为 RUNNING 状态并插入 trigger_queue——实现两张表的零间隙衔接。
+
+---
+
+## 5.6 硬件 Counter 与软件 Counter 的级联
+
+`INCREMENTCOUNTER` 动作类型允许一个 Counter 的 tick 递增另一个 Counter——构建级联计数器：
+
+```oil
+COUNTER hw_counter {             /* 硬件 1ms tick */
+  TYPE = HARDWARE { DEVICE = "STM_SR0"; };
+  MAXALLOWEDVALUE = 9;
+  TICKSPERBASE = 1;
+};
+
+COUNTER sw_counter {             /* 软件 10ms tick（每 10 个 hw_counter tick 进一位） */
+  TYPE = SOFTWARE;
+  MAXALLOWEDVALUE = 599;         /* 0~599，即 0~5990ms = 10分钟 */
+  TICKSPERBASE = 1;
+  MINCYCLE = 1;
+};
+
+ALARM hw_to_sw {                 /* 每 10 个 hw tick 递增一次 sw_counter */
+  COUNTER = hw_counter;
+  ACTION = INCREMENTCOUNTER { COUNTER = sw_counter; };
+};
+```
+
+级联路径：`STM 中断` → `osEE_counter_increment(hw_counter_db)` → 周期性 Alarm 触发 → `osEE_handle_action(INCREMENTCOUNTER)` → `osEE_counter_increment(sw_counter_db)` → sw_counter 递增 → 检查 sw_counter 的触发队列。
+
+ERIKA v3 还支持 `TICKSPERBASE > 1` 的硬件级预分频（使用 CounterCB 的 `prescaler` 字段），避免使用额外的级联 Alarm——这适用于 Counter tick 周期是硬件中断周期的整数倍的场景。
+
+---
+
+## 5.7 多核场景下的 Counter 与 Alarm
+
+### 5.7.1 Counter 的核心绑定
+
+OIL 中 `CPU_ID` 将 Counter 绑定到特定 Core：
+
+```oil
+COUNTER system_timer_master {
+  CPU_ID = 0x0;      /* 绑定到 Core0 */
+  TYPE = HARDWARE { DEVICE = "STM_SR0"; };
+  /* ... */
+};
+
+COUNTER system_timer_slave2 {
+  CPU_ID = 0x2;      /* 绑定到 Core2 */
+  TYPE = HARDWARE { DEVICE = "STM_SR0"; };
+  /* ... */
+};
+```
+
+`CounterDB.core_id` 字段确保 `osEE_counter_increment()` 在正确的 Core 上执行——跨核的 Counter tick 不需要核间中断，因为每个 Counter 只能被其所属 Core 上的 ISR2 驱动。
+
+### 5.7.2 跨核 Alarm 激活
+
+Alarm 的 `ACTION = ACTIVATETASK { TASK = TaskCpu0Remote; }` 可以激活绑定在任何 Core 上的 Task。`osEE_handle_action()` 中的 `osEE_scheduler_task_insert()` 检测 `p_tdb->orig_core_id != osEE_get_curr_core_id()` 时，通过锁目标 Core 的 CCB + 核间中断完成跨核激活——这与前面章节描述的跨核 `ActivateTask()` 完全相同的路径。
+
+```oil
+/* Core2 上的 Counter 触发的 Alarm 激活 Core0 上的 Task */
+ALARM AlarmSlave2RemoteCPU0 {
+  CPU_ID = 0x2;           /* Counter 在 Core2 */
+  COUNTER = system_timer_slave2;
+  ACTION = ACTIVATETASK { TASK = TaskCpu0Remote; };  /* Task 在 Core0 */
+};
+```
+
+---
+
+## 5.8 小结
+
+本章从 TC38x 的 STM 硬件定时器出发，追踪了一个 tick 经 Counter 递增、触发队列扫描、Alarm 动作分发、最终到达任务激活的完整路径：
+
+1. **STM → ISR2 → Counter**：STM Compare Match 中断驱动 ISR2，ISR2 调用 `osEE_counter_increment()` 递增 CounterCB.value 并扫描触发队列。
+
+2. **Trigger Queue 环形排序**：`osEE_counter_insert_abs_trigger()` 使用双分支逻辑正确处理 Counter 溢出归零的环绕排序。
+
+3. **Alarm 四种动作**：`osEE_handle_action()` 分发 ACTIVATETASK / SETEVENT / INCREMENTCOUNTER / CALLBACK，周期性 Alarm 处理后以 `cycle` 为间隔重新入队。
+
+4. **Schedule Table**：多 Expiry Point 的时序编排器，支持绝对/相对/同步三种启动模式、IMPLICIT/EXPLICIT 同步策略、NextScheduleTable 无缝切换。
+
+5. **级联 Counter**：通过 INCREMENTCOUNTER 动作或 TICKSPERBASE 预分频实现硬件 tick 到软件 tick 的映射。
+
+---
+
+> **下期预告：** 第六章将深入 AUTOSAR OS 的内存保护与 OS Application 隔离——Memory Mapping 宏体系、Trusted/Non-Trusted Application、以及 ERIKA v3 中 OS Application 的实现现状与局限。

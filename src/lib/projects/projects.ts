@@ -9,6 +9,7 @@ export type ProjectPostFrontmatter = {
   tags?: string[];
   draft?: boolean;
   order?: number;
+  est_time?: string;
 };
 
 export type ProjectHeading = {
@@ -27,6 +28,7 @@ export type ProjectPost = {
   tags: string[];
   draft: boolean;
   order: number;
+  est_time?: string;
   updatedAtMs: number;
 };
 
@@ -40,6 +42,7 @@ const PROJECTS_ROOT = path.join(process.cwd(), "projects");
 
 const PROJECT_SLUG_MAP: Record<string, string> = {
   "qemu": "qemu",
+  "autosar-functional-safety": "autosar-functional-safety",
 };
 
 const SLUG_TO_PROJECT_MAP: Record<string, string> = Object.fromEntries(
@@ -120,6 +123,7 @@ export async function getProjectCategories(): Promise<ProjectCategory[]> {
       const tags = Array.isArray(fm.tags) ? fm.tags.filter(Boolean) : [];
       const draft = Boolean(fm.draft);
       const order = typeof fm.order === "number" ? fm.order : 999;
+      const est_time = typeof fm.est_time === "string" ? fm.est_time.trim() : undefined;
 
       posts.push({
         project,
@@ -131,6 +135,7 @@ export async function getProjectCategories(): Promise<ProjectCategory[]> {
         tags,
         draft,
         order,
+        est_time,
         updatedAtMs: stat.mtimeMs,
       });
     }
@@ -201,6 +206,7 @@ export async function getProjectPost(params: {
   const tags = Array.isArray(fm.tags) ? fm.tags.filter(Boolean) : [];
   const draft = Boolean(fm.draft);
   const order = typeof fm.order === "number" ? fm.order : 999;
+  const est_time = typeof fm.est_time === "string" ? fm.est_time.trim() : undefined;
 
   if (draft) return null;
 
@@ -214,6 +220,7 @@ export async function getProjectPost(params: {
     tags,
     draft,
     order,
+    est_time,
     updatedAtMs: stat.mtimeMs,
   };
 

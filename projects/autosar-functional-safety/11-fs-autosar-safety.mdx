@@ -1,0 +1,602 @@
+---
+title: "AUTOSAR 中的功能安全实现"
+description: "AUTOSAR CP 中的安全机制、Safety Island、E2E 保护、SecOC 与看门狗管理器"
+date: "2026-07-05"
+order: 11
+tags: ["AUTOSAR", "功能安全", "E2E", "SecOC", "WdgM", "Safety Island"]
+est_time: "50 分钟"
+---
+
+## 11.1 AUTOSAR 对功能安全的支持
+
+### 11.1.1 AUTOSAR CP vs AP 的安全路径
+
+AUTOSAR 从架构层面提供了对 ISO 26262 的系统性支持。**AUTOSAR CP（Classic Platform）** 与 **AUTOSAR AP（Adaptive Platform）** 的安全实现路径不同：
+
+| 维度 | AUTOSAR CP | AUTOSAR AP |
+|---|---|---|
+| 目标应用 | 嵌入式实时 ECU（制动、转向、气囊） | 高性能计算平台（ADAS、自动驾驶） |
+| 安全标准 | ISO 26262 ASIL-D | ISO 26262 ASIL-D + SOTIF |
+| OS 类型 | AUTOSAR OS（OSEK 扩展） | POSIX + 安全扩展 |
+| 安全机制 | 硬件集成（Wdg、E2E、MPU） | 进程级隔离、Crypto API |
+| 认证 | 大量量产经验（Vector、ETAS） | 从 2020 年起逐步认证 |
+| 主要安全模块 | WdgM、E2E、DET、NvM 加密 | EM（执行管理）、IAM（身份认证） |
+
+### 11.1.2 AUTOSAR CP 安全模块概览
+
+AUTOSAR CP 提供了多个直接服务于功能安全的 BSW 模块：
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph APP["应用层"]
+        SWC1["SWC-A<br/>ASIL-D"]
+        SWC2["SWC-B<br/>ASIL-B"]
+    end
+
+    subgraph RTE["运行时环境"]
+        RTE_LAYER["RTE<br/>E2E 保护传递"]
+    end
+
+    subgraph BSW["基础软件层功能安全相关模块"]
+        direction TB
+        SAFE_MODS["WdgM<br/>Watchdog Manager<br/>Alive · Deadline · Internal"]
+        SAFE_E2E["E2E Transformer<br/>E2E Profile 1-6"]
+        SAFE_DET["DET<br/>Default Error Tracer<br/>开发时错误追踪"]
+        SAFE_NVM["NvM<br/>NVRAM Manager<br/>备份 · 冗余存储"]
+        SAFE_FEE["Fee<br/>Flash EEPROM Emulation<br/>分区管理"]
+        SAFE_SECOC["SecOC<br/>Secure On-Board Communication<br/>CMAC + 新鲜度值"]
+    end
+
+    subgraph MCAL["微控制器抽象层"]
+        MCU["MCU Driver<br/>时钟 · 复位 · 低功耗"]
+        WDG_DRV["Wdg Driver<br/>硬件看门狗控制"]
+    end
+
+    subgraph HW["硬件"]
+        HW_CORE["CPU Core<br/>Lock-Step · ECC"]
+        HW_MPU["MPU / DMPU<br/>内存隔离"]
+        HW_WDG["Hardware WDG<br/>WDT / SMS"]
+        HW_SAFE["Safety Island<br/>SMU · LBIST · MBIST"]
+    end
+
+    SWC1 --> RTE_LAYER
+    SWC2 --> RTE_LAYER
+    RTE_LAYER --> SAFE_E2E
+    RTE_LAYER --> SAFE_DET
+    SWC2 --> SAFE_NVM
+
+    SAFE_MODS --> WDG_DRV --> HW_WDG
+    SAFE_E2E --> RTE_LAYER
+    SAFE_SECOC --> RTE_LAYER
+    SAFE_NVM --> SAFE_FEE --> MCU
+
+    HW_CORE --> BSW
+    HW_MPU --> BSW
+    HW_SAFE --> SAFE_MODS
+
+    style SAFE_MODS fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style SAFE_E2E fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style HW_SAFE fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style APP fill:#f3e5f5,stroke:#6a1b9a
+`} />
+
+---
+
+## 11.2 E2E 通信保护
+
+### 11.2.1 E2E 解决的问题
+
+汽车网络中，数据从一个 SWC 发送到另一个 SWC 可能经过复杂路径：
+
+```
+SWC-Sender → RTE → COM → CAN → CAN → COM → RTE → SWC-Receiver
+```
+
+这条路径上的任何故障都可能导致数据损坏、丢失、延迟或重复。E2E 机制在**应用层**对通信数据进行端到端的保护。
+
+### 11.2.2 E2E Profile 概览
+
+AUTOSAR 定义了 6 种 E2E Profile：
+
+| Profile | 保护措施 | 典型场景 | 最大载荷 |
+|---|---|---|---|
+| **Profile 1** | CRC + 计数器 | ASIL-D 信号（制动、转向） | 有限 |
+| **Profile 2** | CRC + 计数 + 超时 | 简单传感器数据 | 有限 |
+| **Profile 3** | CRC + 计数 + 可变数据 ID | 多复用信号 | 有限 |
+| **Profile 4** | CRC + 计数 + 超时 + Data ID | 高级场景 | 有限 |
+| **Profile 5** | CRC + 计数（大消息） | 大数据包（如 ADAS 感知） | 大（4096 字节） |
+| **Profile 6** | CRC + 计数 + 超时（大消息） | 大数据包 + 时序要求 | 大（4096 字节） |
+
+### 11.2.3 E2E Profile 1 保护流程
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph SENDER["发送端"]
+        SE1["E2E_P00ProtectHeader<br/>初始化 Header"]
+        SE2["计算 CRC<br/>覆盖 Header + Data"]
+        SE3["组装报文<br/>Header + CRC + Data"]
+        SE4["发送报文"]
+    end
+
+    subgraph RECEIVER["接收端"]
+        RE1["E2E_P00CheckHeader<br/>解析 Header"]
+        RE2["计数器检查<br/>单调递增 · 无重复 · 无跳变"]
+        RE3["超时检查<br/>≤ 配置的 Timeout"]
+        RE4["CRC 重新计算<br/>与接收到的 CRC 对比"]
+        RE5["数据完整性判定<br/>OK / 静默 / 替换 / 触发安全行为"]
+    end
+
+    SE1 --> SE2 --> SE3 --> SE4
+    SE4 -->|CAN / LIN / Ethernet| RE1
+    RE1 --> RE2 --> RE3 --> RE4 --> RE5
+
+    style SENDER fill:#e3f2fd,stroke:#1565c0
+    style RECEIVER fill:#e8f5e9,stroke:#2e7d32
+`} />
+
+### 11.2.4 E2E 配置与实现
+
+```c
+/* AUTOSAR E2E Profile 1 配置（类 Vector DaVinci 形式） */
+E2E_PPConfigType E2E_Config_ACC_BrakeReq = {
+    .DataId           = 0x1234U,       /* Data ID（可变 ID） */
+    .DataLength       = 8U,            /* 有效载荷 8 字节 */
+    .DataIdMode       = E2E_DATA_ID_BOTH,
+    .MaxDeltaCounter  = 3U,            /* 最大计数器跳变（容忍丢包） */
+    .MaxNoNewOrRepeatedData = 2U,      /* 最大重复数据次数 */
+    .SyncCounterInit  = 0U,
+    .Timeout          = 100U,          /* 超时 100ms */
+    .StatusOk         = E2E_P00STATUS_OKALL,
+};
+
+/* 发送端调用 */
+void Swc_SendBrakeRequest(void) {
+    E2E_P00ConfigType config;
+    E2E_P00ProtectConfigType protect_cfg;
+
+    protect_cfg.counter  = e2e_counter++;
+    protect_cfg.data     = (uint8*)&brake_request;
+    protect_cfg.length   = sizeof(brake_request);
+    protect_cfg.dataId   = 0x1234U;
+
+    /* 调用 E2E 保护函数 */
+    Std_ReturnType result = E2E_P00Protect(&config, &protect_cfg);
+    if (result == E_OK) {
+        CanIf_Transmit(BRAKE_MSG_ID, protect_cfg.data, protect_cfg.length);
+    }
+}
+
+/* 接收端调用 */
+void Swc_ReceiveBrakeRequest(void) {
+    E2E_P00CheckConfigType check_cfg;
+
+    check_cfg.data    = (uint8*)&received_brake;
+    check_cfg.length  = sizeof(received_brake);
+    check_cfg.dataId  = 0x1234U;
+
+    E2E_P00CheckStatusType status;
+    Std_ReturnType result = E2E_P00Check(&config, &check_cfg, &status);
+
+    if ((result == E_OK) && (status == E2E_P00STATUS_OKALL)) {
+        /* 数据校验通过，使用数据 */
+        ApplyBrake(received_brake.deceleration);
+    } else {
+        /* 数据校验失败，触发安全行为 */
+        BrakeManager_SafetyFaultHandler(status);
+    }
+}
+```
+
+---
+
+## 11.3 Watchdog Manager（WdgM）
+
+### 11.3.1 WdgM 层级架构
+
+WdgM 是 AUTOSAR CP 中用于时序与执行流监控的标准模块：
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph WDG_ARCH["WdgM 层级架构"]
+        direction TB
+        
+        subgraph APP_LAYER["应用层"]
+            SWC_CHECKPOINT["SWC 检查点<br/>Alive · Deadline · Internal<br/>（定时 E_SE1/2/3 触发）"]
+        end
+
+        subgraph WDG_MGR["WdgM 模块"]
+            ALV["Alive Supervision<br/>活度监控<br/>监控预期的触发次数"]
+            DDL["Deadline Supervision<br/>截止时间监控<br/>监控执行时间范围"]
+            INT["Internal Supervision<br/>内部监控<br/>多检查点顺序"]
+            
+            ALV_STATUS["AliveStatus<br/>OK / FAILED / DEACTIVATED"]
+            DDL_STATUS["DeadlineStatus<br/>OK / TOO_EARLY / TOO_LATE"]
+            INT_STATUS["InternalStatus<br/>OK / INCORRECT_ORDER / FAILED"]
+        end
+
+        subgraph WDG_IF["WdgIf / Wdg Driver"]
+            WDG_DRV_LAYER["WdgIf<br/>看门狗接口层<br/>偏移 · 触发 · 模式切换"]
+            HW_WDG_DRV["Wdg_17_ScuWdt<br/>SCU Watchdog<br/>Safety Watchdog<br/>CPU Watchdog"]
+        end
+
+        SWC_CHECKPOINT --> ALV
+        SWC_CHECKPOINT --> DDL
+        SWC_CHECKPOINT --> INT
+
+        ALV --> WDG_DRV_LAYER
+        DDL --> WDG_DRV_LAYER
+        INT --> WDG_DRV_LAYER
+
+        WDG_DRV_LAYER --> HW_WDG_DRV
+    end
+
+    style WDG_MGR fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style WDG_IF fill:#fff3e0,stroke:#e65100,stroke-width:2px
+`} />
+
+### 11.3.2 三种监控模式
+
+**Alive Supervision（活度监控）：**
+
+检查一个实体的触发次数是否在预期范围内（每周期触发 N 次）：
+
+```c
+/* WdgM Alive 监控配置 */
+const WdgM_AliveSupervisionType WdgM_Alive_Cfg = {
+    .expectedAliveIndications    = 3U,   /* 每周期预期触发 3 次 */
+    .maxMargin                   = 1U,   /* 允许偏差 ±1 */
+    .minMargin                   = 1U,
+    .failureThreshold            = 3U,   /* 连续 3 次失败后报告故障 */
+};
+
+void MainFunction_100ms(void) {
+    /* 任务主体：传感器采集、控制算法、执行器输出 */
+    ReadSensors();
+    ControlAlgorithm();
+    ApplyActuators();
+
+    /* 活度触发点 */
+    WdgM_Ipc_AliveSupervision(WDGM_ALIVE_ID_MAIN);
+}
+```
+
+**Deadline Supervision（截止时间监控）：**
+
+检查一个执行路径的开始到结束是否在预期的时限窗口内：
+
+```c
+const WdgM_DeadlineSupervisionType WdgM_Deadline_Cfg = {
+    .startRef        = WDGM_DEADLINE_REF_SENSOR_READ,
+    .endRef          = WDGM_DEADLINE_REF_ACTUATOR_SET,
+    .expectedMinTime = 1500U,  /* 最少 1.5ms */
+    .expectedMaxTime = 8000U,  /* 最多 8ms */
+};
+
+void ControlLoop(void) {
+    WdgM_Ipc_StartTiming(WDGM_DEADLINE_REF_SENSOR_READ);
+    ReadSensors();
+
+    /* ... 中间任务 ... */
+
+    SetActuator();
+    WdgM_Ipc_StopTiming(WDGM_DEADLINE_REF_ACTUATOR_SET);
+    /* Deadline 监控自动比对时限 */
+}
+```
+
+**Internal Supervision（内部监控）：**
+
+检查多个检查点的执行顺序是否正确（Alive 的增强版，增加了顺序约束）：
+
+```
+预期顺序：E_SE1 → E_SE2 → E_SE3 → E_SE1 → E_SE2 → ...
+若收到 E_SE3 → E_SE1（跳过 E_SE2），则报告顺序错误
+```
+
+### 11.3.3 WdgM 状态机
+
+<MermaidDiagram chart={`stateDiagram-v2
+    [*] --> WDGM_MODE_OFF
+    WDGM_MODE_OFF --> WDGM_MODE_SLOW : WdgM_Init
+    WDGM_MODE_SLOW --> WDGM_MODE_FAST : WdgM_SetMode(FAST)
+    WDGM_MODE_FAST --> WDGM_MODE_SLOW : WdgM_SetMode(SLOW)
+    WDGM_MODE_SLOW --> WDGM_MODE_OFF : WdgM_Deinit
+    WDGM_MODE_FAST --> WDGM_MODE_OFF : WdgM_Deinit
+
+    state WDGM_MODE_FAST {
+        [*] --> ALIVE_CHECK
+        ALIVE_CHECK --> DEADLINE_CHECK
+        DEADLINE_CHECK --> INTERNAL_CHECK
+        INTERNAL_CHECK --> ALIVE_CHECK
+    }
+
+    state WDGM_MODE_SLOW {
+        [*] --> ALIVE_CHECK_SLOW
+        ALIVE_CHECK_SLOW --> DEADLINE_CHECK_SLOW
+        DEADLINE_CHECK_SLOW --> ALIVE_CHECK_SLOW
+    }
+
+    ALIVE_CHECK --> FAILURE : AliveStatus == FAILED
+    DEADLINE_CHECK --> FAILURE : DeadlineStatus != OK
+    INTERNAL_CHECK --> FAILURE : InternalStatus != OK
+    
+    FAILURE --> ALIVE_CHECK : WdgM_ModeRequest(FAST)
+    FAILURE --> WDGM_MODE_OFF : System Shutdown
+`} />
+
+---
+
+## 11.4 Safety Island 架构
+
+### 11.4.1 什么是 Safety Island
+
+在当代汽车 SoC 中，**Safety Island** 是一个独立的安全处理域，包含：
+
+- 独立的微控制器核心（通常是 ARM Cortex-R 或低功耗 TriCore）
+- 独立的 SRAM、Flash、时钟和电源域
+- 独立的安全外设（SMU、CRC 引擎、硬件看门狗）
+- 对主应用域的故障检测与监控能力
+
+典型产品：**Infineon TC4x Safety Island**、**NXP S32G Safety Monitor**、**Renesas R-Car Safety Island**。
+
+### 11.4.2 Safety Island 架构图
+
+<MermaidDiagram chart={`graph TB
+    subgraph SAFETY_ISLAND["Safety Island — 安全域"]
+        direction TB
+        SAFE_CORE["Safety Core<br/>ARM Cortex-R52 / Lock-Step"]
+        SAFE_MEM["Safety SRAM<br/>ECC 保护<br/>奇偶校验"]
+        SAFE_PERIPH["安全外设<br/>SMU · WDT · CRC"]
+
+        subgraph SAFE_MON["安全监控"]
+            LBIST["LBIST<br/>逻辑内置自检"]
+            MBIST["MBIST<br/>内存内置自检"]
+            CORE_COMP["Core Comparator<br/>Lock-Step 比较"]
+            VOLT_MON["Voltage Monitor<br/>电源监控"]
+        end
+
+        SAFE_CORE --> SAFE_MON
+        SAFE_MEM --> MBIST
+    end
+
+    subgraph APP_DOMAIN["主应用域"]
+        APP_CORE0["Core0<br/>应用任务"]
+        APP_CORE1["Core1<br/>应用任务"]
+        APP_CORE2["Core2<br/>应用任务"]
+        APP_MEM["共享内存<br/>DSPR · PSPR · LMU"]
+    end
+
+    subgraph SHARED["共享资源"]
+        SHARED_PERI["CAN · LIN · Ethernet"]
+        FLS["Flash Memory"]
+        CROSSBAR["Crossbar / 总线矩阵"]
+    end
+
+    SAFETY_ISLAND -->|SMU Interrupt| APP_CORE0
+    SAFETY_ISLAND -->|Fault Protocol| SHARED
+    SAFETY_MON -->|Watchdog Reset| APP_DOMAIN
+    APP_DOMAIN -->|健康状态| SAFETY_ISLAND
+
+    APP_CORE0 --> CROSSBAR
+    APP_CORE1 --> CROSSBAR
+    APP_CORE2 --> CROSSBAR
+
+    style SAFETY_ISLAND fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style APP_DOMAIN fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style SHARED fill:#f5f5f5,stroke:#999
+`} />
+
+### 11.4.3 Safety Island 的典型安全功能
+
+| 功能 | 描述 |
+|---|---|
+| **上电自检** | 系统启动时执行 LBIST/MBIST，确认芯片逻辑和内存完整 |
+| **运行时监控** | 实时监控主核的活度、温度、电压等参数 |
+| **错误管理** | SMU（Safety Management Unit）接收来自各外设的故障信号并统一处理 |
+| **看门狗** | 多级硬件看门狗（SCU WDT、Safety WDT、CPU WDT）层级联动 |
+| **时钟监控** | 检测 PLL 失锁、外部晶振异常 |
+| **电压监控** | 监控核心电压、IO 电压是否超出阈值 |
+| **温度监控** | 芯片温度传感器，触发过热降级或关断 |
+
+### 11.4.4 Safety Island 与 AUTOSAR 的集成
+
+在 AUTOSAR CP 架构中，Safety Island 通常表现为一个独立的 OS Application：
+
+```c
+/* Safety Island 中的健康监控代理（伪代码） */
+void SafetyMonitor_AUTOSAR_Integration(void) {
+    while (1) {
+        /* 1. 收集主核健康信号 */
+        uint32 heartbeat = ReadCoreHeartbeat(MASTER_CORE_ID);
+        uint32 wdg_status = WdgM_GetStatus(CORE0_WDG_ID);
+
+        /* 2. 检查主核状态 */
+        if (heartbeat < HEARTBEAT_EXPECTED_THRESHOLD) {
+            SMU_GenerateAlarm(SMU_ALARM_CORE0_HEARTBEAT_LOST);
+        }
+        if (wdg_status == WDGM_STATUS_FAILED) {
+            SMU_GenerateAlarm(SMU_ALARM_CORE0_WDG_TIMEOUT);
+        }
+
+        /* 3. 执行 Safety Island 内自检 */
+        SMU_AlarmType active_alarms[8];
+        uint8 alarm_count = SMU_GetActiveAlarms(active_alarms, 8);
+        for (uint8 i = 0; i < alarm_count; i++) {
+            TriggerFaultReaction(active_alarms[i]);
+        }
+
+        /* 4. 向主核发送健康状态 */
+        SendHealthStatus(SAFETY_ISLAND_OK);
+
+        Sleep(SAFETY_MONITOR_CYCLE_MS);
+    }
+}
+```
+
+---
+
+## 11.5 AUTOSAR OS 安全扩展
+
+### 11.5.1 OS Application 隔离
+
+AUTOSAR OS 的 SC3 和 SC4 符合类引入了 **OS Application** 概念，实现软件组件间的**强隔离**：
+
+| 概念 | 描述 |
+|---|---|
+| **OS Application** | 逻辑上的受保护域，包含一组 Tasks/ISRs/Counters/Alarms |
+| **Trusted / Non-Trusted** | Trusted 应用可访问全部内存，Non-Trusted 受 MPU 限制 |
+| **OS Application 间通信** | 仅通过 RTE 和安全通道，禁止直接内存访问 |
+| **Access Protection** | 禁止 Non-Trusted 应用调用敏感 OS API |
+
+```c
+/* OIL 中的 OS Application 配置 */
+OS EE {
+    OSAPPLICATION SaftApp {
+        TRUSTED = FALSE;  /* Non-Trusted */
+        TASK = TaskBrakeCtrl;
+        ISR = ISR_BrakeSensor;
+        /* MPU 区域定义 */
+        ACCESSING = TrapProtection { REGION = Region_SRAM_Brake; };
+    };
+
+    OSAPPLICATION MainApp {
+        TRUSTED = FALSE;
+        TASK = TaskInfotainment;
+        TASK = TaskHMI;
+    };
+
+    OSAPPLICATION TrustedDiag {
+        TRUSTED = TRUE;   /* Trusted — 可访问全部内存 */
+        TASK = TaskDiag;
+    };
+};
+```
+
+### 11.5.2 内存分区与 MPU
+
+<MermaidDiagram chart={`graph TB
+    subgraph PHYSICAL_MEM["物理内存"]
+        RAM_BRAKE["SRAM_Brake<br/>0x70000000 - 0x7000FFFF<br/>制动应用专用"]
+        RAM_GENERAL["SRAM_General<br/>0x70010000 - 0x7001FFFF<br/>通用应用共享"]
+        RAM_DIAG["SRAM_Diag<br/>0x70020000 - 0x7002FFFF<br/>诊断应用"]
+        FLASH_CODE["Flash<br/>代码段"]
+    end
+
+    subgraph MPU_CONFIG["MPU 区域配置"]
+        REGION_BRAKE["Region 0<br/>BrakeApp<br/>R/W 权限<br/>SRAM_Brake + 部分 Flash<br/>优先级：最高"]
+        REGION_GEN["Region 1<br/>GeneralApp<br/>R/W 权限<br/>SRAM_General + 部分 Flash"]
+        REGION_DIAG["Region 2<br/>DiagApp<br/>R/W/X 权限<br/>SRAM_Diag + 全部 Flash"]
+    end
+
+    subgraph OS_APP["OS Application"]
+        TRUSTED_APP["TrustedApp<br/>无 MPU 限制<br/>系统级服务"]
+        NONTRUSTED_BRAKE["NonTrusted BrakeApp<br/>受 MPU Region 0 保护"]
+        NONTRUSTED_GEN["NonTrusted GenApp<br/>受 MPU Region 1 保护"]
+    end
+
+    TRUSTED_APP --> PHYSICAL_MEM
+    NONTRUSTED_BRAKE --> REGION_BRAKE --> RAM_BRAKE
+    NONTRUSTED_BRAKE --> REGION_BRAKE --> FLASH_CODE
+    NONTRUSTED_GEN --> REGION_GEN --> RAM_GENERAL
+    NONTRUSTED_GEN --> REGION_GEN --> FLASH_CODE
+    TRUSTED_APP --> RAM_DIAG
+
+    style PHYSICAL_MEM fill:#f5f5f5,stroke:#999
+    style MPU_CONFIG fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style OS_APP fill:#e3f2fd,stroke:#1565c0
+`} />
+
+### 11.5.3 时序保护
+
+AUTOSAR OS 还提供了 **Timing Protection**，防止一个 OS Application 的异常行为影响其他应用：
+
+| 保护机制 | 监控对象 | 作用 |
+|---|---|---|
+| **Execution Budget** | Task/ISR 的 CPU 使用时间 | 防止长时间占用 CPU |
+| **Lock Budget** | Resource 持有时间 | 防止死锁、优先级反转 |
+| **Inter-Arrival Time** | 任务/中断的最小间隔 | 防止干扰风暴 |
+| **Budget Violation** | 超预算时的 Protection Hook | 系统降级或隔离 |
+
+```c
+/* Timing Protection 配置示例 */
+TASK TaskBrakeCtrl {
+    CPU_ID = 0;
+    PRIORITY = 10;
+    SCHEDULE = FULL;
+    ACTIVATION = 1;
+    /* Timing Protection */
+    TIME_BUDGET = 5;        /* 每个周期最多 5ms */
+    LOCK_BUDGET = 0.5;      /* Resource 最多持有 0.5ms */
+    INTER_ARRIVAL_TIME = 5; /* 最小触发间隔 5ms */
+};
+
+/* Protection Hook */
+StatusType ProtectionHook(ProtectionType Protection) {
+    switch (Protection) {
+    case PROTECTION_TASK_BUDGET:
+        /* 预算超限：重启该任务或降级 */
+        RestartTaskBudget();
+        break;
+    case PROTECTION_LOCK_BUDGET:
+        /* 锁超时：释放锁并记录 */
+        ReleaseAllResources();
+        WriteDTC(DTC_TIMING_PROTECTION_LOCK);
+        break;
+    case PROTECTION_STACK_OVERFLOW:
+        /* 栈溢出：系统紧急降级 */
+        EnterSafeState();
+        break;
+    }
+    return PRO_IGNORE;
+}
+```
+
+---
+
+## 11.6 SecOC：安全板载通信
+
+### 11.6.1 SecOC 的作用
+
+SecOC（Secure On-Board Communication）在 AUTOSAR 中为车内通信提供**真实性**和**新鲜度**保护，防止：
+
+- 伪造报文注入（攻击者发送虚假制动指令）
+- 重放攻击（攻击者重放之前录制的合法报文）
+- 报文篡改（中间人修改报文内容）
+
+SecOC 的核心机制是 **CMAC（Cipher-based MAC）** 加上**新鲜度值**（Freshness Value）。
+
+### 11.6.2 SecOC 消息格式
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  PDU（原始报文）                      │
+├─────────────────────────────────────────────────────┤
+│  Data (8-64 bytes)     │   Authenticator (4-8 bytes)│
+│  [应用数据]             │   [CMAC 截断]              │
+├─────────────────────────────────────────────────────┤
+│                       +                             │
+│  Freshness Value (本地 / 全局计数器 + 时间戳)       │
+└─────────────────────────────────────────────────────┘
+```
+
+SecOC 的 AUTOSAR 集成需要与 E2E 协同使用：
+
+```
+SWC → E2E Protection → COM → SecOC → PduR → CanIf → CAN
+                                                     ↓
+SWC ← E2E Check     ← COM ← SecOC ← PduR ← CanIf ← CAN
+```
+
+---
+
+## 11.7 本章小结
+
+| 知识点 | 核心要点 |
+|---|---|
+| AUTOSAR CP 安全模块 | WdgM、E2E、DET、Fee、NvM、SecOC 六大核心 |
+| E2E Profile | 6 种 Profile，Profile 1（CRC+Counter）最常用 |
+| WdgM 三层监控 | Alive / Deadline / Internal 覆盖不同类型时序故障 |
+| Safety Island | 独立硬件安全域，覆盖主芯片监控、自检、故障反应 |
+| OS Application 隔离 | Non-Trusted 应用受 MPU 保护，Trusted 应用可全权访问 |
+| Timing Protection | Execution Budget / Lock Budget / Inter-Arrival Time |
+| MPU 配置 | 多级 Region 定义，OS Application 内存隔离 |
+| SecOC | CMAC + Freshness Value 防御伪造和重放攻击 |
+
+> **下一章预告：** 这是本课程的最后一章——我们将回顾整个 AUTOSAR OS 与功能安全的知识体系，对比商用工具链（Vector、ETAS、EB），提供功能安全认证路径建议，以及后续的学习方向（SomeIP、Adaptive AUTOSAR、SOTIF）。

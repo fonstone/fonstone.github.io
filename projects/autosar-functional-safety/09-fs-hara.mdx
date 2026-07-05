@@ -1,0 +1,400 @@
+---
+title: "危害分析与风险评估（HARA）"
+description: "HARA 方法论、SEOOI 参数评级、安全目标推导与工程实践案例"
+date: "2026-07-05"
+order: 9
+tags: ["功能安全", "ISO 26262", "HARA", "ASIL", "SEOOI", "风险评估"]
+est_time: "45 分钟"
+---
+
+## 9.1 HARA 总览
+
+### 9.1.1 HARA 在安全生命周期中的位置
+
+HARA（Hazard Analysis and Risk Assessment）位于 ISO 26262 安全生命周期的最前端，是**概念阶段**（Part 3）的核心活动。HARA 的输出直接决定了：
+
+- **哪些风险需要降低**（安全目标的 ASIL 等级）
+- **安全目标的内容**（要避免什么危害）
+- **安全开发的严格程度**（ASIL 等级决定流程严格度）
+
+如果 HARA 做错了（遗漏危害、低估 ASIL），后续所有安全工作都是在错误方向上浪费资源。
+
+### 9.1.2 HARA 完整流程
+
+<MermaidDiagram chart={`flowchart TB
+    START(["项目定义<br/>Item Definition"]) --> HAZ_ID["1. 危害识别<br/>Hazard Identification"]
+    HAZ_ID --> SIT_ID["2. 运行场景与<br/>操作模式识别"]
+    SIT_ID --> S_E_C["3. S/E/C 参数评级"]
+    S_E_C --> ASIL_CLASS["4. ASIL 等级确定"]
+    ASIL_CLASS --> SG["5. 安全目标定义"]
+    SG --> REVIEW{"6. 评审<br/>ASIL 是否合理？"}
+    REVIEW -->|否| HAZ_ID
+    REVIEW -->|是| OUTPUT["输出：HARA 报告<br/>安全目标列表"]
+
+    subgraph INPUTS["关键输入"]
+        DIR["功能概念"]
+        TECH["技术预研"]
+        FIELD["已知安全事件"]
+        REG["法规要求"]
+    end
+    INPUTS --> START
+
+    style START fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style S_E_C fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style SG fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style OUTPUT fill:#fce4ec,stroke:#c62828,stroke-width:2px
+`} />
+
+---
+
+## 9.2 危害识别
+
+### 9.2.1 什么是危害
+
+在 ISO 26262 的语境中，**危害（Hazard）**是指由系统（Item）故障行为导致的**对人员的潜在伤害**。
+
+危害必须与**运行场景**（Operating Situation）结合分析。同一种故障在不同场景下风险等级完全不同：
+
+| 故障行为 | 运行场景 | 危害 |
+|---|---|---|
+| 制动非预期失效 | 高速行驶 | 无法减速 → 碰撞 |
+| 制动非预期失效 | 停车状态 | 无危险 |
+| 转向突然失控 | 变道超车 | 偏离车道 → 碰撞 |
+| 转向突然失控 | 直线巡航（空旷） | 可控 |
+
+### 9.2.2 危害识别方法
+
+常用的危害识别方法包括：
+
+| 方法 | 适用阶段 | 说明 |
+|---|---|---|
+| **Brainstorming** | 概念阶段 | 跨职能团队头脑风暴 |
+| **Checklist-Based** | 概念阶段 | 基于过往项目经验的清单 |
+| **FMEA** | 设计阶段 | Failure Mode and Effects Analysis |
+| **FTA** | 设计阶段 | Fault Tree Analysis |
+| **HAZOP** | 概念/设计 | 参数引导式危害分析（Guide Words） |
+| **现场数据** | 持续改进 | 实际回馈的安全事件和故障案例 |
+
+### 9.2.3 危害分类
+
+汽车功能安全中的常见危害类别：
+
+| 类别 | 示例 |
+|---|---|
+| **制动类** | 非预期制动、制动助力丧失、单边制动 |
+| **转向类** | 转向锁死、非预期转向、助力丧失 |
+| **加速类** | 非预期加速、加速能力丧失 |
+| **动力总成** | 非预期扭矩输出、扭矩中断 |
+| **电气类** | 高压触电、短路起火 |
+| **感知类** | 传感器误报、漏报（ADAS 场景） |
+
+---
+
+## 9.3 S/E/C 参数评级
+
+### 9.3.1 三个参数
+
+每个危害-场景组合需要评估三个参数：
+
+| 参数 | 全称 | 定义 | 等级范围 |
+|---|---|---|---|
+| **S** | Severity | 对人员伤害的严重程度 | S0 ~ S3 |
+| **E** | Exposure | 运行场景发生的概率 | E0 ~ E4 |
+| **C** | Controllability | 驾驶员/其他人员控制危害的能力 | C0 ~ C3 |
+
+### 9.3.2 严重度（S）
+
+| 等级 | 分类 | 描述 |
+|---|---|---|
+| **S0** | 无伤害 | 没有可察觉的伤害 |
+| **S1** | 轻伤（Life-Threatening ≈ 1%） | 轻微至中等伤害，危及生命的概率 < 1% |
+| **S2** | 重伤（Life-Threatening ≈ 1-10%） | 严重至危及生命的伤害，危及生命概率 1-10% |
+| **S3** | 致命（Life-Threatening > 10%） | 危及生命或致命伤害，概率 > 10% |
+
+**注：** ISO 26262:2018 不再使用 S0（被重新定义为 "No injuries" 场景），部分企业内部仍保留 S0 用于非安全相关危害标记。
+
+**评级指导原则：**
+
+| 车辆类型 | 低速 < 30 km/h | 中速 30-80 km/h | 高速 > 80 km/h |
+|---|---|---|---|
+| 正面碰撞 | S1 | S2 | S3 |
+| 侧面碰撞 | S1 | S2 | S3 |
+| 追尾（相对速差小） | S1 | S1 | S2 |
+| 行人碰撞 | S2 | S3 | S3 |
+| 翻车 | S2 | S3 | S3 |
+
+### 9.3.3 暴露概率（E）
+
+| 等级 | 描述 | 典型频率 |
+|---|---|---|
+| **E0** | 在运行场景中不可能暴露 | < 1 次/车辆生命周期 |
+| **E1** | 极低概率暴露 | 约 1 次/年或更少 |
+| **E2** | 低概率暴露 | 约 1 次/月 |
+| **E3** | 中等概率暴露 | 几乎每次行程都会遇到 |
+| **E4** | 高概率暴露 | 每次行程都会遇到（常态） |
+
+**典型场景暴露评估：**
+
+| 运行场景 | E 等级 | 理由 |
+|---|---|---|
+| 高速公路行驶（ACC 开启） | E3 | 高频场景 |
+| 城市拥堵工况 | E4 | 每次行程都可能遇到 |
+| 夜间雨雪天气行驶 | E2 | 特定气象条件 |
+| 停车后带小孩下车 | E1 | 特定行为 |
+| 越野模式 | E1 | 低频使用 |
+
+### 9.3.4 可控性（C）
+
+| 等级 | 描述 |
+|---|---|
+| **C0** | 可控 |
+| **C1** | 简单可控——> 99% 的驾驶员或交通参与者能避免伤害 |
+| **C2** | 一般可控——> 90% 的驾驶员或交通参与者能避免伤害 |
+| **C3** | 难以控制——< 90% 的驾驶员或交通参与者能避免伤害 |
+
+**可控性评估示例：**
+
+| 故障场景 | C 等级 | 理由 |
+|---|---|---|
+| 10% 制动助力损失（渐近） | C1 | 驾驶员可感知并调整 |
+| 100% 制动助力突然丧失 | C2 | 驾驶员需较大力量踩刹车，部分驾驶员可能无法应对 |
+| 方向盘突然锁死 | C3 | 绝大多数驾驶员无法在弯道中预判和应对 |
+| 非预期加速至地板油 | C3 | 驾驶员可能误踩或无法及时切换踏板 |
+
+---
+
+## 9.4 ASIL 确定矩阵
+
+### 9.4.1 ASIL 查表
+
+计算 ASIL 等级时，需要构建一个**危害-场景组合**，然后使用以下矩阵确定 ASIL：
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph MATRIX["ASIL 确定矩阵"]
+        direction TB
+        HEADER["
+S \\\\ E \\\\ C    | C1      | C2      | C3
+-----------------|---------|---------|--------
+S1 + E1          | QM      | QM      | QM
+S1 + E2          | QM      | QM      | ASIL-A
+S1 + E3          | QM      | ASIL-A  | ASIL-B
+S1 + E4          | ASIL-A  | ASIL-B  | ASIL-C
+S2 + E1          | QM      | QM      | ASIL-A
+S2 + E2          | QM      | ASIL-A  | ASIL-B
+S2 + E3          | ASIL-A  | ASIL-B  | ASIL-C
+S2 + E4          | ASIL-B  | ASIL-C  | ASIL-D
+S3 + E1          | ASIL-A  | ASIL-B  | ASIL-C
+S3 + E2          | ASIL-A  | ASIL-B  | ASIL-C
+S3 + E3          | ASIL-B  | ASIL-C  | ASIL-D
+S3 + E4          | ASIL-C  | ASIL-D  | ASIL-D
+"
+    end
+
+    S_INPUT["输入：<br/>S=3, E=3, C=2"]
+    RESULT["输出：ASIL-C"]
+
+    S_INPUT --> MATRIX --> RESULT
+
+    style MATRIX fill:#fff3e0,stroke:#e65100,stroke-width:2px
+`} />
+
+**另一种呈现方式——表格形态：**
+
+| 严重度 S | 暴露 E | 可控性 C1 | 可控性 C2 | 可控性 C3 |
+|---|---|---|---|---|
+| S1 | E1 | QM | QM | QM |
+| S1 | E2 | QM | QM | ASIL-A |
+| S1 | E3 | QM | ASIL-A | ASIL-B |
+| S1 | E4 | ASIL-A | ASIL-B | ASIL-C |
+| S2 | E1 | QM | QM | ASIL-A |
+| S2 | E2 | QM | ASIL-A | ASIL-B |
+| S2 | E3 | ASIL-A | ASIL-B | ASIL-C |
+| S2 | E4 | ASIL-B | ASIL-C | ASIL-D |
+| S3 | E1 | ASIL-A | ASIL-B | ASIL-C |
+| S3 | E2 | ASIL-A | ASIL-B | ASIL-C |
+| S3 | E3 | ASIL-B | ASIL-C | ASIL-D |
+| S3 | E4 | ASIL-C | ASIL-D | ASIL-D |
+
+### 9.4.2 多重危害等级
+
+一个故障行为可能在不同运行场景下有多个 ASIL 等级。最终安全目标的 ASIL 取**最高等级**：
+
+```
+故障：制动助力丢失
+├── 运行场景：高速公路行驶 → S3, E3, C2 → ASIL-C
+├── 运行场景：城市拥堵 → S2, E4, C2 → ASIL-C
+├── 运行场景：停车 → S0, E4, C0 → QM
+└── 运行场景：雨天湿滑 → S3, E2, C3 → ASIL-C
+                        最终安全目标 ASIL = max(ASIL-C, ASIL-C, QM, ASIL-C) = ASIL-C
+```
+
+---
+
+## 9.5 安全目标推导
+
+### 9.5.1 安全目标的定义
+
+安全目标（Safety Goal）是顶层安全要求，每个安全目标对应一个危害，格式为：
+
+```
+SG-XX：<危害/故障>不得导致<后果>，在<场景/条件>下，ASIL <X>
+```
+
+### 9.5.2 安全目标示例
+
+| 编号 | 安全目标 | 对应危害 | ASIL |
+|---|---|---|---|
+| SG-01 | 制动系统非预期失效不得导致碰撞 | 制动失效 | ASIL-D |
+| SG-02 | 转向系统非预期转向不得导致偏离车道 | 非预期转向 | ASIL-D |
+| SG-03 | 加速系统非预期加速不得导致碰撞 | 非预期加速 | ASIL-C |
+| SG-04 | 车载高压系统不得导致电击 | 高压触电 | ASIL-C |
+| SG-05 | ADAS 传感器错误检测不得导致非预期制动 | 误制动 | ASIL-B |
+
+### 9.5.3 安全目标的安全状态
+
+每个安全目标必须定义对应的**安全状态**（Safe State）：
+
+```c
+/* 安全目标 SG-01：制动失效 */
+typedef enum {
+    SAFE_STATE_NORMAL,          /* 正常操作 */
+    SAFE_STATE_LIMITED_BRAKE,   /* 限制模式：最大制动减速度 0.3g */
+    SAFE_STATE_EMERGENCY_BRAKE, /* 紧急模式：使用 ESP 液压泵 */
+    SAFE_STATE_SAFE_SHUTDOWN    /* 安全关断：继电器断开 */
+} SafeStateType;
+
+/* 故障响应逻辑（伪代码） */
+void SafetyMechanism_BrakeMonitor(void) {
+    if (FaultDetected()) {
+        EnterSafeState(SAFE_STATE_LIMITED_BRAKE);
+        /* 驾驶员警示 */
+        ActivateWarningLight();
+        /* 记录 DTC */
+        WriteDTC(DTC_BRAKE_SYSTEM_FAULT);
+    }
+}
+```
+
+---
+
+## 9.6 工程实战：ACC HARA 案例分析
+
+### 9.6.1 系统定义
+
+**功能：** 自适应巡航控制（Adaptive Cruise Control, ACC），可在 30-200 km/h 范围内自动保持与前车的安全距离。
+
+**系统边界：**
+
+- 输入：雷达传感器、车速传感器、驾驶员设置
+- 输出：发动机/电机的扭矩请求、制动系统的制动请求
+- 人机界面：ACC 开关、设置/恢复按键、仪表盘显示
+
+### 9.6.2 HARA 分析表
+
+| 编号 | 危害 | 运行场景 | S | E | C | ASIL | 安全目标 |
+|---|---|---|---|---|---|---|---|
+| H-01 | ACC 非预期加速至最大 | 高速巡航，前车正常行驶 | 3 | 3 | 2 | **ASIL-C** | SG-01：ACC 非预期加速不得导致追尾 |
+| H-02 | ACC 非预期制动 | 高速巡航，后车接近 | 3 | 3 | 2 | **ASIL-C** | SG-02：ACC 非预期减速不得导致被追尾 |
+| H-03 | ACC 丢失目标车辆 | 前车减速，ACC 无反应 | 3 | 3 | 3 | **ASIL-D** | SG-03：ACC 目标丢失后必须在 300ms 内发出驾驶员接管请求 |
+| H-04 | ACC 错误目标关联（目标锁定隔壁车道） | 路口多车场景 | 3 | 2 | 2 | **ASIL-B** | SG-04：ACC 目标关联错误不得导致非预期加减速 |
+| H-05 | ACC 传感器数据冻结（雷达冻结） | 高速行驶，前车刹车 | 3 | 2 | 3 | **ASIL-C** | SG-05：雷达数据冻结必须在 50ms 内被检测并触发安全行为 |
+
+### 9.6.3 H-03 详细分析
+
+以 H-03（目标丢失）为例，展示完整的分析路径：
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph HAZARD["危害：目标丢失"]
+        H_DESC["ACC 系统突然丢失前车目标<br/>（t＞500ms 仍无检测）"]
+    end
+
+    subgraph SCENE["运行场景"]
+        S_DESC["高速（100km/h）<br/>前车急刹车（-0.6g）<br/>三车道，本车在中道"]
+    end
+
+    subgraph RATING["参数评级"]
+        S_H03["S=3<br/>碰撞速度差 > 40km/h<br/>严重伤害概率 > 50%"]
+        E_H03["E=3<br/>高速巡航为中等频率场景"]
+        C_H03["C=3<br/>驾驶员 < 90% 能及时反应<br/>（反应时间 < 300ms 极短）"]
+    end
+
+    subgraph ASIL_RESULT["ASIL"]
+        ASIL_H03["S3 + E3 + C3 = ASIL-D"]
+    end
+
+    subgraph SG_OUT["安全目标"]
+        SG03["SG-03：ACC 目标丢失后<br/>必须在 300ms 内<br/>发出驾驶员接管请求<br/>ASIL-D"]
+    end
+
+    HAZARD --> SCENE --> RATING --> ASIL_RESULT --> SG_OUT
+
+    style HAZARD fill:#ffcdd2,stroke:#c62828
+    style SG_OUT fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style ASIL_RESULT fill:#fff3e0,stroke:#e65100
+`} />
+
+### 9.6.4 HARA 输出
+
+```c
+/* HARA 报告节选 — 安全目标定义 */
+#define ACC_TIMEOUT_THRESHOLD_MS  300U
+#define ACC_TAKEOVER_REQUEST_DID  0xF190
+
+/* SG-03：ACC 目标丢失后必须在 300ms 内发出驾驶员接管请求 */
+/* ASIL-D */
+void SG03_TakeoverRequest_Check(void) {
+    static uint32 last_target_detected_ms;
+    uint32 current_ms = GetSystemTickMs();
+
+    if (ACC_TargetLost()) {
+        if ((current_ms - last_target_detected_ms) > ACC_TIMEOUT_THRESHOLD_MS) {
+            /* 发出接管请求 */
+            InstrumentCluster_SendSignal(ACC_TAKEOVER_REQUEST_DID, TAKE_OVER_NOW);
+            /* 激活降级模式 */
+            ACC_SetDegradedMode(DEGRADE_COASTING);
+            /* 记录安全事件 */
+            SafetyLogger_LogEvent(SAFE_EV_ACC_TARGET_LOST_TIMEOUT);
+        }
+    } else {
+        last_target_detected_ms = current_ms;
+    }
+}
+```
+
+---
+
+## 9.7 HARA 常见问题
+
+| 问题 | 说明 |
+|---|---|
+| **遗漏危害** | 团队经验不足或场景覆盖不全，导致安全目标不完整 |
+| **S/E/C 评级偏乐观** | 人为降低 ASIL 等级以减少开发成本，这是红旗（Red Flag）行为 |
+| **过高的 ASIL** | 评级偏保守导致不合理的开发成本，需要在工程上权衡 |
+| **场景与危害分离** | 必须组合分析：同一故障在不同场景下 ASIL 不同 |
+| **忽略复合故障** | HARA 通常在"单一故障"假设下进行，但复合故障场景也需要识别 |
+| **安全目标可验证性差** | SG 应具体、可测，避免模糊描述 |
+
+### 9.7.1 ASIL 的合理权衡
+
+如果 HARA 给出的 ASIL 等级过高导致难以工程实现，可以考虑：
+
+1. **修改系统设计**：增加安全机制，降低 C 等级（提高可控性）
+2. **修改运行场景**：限制功能使用范围（例如 ACC 仅在高速开启）
+3. **ASIL 分解**：将一个高 ASIL 要求分解为两个独立的低 ASIL 要求（下章详细讨论）
+
+---
+
+## 9.8 本章小结
+
+| 知识点 | 核心要点 |
+|---|---|
+| HARA 定位 | 概念阶段核心活动，决定安全目标与 ASIL |
+| 危害识别 | 系统故障行为 + 运行场景 → 危害 |
+| S 参数 | 严重度 S0~S3，基于伤害程度 |
+| E 参数 | 暴露概率 E0~E4，基于场景发生频率 |
+| C 参数 | 可控性 C0~C3，基于驾驶员反应能力 |
+| ASIL 矩阵 | S + E + C → ASIL QM / A / B / C / D |
+| 安全目标 | 每个危害对应一个 SG，取最高 ASIL |
+| ACC 案例 | 从雷达传感器到制动的全链路 HARA 分析 |
+
+> **下一章预告：** 我们将深入 ASIL 分解的机制与安全模式——如何将一个 ASIL-D 要求分解为两个 ASIL-B(D) 要求？常见的冗余架构模式（1oo1、1oo2、2oo2、2oo3）如何选择？安全机制如何分类和设计？

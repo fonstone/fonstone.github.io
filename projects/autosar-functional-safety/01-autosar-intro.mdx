@@ -1,0 +1,231 @@
+---
+title: "基于 ERIKA v3 与 TC38x 深入理解 AUTOSAR OS（一）：引言与架构全景"
+description: "从 OSEK/VDX 到 AUTOSAR OS 规范演进，ERIKA v3 + TC38x 平台全景，多核架构映射与调度器双模式解析。"
+date: "2026-05-23"
+order: 1
+tags: ["AUTOSAR", "OSEK", "ERIKA3", "TriCore", "TC38x", "架构", "多核"]
+est_time: "45 分钟"
+---
+
+## 1 引言
+
+### 1.1 从 OSEK/VDX 到 AUTOSAR OS：规范的脉络
+
+汽车电子实时操作系统的标准化，始于 1993 年德国汽车工业联合会（VDA）推动的 **OSEK/VDX** 项目。OSEK（*Offene Systeme und deren Schnittstellen für die Elektronik in Kraftfahrzeugen*）定义了一套面向车身与动力总成 ECUs 的实时操作系统规范，其核心贡献包括：
+
+- **任务调度模型**：优先级抢占与 non-preemptive 调度，支持基本任务（Basic Task）与扩展任务（Extended Task）；
+- **符合类（Conformance Class）**：BCC1/BCC2/ECC1/ECC2 四级，允许厂商按需裁剪；
+- **事件、资源、报警器、计数器** 等核心 OS 对象的完整语义；
+- **OSEK OIL**（Implementation Language）：以声明式配置描述 OS 实例。
+
+2003 年成立的 **AUTOSAR**（AUTomotive Open System ARchitecture）联盟并未重起炉灶，而是将 OSEK OS 规范作为 **AUTOSAR OS** 的基础并在其上做了关键扩展：
+
+| 维度 | OSEK/VDX OS | AUTOSAR OS（R4.x 起） |
+|---|---|---|
+| 核数模型 | 单核 | 多核（Multicore），每核一个 OS Application |
+| 调度策略 | 固定优先级，就绪队列单核 | 分区调度（Partitioned）+ 全局调度（Global，允许任务迁移） |
+| 同步原语 | Resource（优先级天花板协议） | Resource + Spinlock（多核自旋锁） |
+| 启动/关机 | `StartOS()` / `ShutdownOS()` | `StartCore()` / `StartNonAutosarCore()` / `ShutdownAllCores()` |
+| 内存保护 | 无（可选 MPU 章节） | OS Application 隔离、Memory Mapping 宏 |
+| 调度表 | 无 | Schedule Table（绝对/相对/同步） |
+| 动态创建 | 无 | `CreateTask()` / `DestroyTask()` 等动态 API |
+
+简言之，**AUTOSAR OS = OSEK OS 内核 + 多核支持 + 自旋锁 + 调度表 + OS Application 隔离 + 动态 API**。熟悉 OSEK 的工程师掌握了内核对象的基本语义后，只需理解多核扩展即可过渡到 AUTOSAR OS。
+
+### 1.2 为什么是 ERIKA Enterprise v3
+
+ERIKA Enterprise v3 是由意大利 Evidence Srl 开发的开源 RTOS，项目地址：[https://github.com/wentasah/erika3-tc38x](https://github.com/wentasah/erika3-tc38x)（本文分析基于此 TC38x 移植分支）。它是我们研究 AUTOSAR OS 的绝佳载体，原因有三：
+
+**第一，API 完整度高。** `ee_oo_api_osek.c` 实现了完整的 OSEK API（`ActivateTask`、`SetEvent`、`GetResource` 等），`ee_oo_api_extension.c` 实现了 AUTOSAR OS 扩展（`GetSpinlock`、`StartCore`、`ShutdownAllCores`、Schedule Table 全族 API），`ee_oo_api_dynamic.c` 实现了动态 API。三者完整覆盖了 AUTOSAR OS 规范定义的系统服务接口。
+
+**第二，多核架构透明。** 内核数据结构清晰分离为：**KDB/KCB**（全局、闪存/RAM）、**CDB/CCB**（每核、闪存/RAM）、**TDB/TCB**（每任务，闪存/RAM）。分区与全局两组调度器（`ee_oo_sched_partitioned.c` vs `ee_oo_sched_global.c`）分别通过 `OSEE_SCHEDULER_PARTITIONED` 与 `OSEE_SCHEDULER_GLOBAL` 编译期切换，使得多核机制的实现路径一目了然。
+
+**第三，可读性强、硬件真实。** 与商业 AUTOSAR OS（如 EB tresos、DaVinci）黑盒交付不同，ERIKA v3 以 GPL 双许可开源，代码风格清晰。同时它有针对 AURIX TriCore 的完整移植，包含启动、上下文切换、中断向量表等底层代码，让读者能够从硬件到调度全栈贯通。
+
+---
+
+## 2 架构全景
+
+### 2.1 英飞凌 AURIX TC38x 硬件特性
+
+TC38x 是英飞凌 AURIX Generation 2（2G）系列的中高端成员，典型型号 **TC387** 具备以下核心特征：
+
+**多核 TriCore 架构。** TC387 集成了 **6 个 TriCore 1.6E+ / 1.6P+ 内核**（Core0~Core4、Core6）+ **1 个 HSM（Hardware Security Module）核心**（Core5，独立安全子系统中运行，主 OS 不可调度）：
+
+| 核心 | 架构 | 典型角色 |
+|---|---|---|
+| Core0 | TriCore 1.6E+ | 主核，Boot Core，运行 OS 主实例 |
+| Core1~Core3 | TriCore 1.6E+ | 从核，运行 OS 从实例 |
+| Core4 | TriCore 1.6P+ | 性能核（Performance），可运行计算密集型任务 |
+| Core5 | HSM（ARM SecurE） | 安全核心，OS 不可见，跳过 |
+| Core6 | TriCore 1.6P+ | 性能核，辅助计算 |
+
+> 注意 Core5 的编号保留给 HSM，这是 AURIX 2G 平台的硬件设计约定。ERIKA v3 的启动代码中可见如下注释：`/* Numeric ID 5 is took by HSM core, how lame :(. */`，显式跳过 Core5。
+
+**CSA（Context Save Area）机制。** TriCore 架构定义了硬件级别的上下文保存区（CSA），以链表形式管理上下文帧。每个上下文帧为 16 字（64 字节），包含 16 个通用寄存器（D0~D15）和 16 个地址寄存器（A0~A15，含返回地址 A11、栈指针 A10）以及 PCXI、PSW 等系统寄存器。ERIKA v3 在 `ee_tc_cstart.c` 中为每核初始化独立的 CSA free list：
+
+```c
+/* Core 0 启动代码片段（简化） */
+osEE_tc_init_csfr();
+osEE_tc_init_csa((osEE_addr)__CSA0_BEGIN, (osEE_addr)__CSA0_END);
+```
+
+`FCX`（Free Context Index）和 `LCX`（Last Context Index）CSFR 寄存器指向 CSA 链表头尾，上下文切换由硬件自动压栈/出栈，效率极高。
+
+**CSFR（Core Special Function Register）。** 每核独立拥有 CSFR 寄存器组，包括 `CORE_ID`（核心编号）、`PSW`（程序状态字）、`BTV`（Trap 向量表基址）、`BIV`（中断向量表基址）、`ISP`（中断栈指针）等。ERIKA v3 通过 `osEE_tc_get_csfr()` / `osEE_tc_set_csfr()` 内联函数访问这些寄存器。
+
+**原子指令。** TriCore 提供 `CMPMSK.W`、`CMPBMSK.W`、`LDMST`（Load/Modify/Store）及 `CMP.SWAP.W`（Compare-and-Swap）等原子操作指令。ERIKA v3 的多核自旋锁即基于 `CMP.SWAP.W`（`osEE_tc_cmpswapw()`）实现，无需额外的硬件互斥外设。
+
+### 2.2 ERIKA v3 在 TC38x 上的多核架构映射
+
+ERIKA v3 的多核映射可概括为 **"一核一 OS 实例、共享内核映像"** 的分区模型：
+
+**OS 实例模型。** 每个 Core 拥有独立的 **CDB/CCB**（Core Descriptor/Control Block），其中 CDB 驻留 Flash、CCB 驻留 RAM。全局共享唯一 **KDB/KCB**。启动时，Core0 通过 `StartCore()` 逐个唤醒从核，各核在各自的 `main()` 入口完成 CCB 初始化并进入调度。
+
+**OIL 配置映射。** OIL 文件中的每个 `CPU_DATA = TRICORE { ID = N; }` 块对应一个 Core 的 CDB/CCB 对象。`CPU_ID` 属性将 Task、Counter、Alarm 绑定到指定 Core。编译时，RT-Druid（ERIKA 的 OIL 代码生成器）为每个 Core 生成独立的启动代码和中断向量表。
+
+**启动流程。** Core0 是 Boot Core，执行 `osEE_tc_core0_start()`：初始化 PLL/时钟、清 ENDINIT 保护、配置 CSFR 寄存器、初始化 CSA free list、调用 C 运行时初始化，最终进入 `main()`。在 `main()` 中调用 `StartCore()` 唤醒从核。各从核执行 `osEE_tc_coreN_start()`：设置私有栈指针、Trap 表、中断向量表、CSA，重要的一点——将 A9 寄存器置为 `&osEE_cdb_var_coreN` 的地址，此后该核通过 A9 寄存器常量即可 O(1) 获取当前核的 CDB 指针。所有核完成后，通过 `OSEE_barrier` 同步屏障（`ar_core_mask` 位掩码机制）进行启动同步。
+
+**核间通信。** 采用 **核间中断（Inter-Core Interrupt）** 机制：当 Core A 激活 Core B 上的 Task 或设置 Core B 上的 Event 时，ERIKA v3 向 Core B 发送一个中断优先级为 1 的 ISR2。Core B 响应该中断后，在自己的调度上下文中完成 Task 激活或 Event 设置。这种设计避免了共享就绪队列上的总线争用。
+
+**调度器双模式。**
+
+- **分区调度（Partitioned）**：`ee_oo_sched_partitioned.c`，每核拥有独立就绪队列（位于 CCB 中），Task 严格绑定到配置时指定的 Core，不可迁移。这是 AUTOSAR OS 规范的标准模型。性能好、可预测性强。
+- **全局调度（Global）**：`ee_oo_sched_global.c`，所有核共享一个全局就绪队列（位于 KCB 中），由自旋锁保护，Task 可在核间迁移。由 `OSEE_ALLOW_TASK_MIGRATION` 宏启用，适用于负载均衡场景，但额外锁开销需权衡。
+
+### 2.3 多核软件架构图
+
+下图展示了 ERIKA v3 在 TC38x 上的多核软件架构，从硬件 Core 到 OS 实例、OIL 配置、以及 Tasks 之间的关系：
+
+<MermaidDiagram chart={`graph TB
+    subgraph HW["硬件层 — AURIX TC387"]
+        direction LR
+        C0["Core0<br/>TriCore 1.6E+<br/>(Boot Core)"]
+        C1["Core1<br/>TriCore 1.6E+"]
+        C2["Core2<br/>TriCore 1.6E+"]
+        C3["Core3<br/>TriCore 1.6E+"]
+        C4["Core4<br/>TriCore 1.6P+"]
+        C5["Core5<br/>HSM<br/>(OS 不可见)"]
+        C6["Core6<br/>TriCore 1.6P+"]
+    end
+
+    subgraph CSA["CSA 硬件上下文区"]
+        CSA0["CSA0<br/>Core0 上下文链表"]
+        CSA1["CSA1"]
+        CSA2["CSA2"]
+        CSA3["CSA3"]
+        CSA4["CSA4"]
+        CSA6["CSA6"]
+    end
+
+    subgraph OS["ERIKA v3 OS 实例层"]
+        direction TB
+        KDB_FLASH["KDB<br/>(内核描述块·Flash)<br/>全局 Task/Resource/Alarm/<br/>Spinlock/SchedTable 表"]
+        KCB_RAM["KCB<br/>(内核控制块·RAM)<br/>全局就绪队列 · 启动屏障 · 关机同步"]
+        
+        subgraph CORE0_INST["Core0 OS 实例"]
+            CDB0["CDB₀<br/>(Core0 描述块)"]
+            CCB0["CCB₀<br/>(Core0 控制块)<br/>就绪队列 · 当前Task · 调度节点栈"]
+        end
+        subgraph CORE1_INST["Core1 OS 实例"]
+            CDB1["CDB₁"]
+            CCB1["CCB₁<br/>就绪队列 · 调度节点栈"]
+        end
+        subgraph CORE2_INST["Core2 OS 实例"]
+            CDB2["CDB₂"]
+            CCB2["CCB₂"]
+        end
+        subgraph CORE3_INST["Core3 OS 实例"]
+            CDB3["CDB₃"]
+            CCB3["CCB₃"]
+        end
+    end
+
+    subgraph OIL_CFG["OIL 配置层"]
+        OIL0["CPU_DATA ID=0x0<br/>CPU_CLOCK=200MHz<br/>IDLEHOOK=idle_hook_core0"]
+        OIL1["CPU_DATA ID=0x1<br/>MULTI_STACK=TRUE<br/>IDLEHOOK=idle_hook_core1"]
+        OIL2["CPU_DATA ID=0x2<br/>IDLEHOOK=idle_hook_core2"]
+        OIL3["CPU_DATA ID=0x3<br/>IDLEHOOK=idle_hook_core3"]
+        OIL_TASKS["TASK 定义<br/>TaskMaster → CPU_ID=0<br/>TaskSlave1 → CPU_ID=1<br/>TaskSlave2 → CPU_ID=2<br/>TaskSlave3 → CPU_ID=3"]
+        OIL_ALARM["ALARM / COUNTER<br/>system_timer_master → CPU_ID=0<br/>system_timer_slave2 → CPU_ID=2"]
+        OIL_MCU["MCU_DATA = TC39X<br/>DERIVATIVE = tc397xe<br/>(兼容 TC38X)"]
+    end
+
+    subgraph SCHED["调度器"]
+        PART["分区调度<br/>Partitioned<br/>每核独立就绪队列"]
+        GLOB["全局调度<br/>Global<br/>共享就绪队列 + Spinlock"]
+    end
+
+    subgraph IPC["核间通信"]
+        ICI0["ISR2 Pri=1<br/>Core0 ICI"]
+        ICI1["ISR2 Pri=1<br/>Core1 ICI"]
+        ICI2["ISR2 Pri=1<br/>Core2 ICI"]
+        ICI3["ISR2 Pri=1<br/>Core3 ICI"]
+        SPINLOCK["Spinlock<br/>cmpswap.w 原子指令"]
+    end
+
+    C0 --> CSA0
+    C1 --> CSA1
+    C2 --> CSA2
+    C3 --> CSA3
+    C4 --> CSA4
+    C6 --> CSA6
+
+    CDB0 --> KDB_FLASH
+    CDB1 --> KDB_FLASH
+    CDB2 --> KDB_FLASH
+    CDB3 --> KDB_FLASH
+    CCB0 --> KCB_RAM
+    CCB1 --> KCB_RAM
+    CCB2 --> KCB_RAM
+    CCB3 --> KCB_RAM
+
+    C0 -.-> CDB0
+    C0 -.-> CCB0
+    C1 -.-> CDB1
+    C1 -.-> CCB1
+    C2 -.-> CDB2
+    C2 -.-> CCB2
+    C3 -.-> CDB3
+    C3 -.-> CCB3
+
+    OIL0 --> CDB0
+    OIL1 --> CDB1
+    OIL2 --> CDB2
+    OIL3 --> CDB3
+    OIL_TASKS --> KDB_FLASH
+    OIL_ALARM --> KDB_FLASH
+
+    PART --> CCB0
+    PART --> CCB1
+    PART --> CCB2
+    PART --> CCB3
+    GLOB --> KCB_RAM
+
+    ICI0 -.-> C0
+    ICI1 -.-> C1
+    ICI2 -.-> C2
+    ICI3 -.-> C3
+    SPINLOCK -.-> GLOB
+
+    style HW fill:#e8f4f8,stroke:#2c7fb8,stroke-width:2px
+    style CSA fill:#f0f0f0,stroke:#666
+    style OS fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style OIL_CFG fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style SCHED fill:#fce4ec,stroke:#c62828,stroke-width:2px
+    style IPC fill:#ede7f6,stroke:#4527a0,stroke-width:2px
+`} />
+
+上图揭示了 ERIKA v3 多核架构的几层关键映射关系：
+
+1. **OIL → OS 数据结构**：每个 `CPU_DATA` 块生成一个 CDB/CCB 对；`TASK` 的 `CPU_ID` 属性写入 `TDB.orig_core_id`；`COUNTER`/`ALARM` 的 `CPU_ID` 写入对应数据结构的 `core_id` 字段。
+
+2. **硬件 Core → OS 实例**：Core0 作为 Boot Core，在 `osEE_tc_core0_start()` 中完成系统级初始化后调用 `StartCore()` 唤醒从核。从核启动时将自身 CDB 地址写入 A9 寄存器（`&osEE_cdb_var_coreN`），使得 `osEE_get_curr_core()` 可以 O(1) 返回当前核信息。
+
+3. **核间通信路径**：跨核 `ActivateTask` / `SetEvent` 通过核间中断（ISR2 优先级 1）通知目标核，目标核在中断服务例程中完成实际调度操作。全局调度模式下额外依赖 `cmpswap.w` 自旋锁保护共享就绪队列。
+
+4. **CSA 与上下文切换**：每核独立初始化 CSA free list，硬件自动在 `CALL`/`RET`/中断进入时压栈上下文帧，ERIKA v3 仅在任务调度层面做软件层面的优先级就绪队列管理，底层上下文保存/恢复由 TriCore 硬件完成，效率极高。
+
+---
+
+> **下期预告：** 第二章将深入剖析 ERIKA v3 内核数据结构——KDB/KCB、CDB/CCB、TDB/TCB 的内存布局与生命周期管理，以及 OIL 配置到 C 代码的完整代码生成链路。

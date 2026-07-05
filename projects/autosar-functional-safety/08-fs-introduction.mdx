@@ -1,0 +1,362 @@
+---
+title: "功能安全入门与 ISO 26262 标准"
+description: "功能安全的基本概念、ISO 26262 标准体系架构、ASIL 等级定义与功能安全生命周期"
+date: "2026-07-05"
+order: 8
+tags: ["功能安全", "ISO 26262", "ASIL", "功能安全生命周期", "SIL"]
+est_time: "40 分钟"
+---
+
+## 8.1 什么是功能安全
+
+### 8.1.1 安全的定义
+
+功能安全（Functional Safety）并非汽车行业独有，其根源可追溯到 IEC 61508（国际电工委员会制定的通用功能安全标准）。**功能安全的核心定义是：**
+
+> 不存在由电气/电子系统功能性行为引起的不可接受风险。
+
+换言之，当系统出现电气或电子故障时，它必须**安全地失效**（Fail Safe），而非导致危害。这与"质量"是不同的概念——质量关乎产品是否按设计工作，安全关乎产品故障时是否会伤害人。
+
+### 8.1.2 为什么汽车需要功能安全
+
+现代汽车已从纯机械系统演变为**软件定义的电子系统**。一辆高端汽车包含超过 100 个 ECUs、上亿行代码，控制着转向、制动、动力总成等安全关键功能：
+
+| 系统 | 功能安全相关？ | 潜在危害 |
+|---|---|---|
+| 制动系统（ABS/ESP） | 是 | 制动失效 → 碰撞 |
+| 转向系统（EPS） | 是 | 转向失控 → 碰撞 |
+| 自动驾驶系统（ADAS/AD） | 是 | 感知/决策错误 → 碰撞 |
+| 动力总成（发动机/电机控制） | 是 | 非预期加速 |
+| 信息娱乐系统 | 否（QM） | 无直接人身伤害 |
+| 车窗/车门控制 | 否（QM） | 夹伤（需评估） |
+
+ISO 26262 正是在这一背景下诞生的——它是专门针对**道路车辆**的功能安全国际标准。
+
+---
+
+## 8.2 ISO 26262 标准体系
+
+### 8.2.1 标准的演进
+
+ISO 26262 第一版于 **2011 年**发布，覆盖车辆总重不超过 3.5 吨的乘用车。第二版于 **2018 年**发布，显著扩展了范围：
+
+| 方面 | ISO 26262:2011（第一版） | ISO 26262:2018（第二版） |
+|---|---|---|
+| 适用范围 | 乘用车 ≤ 3.5 吨 | 所有道路车辆（含卡车、巴士、摩托车） |
+| 半导体指南 | 无 | 新增 Part 11：半导体指南 |
+| 软件工具信赖度 | 笼统 | 新增 Part 8：软件工具置信度 |
+| ASIL 分解 | 已支持 | 更加明确 |
+| 自动驾驶 | 未涉及 | 新增 Part 12：摩托 + SOTIF 参考 |
+
+### 8.2.2 标准架构（Parts 1-12）
+
+ISO 26262:2018 共分为 **12 个部分**，涵盖从概念到退役的全生命周期：
+
+<MermaidDiagram chart={`graph TB
+    subgraph LEGEND["图例说明"]
+        L1["1-9 = 规范性内容"]
+        L2["10-12 = 支持性内容"]
+    end
+
+    subgraph PART1["Part 1<br/>词汇表"]
+        V1["定义各部分的<br/>统一术语"]
+    end
+
+    subgraph CONCEPT["概念与系统级"]
+        P3["Part 3<br/>概念阶段<br/>HARA · 安全目标 · ASIL"]
+        P4["Part 4<br/>产品开发：系统级<br/>技术安全概念 · 集成测试"]
+    end
+
+    subgraph HW_SW["硬件与软件"]
+        P5["Part 5<br/>产品开发：硬件级<br/>硬件设计 · FMEDA · 随机失效"]
+        P6["Part 6<br/>产品开发：软件级<br/>软件架构 · 单元测试 · 覆盖率"]
+    end
+
+    subgraph PROD_OPS["生产与运营"]
+        P7["Part 7<br/>生产、运行、服务<br/>报废"]
+    end
+
+    subgraph SUPPORT["支持流程"]
+        P8["Part 8<br/>支持流程<br/>配置管理 · 变更管理 · 工具<br/>分布式开发 · 安全案例 · 确认措施"]
+    end
+
+    subgraph ASIL_DECOMP["ASIL 导向与分析"]
+        P9["Part 9<br/>ASIL 导向和安全分析<br/>ASIL 分解 · 故障树 · FMEA"]
+    end
+
+    subgraph GUIDES["指南类"]
+        P10["Part 10<br/>ISO 26262 指南"]
+        P11["Part 11<br/>半导体指南<br/>数字/模拟/PLD"]
+        P12["Part 12<br/>摩托车适用性"]
+    end
+
+    P3 --> P4 --> P5
+    P3 --> P4 --> P6
+    P5 --> P7
+    P6 --> P7
+    P8 --> P3
+    P8 --> P4
+    P8 --> P5
+    P8 --> P6
+    P9 --> P5
+    P9 --> P6
+
+    style CONCEPT fill:#e3f2fd,stroke:#1565c0
+    style HW_SW fill:#e8f5e9,stroke:#2e7d32
+    style PROD_OPS fill:#fff3e0,stroke:#e65100
+    style SUPPORT fill:#f3e5f5,stroke:#6a1b9a
+    style ASIL_DECOMP fill:#fce4ec,stroke:#c62828
+    style GUIDES fill:#efebe9,stroke:#4e342e
+    style LEGEND fill:#f5f5f5,stroke:#999
+`} />
+
+各部分的核心关注点：
+
+| 部分 | 标题 | 核心内容 |
+|---|---|---|
+| Part 1 | 词汇表 | 定义的统一术语（如 ASIL、功能安全、安全机制） |
+| Part 2 | 安全管理 | 安全文化、组织责任、安全计划、分布式开发管理 |
+| Part 3 | 概念阶段 | 项目定义、HARA、ASIL 定级、安全目标 |
+| Part 4 | 系统级开发 | 技术安全概念、系统架构、集成与测试 |
+| Part 5 | 硬件级开发 | 硬件设计、FMEDA、随机硬件失效量化 |
+| Part 6 | 软件级开发 | 软件架构、单元/集成测试、软件验证 |
+| Part 7 | 生产与运行 | 生产、运行、服务、报废阶段的安全要求 |
+| Part 8 | 支持流程 | 配置/变更管理、工具可信度、安全案例 |
+| Part 9 | ASIL 导向分析 | ASIL 分解、FTA、FMEA、故障分析 |
+| Part 10 | 指南 | 对 Parts 1-9 的解释性指南 |
+| Part 11 | 半导体指南 | 数字/模拟/PLD 半导体的功能安全应用 |
+| Part 12 | 摩托车指南 | ISO 26262 在摩托车上的适配 |
+
+---
+
+## 8.3 功能安全生命周期
+
+### 8.3.1 生命周期概览
+
+ISO 26262 定义了一个结构化的**安全生命周期**，覆盖从项目启动到退役的每个阶段：
+
+<MermaidDiagram chart={`flowchart TB
+    START(["项目启动"]) --> SAF_PLAN["2-5 安全计划<br/>安全生命周期定义"]
+    SAF_PLAN --> INIT["2-6 安全活动启动<br/>安全文化 · 组织"]
+    
+    subgraph CONCEPT_PHASE["概念阶段（Part 3）"]
+        direction TB
+        ITEM["3-5 项目定义<br/>Item Definition"]
+        HARA["3-7 危害分析与风险评估<br/>HARA"]
+        SG["3-8 安全目标<br/>Safety Goals"]
+    end
+    INIT --> ITEM --> HARA --> SG
+
+    subgraph SYS_DEV["系统开发（Part 4）"]
+        TSC["4-6 技术安全概念<br/>TSC"]
+        SYS_INT["4-7/8 系统集成与测试"]
+        SAF_VAL["4-9 安全确认<br/>Safe Validation"]
+    end
+    SG --> TSC --> SYS_INT --> SAF_VAL
+
+    subgraph HW_DEV["硬件开发（Part 5）"]
+        HW_SPEC["5-6 硬件设计规格"]
+        HW_ARCH["5-7 硬件架构<br/>FMEDA · 失效率"]
+        HW_INT["5-8/9 硬件集成与评估"]
+    end
+    TSC --> HW_SPEC --> HW_ARCH --> HW_INT
+
+    subgraph SW_DEV["软件开发（Part 6）"]
+        SW_SPEC["6-6 软件需求规格"]
+        SW_ARCH["6-7 软件架构设计"]
+        SW_UNIT["6-8/9 软件单元设计与实现"]
+        SW_TEST["6-10/11 单元/集成测试"]
+    end
+    TSC --> SW_SPEC --> SW_ARCH --> SW_UNIT --> SW_TEST
+
+    HW_INT --> INTEG["4-7 系统集成<br/>硬件+软件+系统"]
+    SW_TEST --> INTEG
+    INTEG --> SAF_VAL
+
+    SAF_VAL --> REL["7-5 发布"]
+    REL --> OPS["7-6 运行与维护"]
+    OPS --> END(["7-7 退役"])
+
+    style CONCEPT_PHASE fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style SYS_DEV fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style HW_DEV fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style SW_DEV fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+`} />
+
+### 8.3.2 安全管理
+
+安全的实现靠的不是一两个安全工程师，而是**组织级的安全文化**。Part 2 安全管理要求：
+
+- **安全文化**：建立从管理层到开发者的安全意识，鼓励上报安全问题
+- **安全计划**：项目级的安全计划，明确活动、交付物、责任人
+- **安全案例**（Safety Case）：论证系统/产品为何达到功能安全的证据集合
+- **确认措施**（Confirmation Measures）：由独立人员执行的评审、审核和评估
+- **分布式开发**：确保供应商也遵守 ISO 26262 要求
+
+---
+
+## 8.4 ASIL 等级定义
+
+### 8.4.1 ASIL 是什么
+
+**ASIL**（Automotive Safety Integrity Level）是 ISO 26262 定义的风险等级体系，分为 **A、B、C、D** 四个等级，其中：
+
+| 等级 | 风险程度 | 典型系统 |
+|---|---|---|
+| **QM** | 质量即可（无安全要求） | 信息娱乐、车窗控制 |
+| **ASIL-A** | 最低安全完整性 | 大灯调节（某些场景） |
+| **ASIL-B** | 中等安全完整性 | 雨刮控制、座椅位置记忆 |
+| **ASIL-C** | 较高安全完整性 | 自适应巡航（部分场景） |
+| **ASIL-D** | 最高安全完整性 | 电子制动、转向、安全气囊 |
+
+**ASIL-D 是最高等级**——它要求最严格的过程和设计措施。ASIL-D 系统的平均每小时危险失效概率（PMHF）必须低于 **10⁻⁸ /h**（即 10 FIT，每十亿小时失效一次）。
+
+### 8.4.2 ASIL 与 SIL 的关系
+
+ISO 26262 脱胎于 IEC 61508。在 IEC 61508 中，SIL（Safety Integrity Level）分为 1-4 级。两者的对应关系为：
+
+```
+IEC 61508 SIL 1 → ISO 26262 ASIL-A
+IEC 61508 SIL 2 → ISO 26262 ASIL-B/C（部分对应）
+IEC 61508 SIL 3 → ISO 26262 ASIL-D
+IEC 61508 SIL 4 → 汽车中无直接对应（汽车安全最高为 ASIL-D）
+```
+
+ASIL-D 的要求与 SIL 3 最为接近，但 ISO 26262 针对汽车应用增加了大量具体化的流程要求（比如针对半导体、软件工具等）。
+
+---
+
+## 8.5 HARA 简介
+
+### 8.5.1 HARA 的定义
+
+**HARA**（Hazard Analysis and Risk Assessment）是 ISO 26262 Part 3 的核心活动。它的目标是：
+
+> 识别系统的危害（Hazards），评估每个危害的风险等级（ASIL），定义安全目标（Safety Goals）。
+
+HARA 包含三个核心参数，下一章会详细展开，这里先给出概览：
+
+<MermaidDiagram chart={`flowchart LR
+    HARA["HARA<br/>危害分析与风险评估"] --> HAZARD["识别危害<br/>Identify Hazards"]
+    HARA --> SITUATION["识别运行场景<br/>Operating Situations"]
+    HARA --> RATING["参数评级"]
+
+    RATING --> S["Severity<br/>严重度 S0-S3"]
+    RATING --> E["Exposure<br/>暴露概率 E0-E4"]
+    RATING --> C["Controllability<br/>可控性 C0-C3"]
+
+    S --> ASIL["ASIL 等级矩阵<br/>S + E + C → ASIL"]
+    E --> ASIL
+    C --> ASIL
+
+    ASIL --> SG["Safety Goals<br/>安全目标<br/>ASIL X"]
+
+    style HARA fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style RATING fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style SG fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+`} />
+
+### 8.5.2 危害、安全目标、功能安全要求
+
+危害分析的结果是一组**安全目标**（Safety Goals）。每个安全目标可以进一步分解为：
+
+```
+安全目标（Safety Goal）
+  └── 功能安全要求（Functional Safety Requirements, FSR）
+        └── 技术安全要求（Technical Safety Requirements, TSR）
+              └── 硬件安全要求（HSR）+ 软件安全要求（SSR）
+```
+
+**示例：**
+
+| 层次 | 内容 | ASIL |
+|---|---|---|
+| 安全目标 | 车辆制动功能不得非预期失效导致碰撞 | ASIL-D |
+| FSR | 制动踏板输入信号必须在 10ms 内被正确采集 | ASIL-D |
+| TSR | 制动踏板传感器接口使用 2oo2 架构 + E2E 保护 | ASIL-D |
+| HSR | 使用两个独立 ADC 通道冗余采集踏板位置 | ASIL-D |
+| SSR | 软件实现 E2E Profile 1 保护通信路径 | ASIL-D(D) |
+
+**安全目标的关键特征：**
+
+1. **最高 ASIL 等级**：继承自 HARA 中对应危害的最高 ASIL
+2. **可验证**：每个安全目标都应有明确的验收标准
+3. **可追溯**：安全目标向下关联 FSR/TSR，向上关联 HARA
+4. **非功能性**：安全目标是"不发生某种事故"，而非"实现某种功能"
+
+### 8.5.3 HARA 输出文档
+
+HARA 完成后应输出以下文档：
+
+| 文档 | 内容 |
+|---|---|
+| HARA 报告 | 每项危害的 S/E/C 评级、ASIL 等级、运行场景 |
+| HARA 追踪矩阵 | 危害 → 运行场景 → ASIL → 安全目标 的完整追溯 |
+| 安全目标列表 | 所有安全目标的正式描述（ASIL 等级） |
+| 功能安全概念 | 初步的顶层安全架构设计 |
+
+---
+
+## 8.6 安全要求体系
+
+### 8.6.1 要求层次
+
+ISO 26262 定义了层次化的安全要求体系，从上到下逐步细化：
+
+<MermaidDiagram chart={`flowchart BT
+    subgraph LEVEL1["层次一：安全目标"]
+        SG1["SG-01：制动非预期失效<br/>ASIL-D"]
+        SG2["SG-02：制动助力失效<br/>ASIL-C"]
+    end
+
+    subgraph LEVEL2["层次二：功能安全要求"]
+        FSR1["FSR-01：制动踏板冗余采集<br/>ASIL-D"]
+        FSR2["FSR-02：制动请求超时检测<br/>ASIL-D"]
+        FSR3["FSR-03：助力故障降级策略<br/>ASIL-C"]
+    end
+
+    subgraph LEVEL3["层次三：技术安全要求"]
+        TSR1["TSR-01：2oo2 传感器接口<br/>ASIL-D(D)"]
+        TSR2["TSR-02：10ms 周期看门狗<br/>ASIL-D(D)"]
+        TSR3["TSR-03：CAN 通信 E2E<br/>ASIL-C(C)"]
+    end
+
+    subgraph LEVEL4["层次四：实现"]
+        HW_REQ["硬件安全要求<br/>冗余通道 · 诊断覆盖"]
+        SW_REQ["软件安全要求<br/>E2E 函数 · WdgM 配置"]
+    end
+
+    SG1 --> FSR1 --> TSR1 --> HW_REQ
+    SG1 --> FSR2 --> TSR2 --> SW_REQ
+    SG2 --> FSR3 --> TSR3 --> HW_REQ
+
+    style LEVEL1 fill:#e3f2fd,stroke:#1565c0
+    style LEVEL2 fill:#e8f5e9,stroke:#2e7d32
+    style LEVEL3 fill:#fff3e0,stroke:#e65100
+    style LEVEL4 fill:#f3e5f5,stroke:#6a1b9a
+`} />
+
+### 8.6.2 ASIL 继承与分解
+
+安全要求的 ASIL 等级沿层次向下继承：
+
+- FSR 的 ASIL = 安全目标的 ASIL
+- TSR 的 ASIL ≥ FSR 的 ASIL（可以更高或相同）
+- 如果 TSR 通过**ASIL 分解**拆分为独立冗余的要求，每个子要求的 ASIL 可以降低
+
+ASIL 分解将在第 10 章详细讨论。
+
+---
+
+## 8.7 本章小结
+
+| 知识点 | 核心要点 |
+|---|---|
+| 功能安全定义 | 不存在由系统功能性行为引起的不可接受风险 |
+| ISO 26262 | 12 部分，覆盖概念到退役的全生命周期 |
+| ASIL | A/B/C/D 四级 + QM，ASIL-D 要求最严格（PMHF < 10⁻⁸ /h） |
+| HARA | 危害分析 + S/E/C 评级 → 安全目标 |
+| 安全要求 | SG → FSR → TSR → HSR/SSR 逐层细化 |
+| 安全案例 | 证明系统安全的所有证据集合 |
+
+> **下一章预告：** 我们将深入 HARA 的实战细节——如何识别危害、如何进行 S/E/C 参数评级、如何确定 ASIL 并推导安全目标。我们还将通过一个自适应巡航控制（ACC）的完整案例来演示 HARA 全过程。

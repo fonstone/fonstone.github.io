@@ -330,6 +330,7 @@ export default async function Home() {
                   Icon: CircuitBoard,
                   iconWrapClassName: "bg-green-100 dark:bg-green-500/15",
                   iconClassName: "text-green-500 dark:text-green-300",
+                  href: "/projects/autosar-functional-safety",
                 },
               ].map((p) => (
                 <Link

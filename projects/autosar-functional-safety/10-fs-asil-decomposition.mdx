@@ -1,0 +1,426 @@
+---
+title: "ASIL 分解与安全机制"
+description: "ASIL 分解原则、安全机制分类、故障处理与冗余设计模式"
+date: "2026-07-05"
+order: 10
+tags: ["功能安全", "ASIL", "ASIL 分解", "安全机制", "冗余", "故障处理"]
+est_time: "45 分钟"
+---
+
+## 10.1 ASIL 分解
+
+### 10.1.1 分解动机
+
+当一个安全目标的 ASIL 等级过高（尤其是 **ASIL-D**），它会为开发带来巨大负担：
+
+- 软件需要最高等级的流程要求（MC/DC 覆盖率、独立评审等）
+- 硬件需要更低的随机失效概率（PMHF < 10⁻⁸ /h）
+- 集成测试需要更复杂的故障注入与验证
+
+ASIL 分解的核心思想是：**将高 ASIL 要求拆分为多个独立的低 ASIL 要求**，前提是这些子要求之间有**充分的独立性**（Sufficient Independence）。
+
+### 10.1.2 分解规则
+
+ISO 26262 Part 9 定义了明确的分解规则：
+
+| 原始 ASIL | 分解方案 1 | 分解方案 2 | 分解方案 3 |
+|---|---|---|---|
+| ASIL-D | ASIL-C(D) + ASIL-A(D) | ASIL-B(D) + ASIL-B(D) | ASIL-D(D) + QM(D) |
+| ASIL-C | ASIL-B(C) + ASIL-A(C) | ASIL-C(C) + QM(C) | — |
+| ASIL-B | ASIL-A(B) + ASIL-A(B) | ASIL-B(B) + QM(B) | — |
+| ASIL-A | ASIL-A(A) + QM(A) | — | — |
+
+**括号中的字母**表示原始的、分解前的 ASIL 等级（即分解后整体依然要达到的完整性等级）。
+
+最常见的分解模式是：
+
+```
+ASIL-D → ASIL-B(D) + ASIL-B(D)
+```
+
+即：将一个 ASIL-D 的安全目标分解为两个独立的 ASIL-B 要求，每个要求继承原始 ASIL-D 的上下文，但享有 ASIL-B 级别的开发严格度。
+
+### 10.1.3 分解图示
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph BEFORE["分解前"]
+        SG["安全目标<br/>SG-01：制动非预期失效<br/>ASIL-D"]
+    end
+
+    subgraph AFTER["分解后"]
+        direction LR
+        R1["冗余路径 1<br/>ASIL-B(D)<br/>主控制器<br/>主传感器"]
+        R2["冗余路径 2<br/>ASIL-B(D)<br/>冗余控制器<br/>冗余传感器"]
+    end
+
+    SG --> R1
+    SG --> R2
+
+    R1 -->|"1oo2 结构"| SAFE["失效时制动系统<br/>仍能安全工作<br/>ASIL-D"]
+
+    subgraph INDEP["独立性要求"]
+        I1["路径 1 失效<br/>不影响路径 2"]
+        I2["独立电源"]
+        I3["独立 PCB 布局"]
+        I4["独立软件堆栈"]
+    end
+
+    R1 --> I1
+    R2 --> I1
+    R1 -.-> I2
+    R2 -.-> I2
+    R1 -.-> I3
+    R2 -.-> I3
+    R1 -.-> I4
+    R2 -.-> I4
+
+    style BEFORE fill:#ffcdd2,stroke:#c62828,stroke-width:2px
+    style AFTER fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style INDEP fill:#fff3e0,stroke:#e65100,stroke-width:2px
+`} />
+
+### 10.1.4 独立性要求
+
+ASIL 分解的有效性依赖于**充分的独立性**（Sufficient Independence）。这包括：
+
+| 独立性维度 | 要求 |
+|---|---|
+| **功能独立** | 两条路径的功能实现互不依赖 |
+| **硬件独立** | 独立的电源域、时钟、复位逻辑、PCB 布局 |
+| **软件独立** | 独立的代码库、堆栈、编译器、内存空间 |
+| **时序独立** | 一条路径的时序异常不影响另一条 |
+| **因果独立** | 一条路径的失效不会导致另一条路径失效（避免共因失效） |
+
+**共因失效（Common Cause Failure, CCF）**是分解的最大威胁。两个看似独立的路径可能因为共享同一个设计缺陷（如算法错误、编译器 bug）而同时失效。CCF 必须通过设计措施来避免（如多样化的传感器类型、不同的算法实现）。
+
+### 10.1.5 ASIL 分解的工程影响
+
+| 方面 | 分解前（ASIL-D） | 分解后（ASIL-B + ASIL-B） |
+|---|---|---|
+| 软件覆盖率要求 | MC/DC | 语句覆盖 |
+| 独立评审必要性 | 需要 | 可酌情降低 |
+| 硬件诊断覆盖率 | 99% | 90% |
+| PMHF 目标 | < 10⁻⁸ /h | 各路径 < 10⁻⁷ /h（总计仍 < 10⁻⁸） |
+| 开发工具置信度 | TCL 1（最高） | TCL 2 或 3 |
+
+---
+
+## 10.2 安全机制分类
+
+### 10.2.1 安全机制的定义
+
+**安全机制（Safety Mechanism）**是为防止或检测故障、减轻危害而设计的技术手段。ISO 26262 定义了三类安全机制：
+
+| 类别 | 目标 | 示例 |
+|---|---|---|
+| **故障检测（Fault Detection）** | 检测故障发生并报告 | ECC、CRC、看门狗、BIST |
+| **故障容错（Fault Tolerance）** | 故障发生后仍保持安全功能 | 冗余架构、降级模式 |
+| **故障预防（Fault Prevention）** | 防止故障发生 | 屏蔽、隔离、去耦 |
+
+### 10.2.2 故障检测机制
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph DETECT["故障检测机制"]
+        ECC["ECC/EDC<br/>内存/pFlash 纠错码"]
+        CRC["CRC 校验<br/>通信/存储完整性"]
+        WDG["Watchdog<br/>时序监控"]
+        BIST["BIST<br/>Built-In Self-Test"]
+        MON["Monitor<br/>监控比较器"]
+    end
+
+    subgraph DETECT_TYPE["检测类型"]
+        ON_LINE["在线检测<br/>运行时持续"]
+        OFF_LINE["离线检测<br/>上电/下电时"]
+        PERIODIC["周期性检测<br/>调度间隔"]
+    end
+
+    ECC --> ON_LINE
+    CRC --> ON_LINE
+    WDG --> ON_LINE
+    BIST --> OFF_LINE
+    MON --> PERIODIC
+
+    DETECT -->|故障事件| SM_OUT["安全响应"]
+    SM_OUT --> WARN["驾驶员警告"]
+    SM_OUT --> DEGRADE["降级模式"]
+    SM_OUT --> SHUTDOWN["安全关断"]
+
+    style DETECT fill:#e3f2fd,stroke:#1565c0
+    style SM_OUT fill:#ffcdd2,stroke:#c62828
+`} />
+
+**常见检测机制对比：**
+
+| 安全机制 | 监控对象 | 检测覆盖 | 响应时间 | 硬件/软件 |
+|---|---|---|---|---|
+| ECC（Error Correcting Code） | RAM/Flash 数据 | 单比特纠错、双比特检测 | 实时 | 硬件 |
+| CRC（Cyclic Redundancy Check） | 通信数据/存储 | 取决于多项式（HD=6 等） | 报文级 | 硬件/软件 |
+| Watchdog（Wdg） | 程序执行流 | 时序/逻辑 | 100ms 级 | 硬件/软件 |
+| CPU BIST（Logic BIST） | CPU 逻辑 | 结构化测试 | 上电时 | 硬件 |
+| ADC Self-Test | ADC 通道 | 模拟路径完整性 | 周期 ms 级 | 硬件 |
+| Lock-Step Core | 整个 CPU | 完全冗余 | 实时 | 硬件 |
+| OS Stack Monitoring | 任务栈溢出 | 栈边界 | 任务切换 | 软件 |
+
+### 10.2.3 故障容错机制
+
+故障容错的核心是**冗余**。当系统的一个组件失效时，另一个组件可以替代或继续执行安全功能。
+
+典型的容量策略：
+
+| 策略 | 描述 | 影响 |
+|---|---|---|
+| **Fail-Safe** | 故障时进入安全状态（如断开制动继电器） | 功能丧失 |
+| **Fail-Operational** | 故障后仍保持功能（需冗余硬件） | 功能保持 |
+| **Fail-Degraded** | 故障后降低功能等级（如限制最大车速） | 功能降级 |
+| **Fail-Silent** | 故障时静默关闭（不发出错误信号） | 通信中断 |
+
+---
+
+## 10.3 冗余架构模式
+
+### 10.3.1 冗余拓扑
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph ARCH1["1oo1 — 单通道"]
+        S1["传感器 1"] --> P1["处理器 1"] --> A1["执行器 1"]
+    end
+
+    subgraph ARCH2["1oo2 — 双通道冗余"]
+        S2A["传感器 A"] --> P2A["处理器 A"] --> O2["输出<br/>比较与表决"]
+        S2B["传感器 B"] --> P2B["处理器 B"] --> O2
+    end
+
+    subgraph ARCH3["2oo2 — 双通道互锁"]
+        S3A["传感器 A"] --> P3A["处理器 A"] --> A3["执行器<br/>双通道需一致"]
+        S3B["传感器 B"] --> P3B["处理器 B"] --> A3
+    end
+
+    subgraph ARCH4["2oo3 — 三模冗余"]
+        S4A["传感器 A"] --> P4A["处理器 A"] --> V4["2选3<br/>表决器"]
+        S4B["传感器 B"] --> P4B["处理器 B"] --> V4
+        S4C["传感器 C"] --> P4C["处理器 C"] --> V4
+    end
+
+    style ARCH1 fill:#f5f5f5,stroke:#999
+    style ARCH2 fill:#e8f5e9,stroke:#2e7d32
+    style ARCH3 fill:#fff3e0,stroke:#e65100
+    style ARCH4 fill:#fce4ec,stroke:#c62828
+`} />
+
+### 10.3.2 各模式特性对比
+
+| 模式 | 架构 | 故障容错 | 成本 | 典型应用 |
+|---|---|---|---|---|
+| **1oo1** | 单通道 | 无容错 | 低 | 非安全（QM），或安全但故障后 Fail-Safe |
+| **1oo2** | 双通道并联 | 单点故障容忍 | 高 | ASIL-D 制动（两个独立 MCU 互备） |
+| **2oo2** | 双通道串联 | 单点故障可检测但系统停机 | 中 | 转向系统（两路信号必须一致） |
+| **2oo3** | 三通道+表决 | 单点故障容忍（仍然 2/3 正常工作） | 非常高 | 线控转向（Steer-by-Wire）、航空飞控 |
+
+### 10.3.3 1oo2 与 ASIL 分解结合
+
+ASIL 分解最常见的工程实现就是 **1oo2 冗余 + ASIL-B(D) + ASIL-B(D)**：
+
+```
+┌─────────────────────────────────────┐
+│            ASIL-D 安全目标           │
+│  "制动功能不得非预期失效"           │
+└──────────────────┬──────────────────┘
+                   │ 分解
+        ┌──────────┴──────────┐
+        ▼                     ▼
+┌─────────────────┐  ┌─────────────────┐
+│ ASIL-B(D) 路径1 │  │ ASIL-B(D) 路径2 │
+│ 主 ECU          │  │ 冗余 ECU        │
+│ 主传感器        │  │ 冗余传感器      │
+│ 主电源          │  │ 备份电源        │
+└────────┬────────┘  └────────┬────────┘
+         │                    │
+         └──────────┬─────────┘
+                    ▼
+          ┌──────────────────┐
+          │ 输出 OR 逻辑     │
+          │ 两通道任意有效   │
+          │ 即输出制动信号   │
+          └──────────────────┘
+```
+
+---
+
+## 10.4 硬件架构度量：SPFM、LFM、PMHF
+
+### 10.4.1 三项量化指标
+
+ISO 26262 Part 5 对硬件设计有**三大量化指标**：
+
+| 指标 | 全称 | 定义 | ASIL-B | ASIL-C | ASIL-D |
+|---|---|---|---|---|---|
+| **SPFM** | Single-Point Fault Metric | 覆盖单点故障的比例 | ≥ 90% | ≥ 97% | ≥ 99% |
+| **LFM** | Latent Fault Metric | 覆盖潜伏故障的比例 | ≥ 60% | ≥ 80% | ≥ 90% |
+| **PMHF** | Probabilistic Metric for Random Hardware Failures | 平均每小时危险失效概率 | < 10⁻⁷ /h | < 10⁻⁷ /h | < 10⁻⁸ /h |
+
+### 10.4.2 故障类型
+
+| 故障类型 | 描述 |
+|---|---|
+| **单点故障（SPF）** | 一个硬件故障直接违反安全目标，且无安全机制覆盖 |
+| **残余故障（RF）** | 安全机制未覆盖的单点故障部分 |
+| **潜伏故障（LF）** | 一个故障未被检测到，累积后与其他故障共同导致危险 |
+| **多点故障（MPF）** | 多个故障同时或先后导致违反安全目标 |
+| **安全故障（Safe Fault）** | 不会导致违反安全目标的故障 |
+
+### 10.4.3 FMEDA 简介
+
+FMEDA（Failure Modes, Effects and Diagnostic Analysis）是计算 SPFM/LFM/PMHF 的主要方法：
+
+```c
+/* FMEDA 结果示例 — 制动踏板传感器 */
+typedef struct {
+    const char*    component;         /* 组件名称 */
+    double         lambda_total;      /* 总失效率 (FIT) */
+    double         lambda_safe;       /* 安全故障失效率 */
+    double         lambda_spf;        /* 单点故障失效率 */
+    double         lambda_rf;         /* 残余故障失效率 */
+    double         lambda_mpf_det;    /* 可检测多点故障 */
+    double         lambda_mpf_lat;    /* 潜伏多点故障 */
+    double         diag_coverage;     /* 诊断覆盖率 */
+} FMEDA_Entry;
+
+/* ASIL-D 目标 PMHF < 10 FIT (10⁻⁸ /h = 10 FIT) */
+const FMEDA_Entry brake_pedal_sensor = {
+    .component      = "Brake Pedal Sensor (Dual Redundant)",
+    .lambda_total   = 50.0,     /* 总计 50 FIT */
+    .lambda_safe    = 5.0,      /* 10% 安全故障 */
+    .lambda_spf     = 0.0,      /* ASIL-D 不允许 SPF（必须覆盖） */
+    .lambda_rf      = 0.5,      /* 1% 残余故障 */
+    .lambda_mpf_det = 44.0,     /* 88% 可检测多点故障 */
+    .lambda_mpf_lat = 0.5,      /* 1% 潜伏故障 */
+    .diag_coverage  = 99.0      /* 诊断覆盖率 99% */
+};
+
+/* SPFM = 1 - (λ_spf + λ_rf) / (λ_total - λ_safe)
+        = 1 - (0.0 + 0.5) / (50.0 - 5.0)
+        = 1 - 0.5 / 45.0
+        = 98.9% ≥ 99% ? FAIL */
+
+/* 在此例中，SPFM 不足，需要增加诊断覆盖以降低 λ_rf */
+```
+
+---
+
+## 10.5 安全机制实现示例
+
+### 10.5.1 看门狗机制
+
+看门狗（Watchdog）是最基本的安全机制，用于检测程序执行流是否异常：
+
+```c
+/* WdgM — Watchdog Manager 配置示例（类 AUTOSAR 风格） */
+typedef struct {
+    uint32          alive_supervision_cycle_ms;   /* 活度监控周期 */
+    uint32          deadline_supervision_timeout_ms; /* 截止时间 */
+    WdgM_ModeType   initial_mode;                 /* 初始模式 */
+    WdgM_Threshold  failure_threshold;            /* 故障阈值 */
+} WdgM_ConfigType;
+
+const WdgM_ConfigType WdgM_Config = {
+    .alive_supervision_cycle_ms     = 10U,
+    .deadline_supervision_timeout_ms = 100U,
+    .initial_mode                   = WDGM_MODE_OFF,
+    .failure_threshold              = { .alive = 3U, .deadline = 2U }
+};
+
+/* 任务级活度监控 */
+void Task_ControlLoop(void) {
+    while (1) {
+        /* 任务主体 */
+        ReadSensors();
+        ComputeOutput();
+        ApplyActuators();
+
+        /* 活度触发点 */
+        WdgM_Ipc_AliveSupervision(WDOG_ALIVE_ID_CONTROL_LOOP);
+
+        /* 截止时间检查 */
+        uint32 deadline = WdgM_GetDeadline(WDOG_DEADLINE_ID_CONTROL);
+        if (deadline > WdgM_Config.deadline_supervision_timeout_ms) {
+            WdgM_Ipc_DeadlineViolation(WDOG_DEADLINE_ID_CONTROL);
+        }
+    }
+}
+```
+
+### 10.5.2 E2E 通信保护
+
+E2E（End-to-End）通信保护用于检测通信路径（总线、网络栈、中间件）中的故障：
+
+```c
+/* E2E Profile 1 保护 — CRC + 计数器 + 超时 */
+typedef struct {
+    uint16  counter;      /* 滚动计数器 */
+    uint16  crc;          /* CRC 校验值 */
+    uint8   data[8];      /* 有效载荷 */
+} E2E_Profile1_Message;
+
+/* 发送端 */
+void E2E_Send(E2E_Profile1_Message* msg) {
+    msg->counter++;                       /* 计数器递增 */
+    uint16 computed_crc = E2E_ComputeCRC(
+        (uint8*)msg, sizeof(E2E_Profile1_Message) - sizeof(msg->crc));
+    msg->crc = computed_crc;
+    CanIf_Transmit(MSG_ID, (uint8*)msg, sizeof(E2E_Profile1_Message));
+}
+
+/* 接收端 */
+E2E_StatusType E2E_Receive(E2E_Profile1_Message* msg) {
+    uint16 received_crc = msg->crc;
+    msg->crc = 0U;  /* CRC 字段清零后重新计算 */
+
+    uint16 computed_crc = E2E_ComputeCRC(
+        (uint8*)msg, sizeof(E2E_Profile1_Message) - sizeof(msg->crc));
+
+    if (computed_crc != received_crc) {
+        return E2E_STATUS_CRC_ERROR;
+    }
+    if (!E2E_CheckCounter(msg->counter)) {
+        return E2E_STATUS_COUNTER_ERROR;
+    }
+    return E2E_STATUS_OK;
+}
+```
+
+---
+
+## 10.6 安全机制组合策略
+
+实际系统中，安全机制通常是组合使用的：
+
+| 层次 | 安全机制 | 覆盖的故障 |
+|---|---|---|
+| 芯片级 | Lock-Step Core | CPU 逻辑失效 |
+|  | ECC on RAM/Flash | 内存单比特翻转 |
+|  | MPU/MMU 隔离 | 内存访问越界 |
+| OS 级 | OS Application 隔离 | 任务间干扰 |
+|  | Stack Monitoring | 栈溢出 |
+|  | Timing Protection | CPU 超时占用 |
+| 通信级 | E2E CRC+Counter | 总线通信故障 |
+|  | SecOC | 通信完整性+时效性 |
+| 应用级 | WdgM（Alive/Deadline） | 任务执行流异常 |
+|  | 输入信号合理性检查 | 传感器故障 |
+|  | 输出回读（Readback） | 执行器故障 |
+| 系统级 | 冗余通道 | 单点故障后功能保持 |
+
+---
+
+## 10.7 本章小结
+
+| 知识点 | 核心要点 |
+|---|---|
+| ASIL 分解 | ASIL-D → ASIL-B(D) + ASIL-B(D) 是最常见模式 |
+| 独立性要求 | 功能/硬件/软件/时序/因果独立，防止共因失效 |
+| 安全机制 | 故障检测 / 故障容错 / 故障预防 三大类 |
+| 冗余模式 | 1oo1、1oo2、2oo2、2oo3 对应不同容错需求 |
+| 硬件度量 | SPFM ≥ 99%（ASIL-D）、LFM ≥ 90%（ASIL-D）、PMHF < 10 FIT |
+| FMEDA | 量化分析硬件诊断覆盖率的核心方法 |
+| 组合策略 | 芯片级 → OS 级 → 通信级 → 应用级 → 系统级多级防护 |
+
+> **下一章预告：** 我们将进入 AUTOSAR CP 中的功能安全实现——E2E 保护、WdgM 看门狗管理器、Safety Island 架构、OS Application 隔离与 MPU 配置，看 AUTOSAR 如何将本章的安全机制落地为规范化的 BSW 模块。

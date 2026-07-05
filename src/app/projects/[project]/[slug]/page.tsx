@@ -86,7 +86,7 @@ export default async function ProjectPostPage({
           <ProjectMdx source={mdxSource} />
         </div>
 
-        {(projSlug === "autosar-functional-safety" || projSlug === "ai-infra" || projSlug === "qemu") && (
+        {(projSlug === "autosar-functional-safety" || projSlug === "ai-infra" || projSlug === "qemu" || projSlug === "chcore") && (
           <div className="mt-8 flex justify-center">
             <MarkCompleteButton projectSlug={projSlug} chapterSlug={post.slug} />
           </div>

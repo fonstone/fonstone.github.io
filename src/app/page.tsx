@@ -324,6 +324,7 @@ export default async function Home() {
                   Icon: Monitor,
                   iconWrapClassName: "bg-cyan-100 dark:bg-cyan-500/15",
                   iconClassName: "text-cyan-500 dark:text-cyan-300",
+                  href: "/projects/chcore",
                 },
                 {
                   name: "AUTOSAR和功能安全",

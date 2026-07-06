@@ -578,7 +578,7 @@ TCR_EL1 决定地址翻译的配置：
 
 ```mermaid
 flowchart TB
-    subgraph 虚拟地址 [63:0]
+    subgraph "虚拟地址 [63:0]"
         VA_HIGH["高位 (TCR 决定位数)"]
         VA_L0["L0 索引 [47:39]<br/>9 bits"]
         VA_L1["L1 索引 [38:30]<br/>9 bits"]

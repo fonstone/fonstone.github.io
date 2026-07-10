@@ -1,0 +1,901 @@
+﻿---
+title: "OpenHarmony SDD 实践指导手册"
+date: "2026-04-25"
+description: "基于 spec-for-ai 工程整理，聚焦 OpenHarmony 大型多仓工程的 AI 辅助规格驱动开发实践，包含双流程架构（Feature Flow + Bugfix Flow）、4 阶段工作流、4 级复杂度裁剪、12 个核心模板、上下文工程、质量门禁体系和试点执行方法。"
+tags: ["OpenHarmony", "SDD", "spec-for-ai", "AI辅助开发", "规范驱动开发", "工作流", "Bugfix Flow"]
+---
+
+# OpenHarmony SDD 实践指导手册
+
+> 基于 [spec-for-ai](https://gitcode.com/oshunter/spec-for-ai) 工程整理。本文档聚焦 OpenHarmony 大型多仓工程的 AI 辅助规格驱动开发实践，包含双流程架构（Feature Flow + Bugfix Flow）、4 阶段工作流、4 级复杂度裁剪、12 个核心模板、上下文工程、质量门禁体系和试点执行方法。
+
+---
+
+## 一、OpenHarmony SDD 概述
+
+### 为什么需要 OpenHarmony 专属 SDD 流程
+
+OpenHarmony 项目具有独特的工程特征：
+
+- **多仓协作**：数百个仓库协同开发，单个特性可能涉及多个子系统
+- **SIG 治理**：多个 SIG 分工协作，需跨组协调
+- **分层架构**：应用层/框架层/系统服务层/内核层，层级间严格单向依赖
+- **部件化体系**：子系统→部件→模块三层组织，bundle.json 声明式管理
+- **构建系统复杂**：GN 构建体系，交叉编译，多形态产物
+
+### 核心理念
+
+> **Spec 是真相来源，代码是实现细节。**
+
+通过结构化的规格约束 AI 编码行为，用 4 阶段工作流驱动"需求澄清→设计审批→Spec 审批→执行计划→AI 实现→符合性审查→最终验证"的高质量闭环。
+
+---
+
+## 二、双流程架构（Feature Flow + Bugfix Flow）
+
+OpenHarmony SDD 工作流包含两条核心业务流：
+
+1. **Feature Flow（特性开发流）**: 从需求输入到代码合入的完整开发流程，适用于新特性、功能增强、架构变更
+2. **Bugfix Flow（缺陷修复流）**: 从缺陷报告到修复验证的快速修复流程，适用于缺陷修复
+
+两条流程共享上下文工程引擎和质量评估体系，但在流程复杂度和交付件要求上有所区别。
+
+### 流程选择规则
+
+| 条件 | 适用的流程 |
+|------|-----------|
+| 新特性、功能增强、行为新增、架构重构 | Feature Flow |
+| 已有行为的缺陷修复、回归问题、Crash 修复 | Bugfix Flow |
+| 存量行为补规格（无代码变更） | Feature Flow（仅 Stage 1-2） |
+| 需求既不明确也不确定是缺陷还是新行为 | 先用 Feature Flow 的 proposal 澄清，再分流 |
+
+### Feature Flow（特性开发流）
+
+#### 整体流程
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Feature Flow                                      │
+│                                                                             │
+│  ┌──────┐   ┌──────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐        │
+│  │需求   │──▶│需求   │──▶│产品定义   │──▶│上下文     │──▶│架构设计   │        │
+│  │输入   │   │澄清   │   │需求基线   │   │工程       │   │Spec输出   │        │
+│  │F1    │   │F2    │   │F3       │   │F4        │   │F5        │        │
+│  └──────┘   └──────┘   └──────────┘   └──────────┘   └──────────┘        │
+│                                               │                    │         │
+│                                               ▼                    ▼         │
+│                                        ┌──────────┐       ┌──────────┐     │
+│                                        │DeepWiki  │       │Spec拆分   │     │
+│                                        │Skill索引 │       │F6        │     │
+│                                        └──────────┘       └──────────┘     │
+│                                                                  │         │
+│                                                                  ▼         │
+│  ┌──────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌────────────┐  │
+│  │代码   │◀──│人工检视   │◀──│质量门禁   │◀──│AI辅助    │◀──│执行计划+    │  │
+│  │合入   │   │Checkpoint│   │         │   │实现      │   │Task清单    │  │
+│  │F11   │   │F10       │   │F9       │   │F8       │   │F7         │  │
+│  └──────┘   └──────────┘   └──────────┘   └──────────┘   └────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 阶段详细定义
+
+**F1: 需求输入**
+
+| 维度 | 内容 |
+|------|------|
+| 输入 | 原始需求文档、PRD、Feature Request Issue、用户反馈 |
+| 输出 | 结构化的原始需求记录 |
+| 活动 | 登记需求来源、初步判断复杂度等级、确认目标仓和目标模块 |
+
+**F2: 需求澄清**
+
+- **活动:** 提出 3-5 个关键澄清问题（按主题分组：范围、目标用户、边界条件、非功能需求）；确认复杂度分级（简单/标准/复杂/关键）；确认不涉及项（性能/安全/兼容性/API/IPC/构建/国际化等）
+- **输出:** 逐轮澄清记录、需求基线（固化结论）
+
+**F3: 产品定义与需求基线**
+
+- **交付件:** `proposal.md`
+- **要求:** 范围明确、非范围明确；验收标准 AC 使用 WHEN/THEN 格式；约束和假设明确；变更控制规则
+
+**F4: 上下文工程**
+
+- **活动:** DeepWiki MCP 查询（子系统范围、现有功能、依赖关系）；Skill 索引加载；上下文结论写入 `context-references` 区段；可信度标注（高/中/低）
+
+**F5: 架构设计与 Spec 输出**
+
+- **交付件:** `design.md` + `spec.md`（并行产出）
+- **内容:** 架构规则适用性分析；关键设计决策（ADR，每个决策 2-3 个替代方案）；骨架 Spec（API 骨架→模块骨架→测试骨架）；AC 完备验收标准
+
+**F6: Spec 拆分（复杂/关键级）**
+
+- **活动:** 将 Feature Spec 拆分成可独立执行的 Tasks；建立 AC-Task 追溯表
+
+**F7: 执行计划与 Task 清单**
+
+- **交付件:** `execution-plan.md` + `task.md`
+- **内容:** AC 到 Task 追溯表；首批实现边界（核心+可后置）；Task 粒度原则（每个 Task 形成可独立验证的最小能力闭环）
+
+**F8: AI 辅助实现**
+
+- **活动:** AI 基于 Task Spec 生成代码 + 同步生成单元测试 + 自动运行测试验证
+- **约束:** AI 只能修改 Task Spec 列出的文件；发现需扩大范围时停止并反馈 Spec 变更建议；需要人工 Checkpoint 时触发检视
+
+**F9: 质量门禁**
+
+- **检查项:** Task 实现检查（静态分析通过 + 单元测试覆盖 + 实现证据）；Spec 符合性审查（AI 生成代码严格符合 Task Spec）；最终验证（回归测试通过 + 不引入新退化）
+
+**F10: 人工检视 Checkpoint**
+
+- **聚焦:** Spec 决策一致性检视（设计检视）；代码质量审查（编码规范、架构合规）；测试充分性确认；纠正循环机制（最多 3 轮，仍不通过升级为架构评审）
+
+**F11: 代码合入**
+
+- **要求:** 合入前确认所有 AC 有测试验证证据；合入后复盘记录（耗时、AI 一次通过率、人工修改次数、上下文缺口）
+
+---
+
+### Bugfix Flow（缺陷修复流）
+
+Bugfix Flow 是 Feature Flow 的精简变体，专为缺陷修复场景设计，裁减了需求澄清（F2-F3）和架构设计（F5-F6）等非必要阶段。
+
+**核心差异:**
+- **无需需求澄清和基线**: 缺陷的"需求"就是复现和修复
+- **根因分析代替设计**: 用根因分析代替架构设计
+- **精简质量门禁**: 聚焦在"修复正确"和"不引入回归"
+- **回归测试为重点**: 每种修复必须附带回归测试计划
+
+#### 整体流程
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Bugfix Flow                              │
+│                                                             │
+│  ┌──────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐    │
+│  │缺陷   │──▶│根因分析   │──▶│修复方案   │──▶│上下文    │    │
+│  │输入   │   │         │   │Spec     │   │工程      │    │
+│  │B1    │   │B2       │   │B3       │   │B4       │    │
+│  └──────┘   └──────────┘   └──────────┘   └──────────┘    │
+│                                             │               │
+│                                             ▼               │
+│  ┌──────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐    │
+│  │代码   │◀──│人工检视   │◀──│质量门禁   │◀──│AI辅助    │    │
+│  │合入   │   │         │   │         │   │修复      │    │
+│  │B8    │   │B7       │   │B6       │   │B5       │    │
+│  └──────┘   └──────────┘   └──────────┘   └──────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### B1: 缺陷输入
+
+| 维度 | 内容 |
+|------|------|
+| 输入 | 缺陷报告（Issue/Bug ID）、复现步骤和环境信息、影响范围评估 |
+| 输出 | 结构化缺陷输入单 |
+| 关键字段 | Bug ID、标题、严重程度（致命/严重/一般/轻微）、优先级（P0/P1/P2/P3）、影响版本、修复目标版本、目标仓库、目标模块、报告人、修复人、复杂度（简单/标准） |
+| 分流判断 | 简单缺陷（根因明确、单仓、≤3 个文件、不涉及并发/内存/安全）直入 Bugfix Flow；复杂缺陷升级为 Feature Flow 处理 |
+
+**缺陷严重程度与优先级对应关系:**
+
+| 严重程度 | 优先级 | 响应要求 |
+|----------|--------|----------|
+| 致命 | P0 | 立即修复（24h 内） |
+| 严重 | P1 | 本迭代修复 |
+| 一般 | P2 | 下迭代修复 |
+| 轻微 | P3 | 积压处理 |
+
+#### B2: 根因分析
+
+**活动:**
+- 使用 DeepWiki 查询相关仓代码结构
+- 定位缺陷根因：问题仓库、问题文件、问题函数/类、代码行范围
+- 根因分类与确认
+- 评估修复影响范围
+
+**输出:** 根因分析报告
+
+**根因分类与判定标准:**
+
+| 分类 | 典型场景 | 排查线索 |
+|------|----------|----------|
+| 逻辑错误 | 条件判断错误、流程遗漏 | 代码走读、断点调试 |
+| 边界条件遗漏 | 空值/越界/特殊输入 | 等价类分析、边界值测试 |
+| 类型不匹配 | 隐式转换、精度丢失 | 编译警告、运行时类型检查 |
+| 并发/线程安全 | 竞态、死锁、ABA 问题 | 锁分析、线程调度跟踪 |
+| 内存管理 | 泄漏/越界/UAF | ASAN、valgrind、引用计数检查 |
+| 接口误用 | 参数错误、状态未检查 | 接口文档对比、调用链分析 |
+
+**根因分析产物格式:**
+
+```yaml
+root-cause-analysis:
+  repository: openharmony/notification
+  file: distributed/notification/services/src/notification_manager_service.cpp
+  function: NotificationManagerService::OnDeviceStateChanged()
+  line-range: 342-368
+  category: 逻辑错误（设计遗漏）
+  description: >
+    设备深度休眠期间内存 activeNotificationMap_ 被部分回收，
+    唤醒时以不完整的内存缓存为准对比数据库，误删数据库中的通知。
+  related-modules:
+    - notification_store
+    - powermgr_state_change
+  fix-scope:
+    - file: notification_manager_service.cpp
+      change: 替换 OnDeviceStateChanged 逻辑
+    - file: notification_manager_service.h
+      change: 新增 RestoreFromDatabase 方法声明
+    - file: notification_store.cpp
+      change: 增加 GetAllNotifications 重连逻辑
+```
+
+#### B3: 修复方案 Spec
+
+**交付件:** `bugfix.md`
+
+**Bugfix Spec 完整结构（对应 bugfix.md 模板）:**
+
+| 区段 | 内容 | 是否必填 |
+|------|------|----------|
+| 缺陷元数据 | Bug ID、标题、严重程度、优先级、影响版本、目标仓库 | 是 |
+| 复现步骤 | 环境、复现路径、预期 vs 实际、复现频率、错误日志 | 是 |
+| 根因分析 | 问题位置（仓库/文件/函数/行号）、根因描述、错误代码 | 是 |
+| 修复方案 | 修复策略、变更文件清单、前后代码对比 | 是 |
+| 修复影响分析 | API/行为/性能/兼容性/其他模块影响评估 | 是 |
+| BUILD.gn 变更 | 构建文件变更说明（如有） | 条件必填 |
+| 回归测试计划 | 原 Bug/正向/边界/异常场景测试表 | 是 |
+| 验证检查清单 | 根因确认、修复评审、回归通过、构建通过 | 是 |
+| context-references | 上下文查询记录和关键发现 | 是 |
+
+**验收标准（AC）规范:** 必须使用 WHEN/THEN 格式，至少覆盖四类场景：
+
+| AC | 场景 | 示例 |
+|----|------|------|
+| AC-1 | 原 Bug 不再复现 | WHEN 设备休眠前 6-9 条通知且深度休眠 5 分钟后唤醒 THEN 应返回全部活跃通知 |
+| AC-2 | 正向场景正常 | WHEN 数据库中存在通知但内存缓存为空 THEN RestoreFromDatabase 应从数据库重建内存缓存且不删除数据库记录 |
+| AC-3 | 边界条件处理 | WHEN 数据库连续三次读取失败 THEN 保留当前内存缓存、不清理数据库通知并记录错误日志 |
+| AC-4 | 异常处理正确 | WHEN 唤醒恢复完成后应用发布或取消通知 THEN 原有发布/取消流程保持正确且不重复恢复已取消通知 |
+
+**修复影响分析必填字段:**
+
+| 影响维度 | 评估要求 | 典型值 |
+|----------|----------|--------|
+| API 变更 | 是否修改公开/系统 API 签名 | 是/否（含说明） |
+| 行为变更 | 是否改变现有功能行为 | 是/否（含说明） |
+| 性能影响 | 是否有可测量的性能退化 | 有/无（含说明） |
+| 兼容性影响 | 是否影响系统兼容性 | 有/无（含说明） |
+| 其他模块影响 | 是否影响下游/依赖模块 | 有/无（含说明） |
+
+**代码变更格式规范:**
+
+```
+**修改文件:** `[路径]`
+
+**变更前:**
+```cpp
+// 问题代码
+```
+
+**变更后:**
+```cpp
+// 修复代码
+```
+```
+
+#### B4: 上下文工程
+
+- **活动:** 同 Feature Flow F4，聚焦缺陷涉及的仓和模块
+- **查询范围:** 问题仓代码结构、相关接口调用关系、测试框架和套件、相关模块依赖
+- **输出:** 上下文结论写入 Bugfix Spec 的 `context-references` 区段
+
+**查询示例:**
+
+```yaml
+context-queries:
+  - repo: "openharmony/notification"
+    query: "NotificationManagerService 如何处理设备状态变化（休眠/唤醒）？"
+    focus_path: "distributed/notification/services/src/"
+  - repo: "openharmony/powermgr"
+    query: "电源管理子系统如何向其他服务通知设备状态变化？"
+```
+
+#### B5: AI 辅助修复
+
+| 维度 | 内容 |
+|------|------|
+| 输入 | Bugfix Spec + 上下文 |
+| 输出 | 修复代码 + 回归测试代码（使用 `regression-test.md`） |
+| AI 工作模式 | 简单 bugfix 全自动；标准 bugfix 半自动（需人工 Checkpoint） |
+| 活动 | AI 基于 Bugfix Spec 生成修复代码；同步生成回归测试（原 Bug/正向/边界/异常）；自动运行测试验证 |
+
+**AI 修复约束（硬规则）:**
+1. 修复范围严格限制在 Bugfix Spec 列出的文件中
+2. 不扩大修复范围——不重构、不做额外优化
+3. 遵循"最小变更原则"——只修 Bug，不改设计
+4. 若发现 Spec 与源码不一致，先修订 Spec 再继续修复
+
+#### B6: 质量门禁（精简版）
+
+Bugfix Flow 的质量门禁对应 4 阶段模型中的 Stage 3+4，但内容精简：
+
+| 门禁项 | 检查内容 | 通过标准 | 对应阶段 |
+|--------|----------|----------|----------|
+| 修复检查 | 修复范围符合 Spec、静态分析通过、代码规范符合 | 全部通过 | Stage 3 实现 |
+| Spec 符合性 | 修复代码严格符合 Bugfix Spec 的修复方案和 AC | AC 100% 覆盖 | Stage 3 实现 |
+| 最终验证 | 原 Bug 不再复现、不引入新退化、回归测试通过 | 全部通过 | Stage 4 发布 |
+
+**质量门禁阻断规则:**
+- 任一子项未通过 → 阻断进入下一阶段
+- 修复检查未通过 → 返回 B5 重新修复
+- Spec 符合性未通过 → 返回 B3 修订 Spec
+- 最终验证未通过 → 返回 B5 重新修复
+
+#### B7: 人工检视
+
+**检视聚焦:**
+- 修复逻辑正确性
+- 边界条件覆盖
+- 回归测试充分性
+- 是否引入新的退化路径
+
+**检视清单:**
+
+```markdown
+- [ ] 根因已确认
+- [ ] 修复方案已评审
+- [ ] 回归测试全部通过
+- [ ] 构建通过
+- [ ] 静态检查通过
+- [ ] 兼容性影响已评估
+- [ ] 错误码已规范（如有新增）
+```
+
+**检视意见类型:**
+
+| 意见 | 后续动作 |
+|------|----------|
+| 通过 | → B8 代码合入 |
+| 需修改 | → 返回 B5 重新修复 |
+| 打回（根因分析有误） | → 返回 B2 重新根因分析 |
+
+#### B8: 代码合入
+
+- **前置条件:** 回归测试全部通过
+- **交付:** 代码合入目标分支
+- **产物落盘:**
+
+```
+.specs/bugfixes/BUG-YYYYMMDD-NNN-short-slug/
+├── bugfix.md
+├── regression-test.md
+├── gates/
+├── reviews/
+└── retrospectives/   # 耗时、AI 一次通过率、上下文缺口记录
+```
+
+---
+
+### 回归测试模板（regression-test.md）
+
+Bugfix Flow 使用独立的回归测试模板，覆盖五类场景：
+
+#### 测试范围
+
+| 编号 | 场景类型 | 操作步骤 | 期望结果 | 实际结果 |
+|------|---------|----------|----------|----------|
+| RT-1 | 原 Bug 复现验证 | [复现步骤] | Bug 不再出现 | PASS/FAIL |
+| RT-2 | 正向场景 | [正常使用] | 功能正常 | PASS/FAIL |
+| RT-3 | 反向/异常场景 | [异常输入] | 错误处理正确 | PASS/FAIL |
+| RT-4 | 边界条件 | [边界值] | 正确处理 | PASS/FAIL |
+| RT-5 | 并发场景（如适用） | [并发操作] | 无竞态/死锁 | PASS/FAIL |
+
+#### 受影响测试套件追溯
+
+| 测试套件 | 路径 | 预期影响 | 验证命令 |
+|----------|------|----------|----------|
+| 单元测试 | `[路径]` | 新增/修改 | `[命令]` |
+| 集成测试 | `[路径]` | 无影响/需更新 | `[命令]` |
+| XTS | `[路径]` | 无影响/需补充 | `[命令]` |
+
+#### 缺陷→根因→回归测试追溯链
+
+```
+缺陷(BUG-XXXX) ──▶ 根因(逻辑错误) ──▶ 回归测试(RT-1, RT-2, RT-3) ──▶ 覆盖确认(PASS/FAIL)
+```
+
+#### 验证结论
+
+```markdown
+- [ ] 所有回归测试通过
+- [ ] 原 Bug 复现确认已修复
+- [ ] 受影响测试套件验证通过
+- [ ] 无新增崩溃或性能退化
+- [ ] 兼容性验证通过（如涉及）
+
+结论: 通过 / 不通过 — 需补充 [原因]
+```
+
+---
+
+### Bugfix 执行手册（简单级试点）
+
+| 步骤 | 动作 | 输出 | 耗时估计 |
+|------|------|------|----------|
+| 1 | 登记缺陷 ID，建目录 `.specs/bugfixes/{bug-id}/` | 目录结构 | 5min |
+| 2 | 填写 `bugfix.md`（复现步骤+根因分析+修复方案+回归测试计划） | Bugfix Spec | 30-60min |
+| 3 | DeepWiki 上下文收集（问题仓、关联模块） | context-references | 15-30min |
+| 4 | AI 修复（生成修复代码+回归测试） | 代码+测试 | 10-30min |
+| 5 | 质量门禁（修复检查+Spec 符合性+最终验证） | 门禁记录 | 15-30min |
+| 6 | 人工检视（逻辑正确性+测试充分性） | 审查记录 | 15-30min |
+| 7 | 合入+复盘 | 复盘记录 | 10min |
+
+**总耗时估计:** 简单 bugfix 1.5-3 小时，标准 bugfix 4-8 小时。
+
+**升级规则:** 简单 bugfix 超过 1 天未完成、变更超过 3 个文件、发现跨模块影响 → 升级为标准 bugfix。
+
+---
+
+### Bugfix 示例：通知在设备休眠后丢失
+
+（完整示例见源工程 `openharmony/examples/bugfix-example/bugfix.md`，以下展示关键路径）
+
+**缺陷场景:** 设备休眠/唤醒后，部分已发布通知从通知栏消失。高概率复现（约 80%），需进入深度休眠（灭屏 > 2 分钟）。
+
+**根因定位:**
+- 问题仓库: `openharmony/notification`
+- 问题文件: `distributed/notification/services/src/notification_manager_service.cpp`
+- 问题函数: `NotificationManagerService::OnDeviceStateChanged()` (第 342-368 行)
+- 根因分类: 逻辑错误（设计遗漏）
+
+**根因描述:** 设备深度休眠期间内存 `activeNotificationMap_` 被部分回收。唤醒后 `OnDeviceStateChanged(ACTIVE)` 以不完整的内存缓存为准对比数据库，将数据库中存在的通知误判为"已删除"从而从数据库删除。
+
+**错误代码:**
+
+```cpp
+void NotificationManagerService::OnDeviceStateChanged(DeviceState state)
+{
+    if (state != DeviceState::ACTIVE) return;
+    std::vector<std::string> dbNotifications = notificationStore_->GetAllNotificationIds();
+    std::vector<std::string> toDelete;
+    for (const auto &id : dbNotifications) {
+        if (activeNotificationMap_.find(id) == activeNotificationMap_.end()) {
+            toDelete.push_back(id); // BUG: 内存缺了就删数据库
+        }
+    }
+    for (const auto &id : toDelete) {
+        notificationStore_->Delete(id);
+        ANS_LOGW("Cleaned up orphan notification: %{public}s", id.c_str());
+    }
+}
+```
+
+**修复策略:** 反转一致性检查的逻辑方向——以数据库为可信数据源，唤醒时从数据库恢复内存缓存，而非以内存为准清理数据库。
+
+**修复代码:**
+
+```cpp
+void NotificationManagerService::OnDeviceStateChanged(DeviceState state)
+{
+    if (state != DeviceState::ACTIVE) return;
+    ANS_LOGI("Device woke up, restoring notification cache from database");
+    RestoreFromDatabase(); // 以数据库为准重建缓存
+}
+
+void NotificationManagerService::RestoreFromDatabase()
+{
+    std::vector<NotificationRequest> dbNotifications;
+    int32_t retryCount = 0;
+    const int32_t MAX_RETRY = 3;
+    while (retryCount < MAX_RETRY) {
+        int32_t ret = notificationStore_->GetAllNotifications(dbNotifications);
+        if (ret == ERR_OK) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        retryCount++;
+    }
+    if (retryCount >= MAX_RETRY) {
+        ANS_LOGE("Failed to restore after %{public}d retries", MAX_RETRY);
+        return; // 不清理现有内存通知，避免数据丢失
+    }
+    int32_t restored = 0;
+    for (const auto &request : dbNotifications) {
+        std::string key = request.GetBundleName() + "_" + std::to_string(request.GetId());
+        if (activeNotificationMap_.find(key) == activeNotificationMap_.end()) {
+            activeNotificationMap_[key] = std::make_shared<NotificationRequest>(request);
+            restored++;
+        }
+    }
+    ANS_LOGI("Restored %{public}d notifications from DB, total active: %{public}zu",
+             restored, activeNotificationMap_.size());
+}
+```
+
+**回归测试验证（AC 映射）:**
+
+| AC | 测试用例 | 通过标准 |
+|----|----------|----------|
+| AC-1 | test_suspend_wake_notifications_preserved | 休眠前 N 条通知，唤醒后全部保留 |
+| AC-1 | test_deep_suspend_notification_restore | 深睡 > 5min 后唤醒，通知恢复 |
+| AC-2 | test_db_connection_recovery | 数据库连接断开后自动重连 |
+| AC-3 | test_concurrent_restore_and_publish | 唤醒恢复时新通知发布正常 |
+| AC-4 | test_empty_db_no_crash | 数据库为空时恢复不崩溃 |
+| AC-5 | test_cancel_during_restore | 恢复过程中取消通知正确处理 |
+
+---
+
+## 三、4 阶段工作流
+
+| 阶段 | 输入 | 输出 | 必过条件 |
+|------|------|------|----------|
+| **Stage 1: 定义** | 原始需求 | `proposal.md` | 范围明确、AC 可测试、基线已审批 |
+| **Stage 2: 规格化** | `proposal.md` | `design.md` + `spec.md`（并行产出） | 设计合规、Spec 覆盖 AC、两者一致 |
+| **Stage 3: 实现** | `design.md` + `spec.md` | `execution-plan.md` + `task.md` + 代码 | Plan 已审批、代码通过审查 |
+| **Stage 4: 发布** | 代码 + 审查记录 | 合入 + 复盘 | 验证通过、无阻塞项 |
+
+### 状态机
+
+```
+Draft → ReadyForReview → Approved → 下一阶段
+                ↑
+        ChangesRequested → Draft (修订后重新检查)
+```
+
+### 硬规则
+
+| 规则 | 说明 |
+|------|------|
+| **Approved 才能流转** | 当前阶段未 Approved，不得进入下一阶段 |
+| **计划之前不得实现** | Plan 未通过前，不得修改生产代码 |
+| **实现不得扩范围** | AI 只能修改 Plan 和 Task 列出的文件 |
+| **先定义不涉及项** | 需求阶段必须先明确 N/A 维度 |
+| **先符合 Spec，再谈代码质量** | 规范符合性审查先于代码质量审查 |
+| **证据先于声明** | 没有运行过验证命令，就不能声称"通过了" |
+
+---
+
+## 四、4 级复杂度流程
+
+按照任务规模和影响范围，将流程裁剪为四个级别：
+
+```
+流程严格度递增 ──────────────────────────────────────────────▶
+
+简单                 标准                 复杂                 关键
+单仓小改动            单/双仓中型特性       多仓协作大型特性      关键路径/安全
+简化流程             全流程               全流程+Epic拆解       +安全审查
+1个检查点            2个检查点            3个检查点             4个检查点
+≤1天                ≤3天                ≤5天/Feature         视需要
+```
+
+### 决策树
+
+```
+Q1: 是否涉及内核、安全子系统或系统整体性能？
+  ├── 是 ────▶ 关键
+  └── 否 ────▶ Q2: 涉及多少个源码仓？
+                ├── 1个仓 ──▶ 单仓内，≤3个文件？ → 简单；否则标准
+                ├── 2个仓 ──▶ 标准
+                └── 3个及以上 ──▶ 复杂
+```
+
+### 各级流程对照
+
+| 维度 | 简单 | 标准 | 复杂 | 关键 |
+|------|------|------|------|------|
+| 适用场景 | 单仓小改动/bug fix | 单/双仓中型特性 | 多仓协作/跨SIG | 内核/安全/性能关键 |
+| 流程步骤 | 简化流程 | 全流程 | 全流程+Epic拆解 | 全流程+安全审查 |
+| 检查点 | 1个（最终验证） | 2个（设计+验证） | 3个（需求+设计+验证） | 4个（需求+安全+设计+验证） |
+| Spec模板 | task.md/bugfix.md | spec.md+design.md | epic.md+spec.md+task.md | 复杂模板+安全分析 |
+| 需求澄清 | 跳过 | 使用proposal.md | 使用proposal.md+跨SIG | 使用proposal.md+安全分析 |
+| 上下文工程 | 可选 | 必须（DeepWiki） | 必须（每个Feature独立） | 必须（含安全上下文） |
+| 架构设计 | 可跳过 | 必须，设计检视 | 必须，各Feature独立检视 | 必须，架构评审委员会审批 |
+| AI工作模式 | 全自动 | 半自动 | 按Feature半自动/辅助 | 辅助（全程人机协作） |
+| 时间盒 | ≤1天 | ≤3天 | ≤5天/Feature | 视需要 |
+
+### 升级规则
+
+简单任务超过1天未完成、变更超过3个文件、涉及跨模块 → 升级为标准；标准发现跨SIG或3仓以上 → 退出试点进入复杂流程。
+
+---
+
+## 五、模板体系（12 个核心模板）
+
+按 4 阶段工作流组织，位于 `openharmony/templates/`：
+
+| 阶段 | 模板 | 用途 |
+|------|------|------|
+| **定义** | `proposal.md` | 三合一需求文档（原始需求→澄清记录→需求基线） |
+| **规格化** | `design.md` | 架构设计 + 可选设计扩展区段 |
+| **规格化** | `spec.md` | 特性行为规格、AC、API、兼容性和测试追溯 |
+| **规格化** | `epic.md` | 复杂/关键级跨仓跨SIG特性规划 |
+| **规格化** | `scenario-library.md` | 二合一 Gherkin 场景库 |
+| **实现** | `execution-plan.md` | 执行计划 + Handoff 交接信息 |
+| **实现** | `task.md` | AI 可执行的最小实现单元 |
+| **实现** | `bugfix.md` | 缺陷复现、根因、修复和回归测试规划 |
+| **实现** | `regression-test.md` | 回归测试规格 |
+| **审查** | `review.md` | 四合一审查（架构+规范+质量+决策） |
+| **全阶段** | `gate-checklist.md` | 阶段检查清单 |
+| **全阶段** | `CLAUDE.md` | Agent 指令 |
+
+### proposal.md — 需求澄清与基线
+
+一份文档包含三部分：原始需求（保留问题原话）→ 澄清记录（逐轮对话，按主题分组提出 3-5 个问题）→ 需求基线（固化结论）。关键字段：
+
+- 复杂度分级判断（简单/标准/复杂/关键）
+- 子系统影响评估
+- API 变更评估
+- 不涉及项确认（性能/安全/兼容性/API/IPC/构建/国际化等）
+- 变更控制规则
+
+### design.md — 架构设计
+
+承接 `proposal.md` 的约束判断，输出：
+
+- 架构规则适用性分析（分层/子系统/IPC/API/构建/错误码）
+- 关键设计决策（ADR），每个决策至少 2-3 个替代方案及取舍理由
+- 骨架 Spec 拆分（API 骨架→模块骨架→测试骨架）
+- 可选扩展章节：架构图、时序图、数据模型、状态机、异常传播、并发模型等
+
+### spec.md — 特性规格
+
+只描述用户可见行为、API 契约和验收标准，不包含内部实现细节。关键结构：
+
+- 变更范围（Delta）：ADDED / MODIFIED / REMOVED
+- 用户故事 + WHEN/THEN 验收标准
+- 业务规则、功能规则、异常/豁免规则、恢复契约
+- API 变更分析（名称、签名、权限、SysCap、错误码）
+- 兼容性声明、非功能需求、多设备适配声明
+- Gherkin 行为场景（可选）
+
+### task.md — 最小可执行单元
+
+AI Agent 据此独立完成编码实现。关键字段：
+
+- 做什么 + 不做什么（明确排除项）
+- AC 映射 + 规则映射
+- 受影响文件列表（新增/修改/测试）
+- 代码变更规格（当前代码+目标代码）
+- BUILD.gn 变更
+- 验证检查清单 + 完成证据
+
+### execution-plan.md — 执行计划
+
+将 Approved Spec 拆成可独立执行、可验证、可审查的 Task。包含：
+
+- AC 到 Task 追溯表
+- 首批实现边界（核心+可后置）
+- Task 粒度原则（每个 Task 形成可独立验证的最小能力闭环）
+- Handoff Summary（交接信息自包含，不依赖文件路径引用）
+
+### review.md — 统一审查模板
+
+合并架构设计评审、规范符合性审查、代码质量审查和阶段审批。包含纠正循环机制（最多 3 轮，仍不通过则升级为架构评审）。
+
+---
+
+## 六、上下文工程
+
+### DeepWiki MCP 集成
+
+三阶段使用模型：
+
+| 阶段 | 查询目标 | 操作 |
+|------|----------|------|
+| 需求分析（F2/F3） | 子系统范围、现有功能、依赖关系、API现状 | `read_wiki_structure` + `ask_question` |
+| 架构设计（F4/F5） | 接口签名、数据模型、构建配置、编码模式 | `read_wiki_contents` + `ask_question` |
+| 一致性验证（F8/F9） | 分层合规、API一致、跨仓一致、构建合规 | `ask_question` |
+
+### Skill 体系
+
+混合架构：Markdown 知识定义 + 脚本辅助工具，按需加载：
+
+| Skill | 用途 | 加载阶段 |
+|-------|------|----------|
+| `oh-architecture` | 四层架构规则、子系统边界 | F5 架构设计 |
+| `oh-build-system` | GN 构建规则、bundle.json | F5/F7 |
+| `oh-coding-rules` | ArkTS/C++/JS 编码规范 | F7 AI开发 |
+| `oh-api-style` | API 设计规范、SysCap | F3/F5 |
+
+### 上下文产物落盘
+
+上下文收集结果必须写入 `context-references` 区段，包含查询来源、仓库路径、关键发现（只记录会影响设计/实现/测试/门禁的结论）、可信度（高/中/低）。
+
+可信度规则：高可信直接进入 Task Spec；中可信标注来源并在实现前读取关键文件确认；低可信不能作为实现依据。
+
+---
+
+## 七、质量评估体系
+
+### 4 阶段门禁
+
+| 门禁 | 简单 | 标准 | 复杂/关键 |
+|------|------|------|-----------|
+| Stage 1 Define | 简化需求即可 | 需求澄清+基线 | 需求+Epic范围确认 |
+| Stage 2 Specify | 可跳过设计 | 设计检视+Spec检查 | 设计检视+Spec+合规 |
+| Stage 3 Implement | 简化Task/Bugfix Spec | Spec+执行计划 | Epic+Feature+多Task |
+| Stage 4 Release | 简化验证+复盘 | 实现+验证+复盘 | 跨仓一致性+全量复盘 |
+
+### 三级指标体系
+
+**第一层：DORA 工程效率指标**
+- Spec-to-Code 周期：简单 ≤1 天、标准 ≤3 天、复杂 ≤5 天/Feature
+- 变更失败率 ≤ 5%
+- MTTR ≤ 4 小时
+
+**第二层：AI 生成质量指标**
+- AI 一次通过率 ≥ 70%
+- Spec 遵从度 ≥ 95%
+- XTS 兼容通过率 100%
+
+**第三层：Spec 质量指标（3C 框架）**
+- Completeness 完整度 ≥ 90%
+- Consistency 一致性 100%
+- Checkability 可测试性 100%
+- AI 友好度 ≥ 3.5/5
+
+### 四级 Benchmark 测试套件
+
+| 级别 | 数据来源 | 通过标准 |
+|------|----------|----------|
+| BM-简单 | ArkTS-Test（300 prompts） | pass@1 ≥ 60% |
+| BM-标准 | 社区 PR 历史 | 完整性 ≥ 70%，覆盖率 ≥ 80% |
+| BM-复杂 | 社区 Issue + 设计文档 | XTS 100%，架构合规 ≥ 90% |
+| BM-关键 | 安全/性能关键路径 | 安全零高危，性能不劣化 |
+
+---
+
+## 八、Spec 仓库目录结构
+
+在业务代码仓中新增 `.specs/` 顶层目录：
+
+```text
+.specs/
+├── registry.md               # 全局索引
+├── features/                 # FEAT-YYYYMMDD-NNN-short-slug/
+│   └── {feature-id}/
+│       ├── manifest.md       # 机器可读元数据
+│       ├── lineage.md        # 新设计/存量设计判断
+│       ├── proposal.md       # 需求澄清与基线
+│       ├── design.md         # 架构设计
+│       ├── spec.md           # 特性规格
+│       ├── execution-plan.md # 执行计划
+│       ├── tasks/            # TASK-NNN-*
+│       ├── gates/            # 阶段门禁记录
+│       ├── reviews/          # 审查记录
+│       └── retrospectives/   # 复盘记录
+├── bugfixes/                 # BUG-YYYYMMDD-NNN-short-slug/
+├── decisions/                # ADR-YYYYMMDD-NNN-short-slug/
+├── migrations/               # 存量设计迁移
+├── release-views/            # 按版本查看的派生视图
+└── archive/                  # 已废弃的旧规格
+```
+
+### 命名规则
+
+- Feature 使用稳定 ID：`FEAT-20260422-001-notification-category`
+- Bugfix 使用稳定 ID：`BUG-20260423-001-notification-lost-after-sleep`
+- Task 使用序号：`TASK-002-serialization-compat`
+- 目标发行版本写在 `manifest.md`，不在目录名中
+
+### Lineage 字段
+
+| 值 | 含义 |
+|----|------|
+| `new` | 全新设计 |
+| `legacy` | 存量行为补规格 |
+| `migrated` | 旧设计迁移到新模板 |
+| `new-on-legacy` | 新需求建立在存量能力上 |
+| `bugfix-on-feature` | 缺陷修复关联某 Feature |
+
+---
+
+## 九、AI 自闭环条件
+
+AI 可以自主完成开发一个 Task，需同时满足：
+
+| 条件 | 检查方法 |
+|------|----------|
+| Spec 完整性：所有 AC 使用 WHEN/THEN 格式 | `spec-validate.sh` |
+| 上下文充分：相关模块已索引 | context-references 段非空 |
+| 约束明确：编码规范已加载 | Skill 列表已声明 |
+| 测试期望明确：每个 AC 有对应测试 | 测试追溯表完整 |
+| 无外部阻塞：不依赖未完成 Task | 依赖列表为空 |
+| 粒度合适：1-3 个文件，200 行以内 | 任务规模评估 |
+
+**AI 自闭环禁入条件**（满足任一即不能自闭环）：
+- 需求没有 WHEN/THEN 验收标准
+- 新增/变更 Public/System API
+- 涉及权限、安全、加密、并发、性能基线
+- 上下文查询存在未解决冲突
+
+---
+
+## 十、试点执行手册
+
+### 试点目标
+
+首批试点只覆盖简单/标准任务，验证流程可执行、上下文可追溯、质量可度量、模板可迭代。
+
+### 样本选择
+
+| 类型 | 入选条件 | 排除条件 |
+|------|----------|----------|
+| 简单 bugfix | 单仓、根因明确、≤3个文件 | 并发/内存/安全/性能关键路径 |
+| 简单 小特性 | 单模块、小范围行为补充 | 新增 Public API |
+| 标准 特性 | 单/双仓、跨模块但边界清晰 | 跨SIG、3仓以上、接口未冻结 |
+
+### 日级执行流程
+
+**Day 0**：选择试点任务，登记任务 ID、目标仓、目标分支。建立目录 `.specs/{features|bugfixes}/{stable-id}/`。
+
+**Day 1**：简单级别直接填写 `task.md`/`bugfix.md`；标准级别先 output `proposal.md`，再并行产出 `design.md` 和 `spec.md`，通过 Stage 2 检视后拆出 `task.md`。使用 DeepWiki 完成上下文收集。
+
+**Day 1-2**：AI 实现。AI 只能修改 Task Spec 列出的文件，发现需扩大范围时停止并反馈 Spec 变更建议。
+
+**Day 2-3**：检视和复盘。对照 AC 逐项确认实现和测试覆盖。填写复盘记录：耗时、AI 一次通过率、人工修改次数、上下文缺口、模板改进建议。
+
+### 度量采集
+
+| 指标 | 说明 |
+|------|------|
+| Spec 准备耗时 | 从创建 Spec 到 Stage 2 通过的小时数 |
+| 上下文收集耗时 | DeepWiki 到上下文完成的小时数 |
+| AI 一次通过 | 首次实现是否通过 Stage 3 检查项和人工检视 |
+| 人工修改次数 | AI 生成后人工要求的修改轮次 |
+| AC 覆盖率 | 有验证证据的 AC 数 / 总 AC 数 |
+
+---
+
+## 十一、国内实践参考
+
+2025-2026 年，国内头部企业从 Vibe Coding 转向规范驱动开发：
+
+| 企业 | 产品/方法论 | 核心特色 |
+|------|------------|----------|
+| 网易 | CodeWave | NASL DSL 结构化 Spec，低代码平台 |
+| 淘宝闪购 | Rules+Spec+Skills | 三位一体，渐进式披露，疑问点机制 |
+| 京东 | JoyCode | 规约编程三阶段 + CSR 上下文引擎（SWE-Bench Top3） |
+| 阿里云 | 通义灵码 | 项目专属规则 + 企业知识库 |
+| 百度 | 文心快码 Comate | SPEC 模式 + 多智能体架构 |
+| 字节跳动 | Trae | Rules+Spec+Skills + SOLO 模式 |
+
+---
+
+## 十二、工具链配置
+
+### 快速开始
+
+1. 阅读 `workflow/workflow.md` 获取 4 阶段流转和审批规则
+2. 通过分级流程指南确定适用的复杂度级别
+3. 从 `templates/` 选择对应模板开始编写 Spec
+4. 按上下文工程文档配置 DeepWiki MCP 和 Skill 体系
+5. 参考质量评估体系建立质量闭环
+6. 在 `.specs/` 中沉淀可追溯文档
+
+### Agent 集成
+
+| 工具 | 配置方式 |
+|------|----------|
+| Claude Code | `CLAUDE.md` + `.claude/skills/ohos-sdd/` |
+| OpenCode | `.agents/skills/ohos-sdd/` |
+| Cursor | `.cursorrules` 引用 Spec 目录 |
+| 通用 | `AGENTS.md` |
+
+### 验证脚本
+
+```bash
+# Spec 格式校验
+bash openharmony/tools/scripts/spec-validate.sh openharmony/examples
+
+# 质量评估报告
+bash openharmony/tools/scripts/quality-report.sh openharmony/examples --no-summary
+```
+
+---
+
+## 参考资料
+
+- 学术论文：[Spec-Driven Development: From Code to Contract in the Age of AI Coding Assistants](https://arxiv.org/abs/2602.00180) | [The Kitchen Loop](https://arxiv.org/abs/2603.25697)
+- 源工程：[github.com/oshunter/spec-for-ai](https://gitcode.com/oshunter/spec-for-ai)
+- 工具：AWS Kiro | GitHub Spec Kit | Tessl | Claude Code | JetBrains Junie
+
+

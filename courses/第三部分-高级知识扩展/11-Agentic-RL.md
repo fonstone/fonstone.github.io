@@ -1,4 +1,4 @@
-# 第十一章 Agentic-RL
+﻿# 第十一章 Agentic-RL
 
 ## 11.1 从 LLM 训练到 Agentic RL
 
@@ -36,7 +36,7 @@ duck egg. How much in dollars does she make every day at the farmers' market?
 在深入 Agentic RL 之前，我们需要先理解 LLM 训练的完整流程。一个强大的 LLM(如 GPT、Claude、Qwen)的诞生，通常要经历两个主要阶段:预训练(Pretraining)和后训练(Post-training)。如图 11.1 所示，这两个阶段构成了 LLM 从"语言模型"到"对话助手"的完整演化路径。
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-1.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-1.png" alt="" width="85%"/>
   <p>图 11.1 LLM 训练全景图</p>
 </div>
 
@@ -94,7 +94,7 @@ $$
 
 <div align="center">
   <p>表 11.1 PBRFT 与 Agentic RL 对比</p>
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-table-1.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-table-1.png" alt="" width="85%"/>
 </div>
 
 在状态方面，PBRFT 的状态 $s_0$ 仅由用户提示构成，时间跨度 $T=1$(单步)，状态不变化，可以表示为 $s_0 = \text{prompt}$。而 Agentic RL 的状态 $s_t$ 包含历史观察和上下文，时间跨度 $T \gg 1$(多步)，状态随行动演化，可以表示为 $s_t = (\text{prompt}, o_1, o_2, ..., o_t)$，其中 $o_t$ 是第 $t$ 步的观察(如工具返回结果、环境反馈等)。
@@ -130,7 +130,7 @@ $$
 Agentic RL 的目标是赋予 LLM 智能体六大核心能力，如图 11.2 所示。
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-2.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-2.png" alt="" width="85%"/>
   <p>图 11.2 Agentic RL 的六大核心能力</p>
 </div>
 
@@ -155,7 +155,7 @@ Agentic RL 的目标是赋予 LLM 智能体六大核心能力，如图 11.2 所�
 HelloAgents 的 Agentic RL 模块采用四层架构设计，如图 11.3 所示。
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-3.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-3.png" alt="" width="85%"/>
   <p>图 11.3 HelloAgents Agentic RL 架构</p>
 </div>
 
@@ -251,7 +251,7 @@ GSM8K(Grade School Math 8K)<sup>[4]</sup>是一个高质量的小学数学应用
 
 <div align="center">
   <p>表 11.2 GSM8K 数据集统计</p>
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-table-2.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-table-2.png" alt="" width="85%"/>
 </div>
 让我们看一个典型的 GSM8K 问题:
 
@@ -272,7 +272,7 @@ GSM8K(Grade School Math 8K)<sup>[4]</sup>是一个高质量的小学数学应用
 GSM8K 数据集需要转换为不同的格式，以适应不同的训练方法，如图 11.4 所示。
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-4.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-4.png" alt="" width="85%"/>
   <p>图 11.4 GSM8K 数据格式转换</p>
 </div>
 
@@ -303,7 +303,7 @@ RL 格式用于强化学习，只提供问题和正确答案，不提供解题�
 
 <div align="center">
   <p>表 11.3 数据格式对比</p>
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-table-3.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-table-3.png" alt="" width="85%"/>
 </div>
 HelloAgents 提供了便捷的数据集加载函数。让我们通过代码来加载和查看数据集:
 
@@ -364,7 +364,7 @@ $$
 HelloAgents 提供了三种内置奖励函数，可以单独使用或组合使用，如图 11.5 所示。
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-5.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-5.png" alt="" width="85%"/>
   <p>图 11.5 奖励函数设计</p>
 </div>
 <strong>（1）准确率奖励</strong>
@@ -560,7 +560,7 @@ print("步骤奖励:", json.loads(step_result)['description'])
 
 <div align="center">
   <p>表 11.4 奖励函数对比</p>
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-table-4.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-table-4.png" alt="" width="85%"/>
 </div>
 
 ### 11.2.3 自定义数据集和奖励函数
@@ -917,7 +917,7 @@ Final Answer: 72<|im_end|>
 如图 11.6 所示，SFT 是从预训练模型到强化学习的桥梁。
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-6.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-6.png" alt="" width="85%"/>
   <p>图 11.6 SFT 在训练流程中的作用</p>
 </div>
 
@@ -951,7 +951,7 @@ $$
 
 <div align="center">
   <p>表 11.5 LoRA vs 全量微调对比</p>
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-table-5.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-table-5.png" alt="" width="85%"/>
 </div>
 
 LoRA 的关键超参数包括:秩(rank，r)，控制 LoRA 矩阵的秩，越大表达能力越强，但参数量也越多，典型值为 4-64，默认 8;Alpha($\alpha$)，LoRA 的缩放因子，实际更新为 $\Delta W = \frac{\alpha}{r} BA$，控制 LoRA 的影响强度，典型值等于 rank;目标模块(target_modules)，指定哪些层应用 LoRA，通常选择注意力层(q_proj， k_proj， v_proj， o_proj)，也可以包括 MLP 层(gate_proj， up_proj， down_proj)。
@@ -1175,7 +1175,7 @@ $$
 如图 11.7 所示，PPO 和 GRPO 的训练流程对比。
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-7.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-7.png" alt="" width="85%"/>
   <p>图 11.7 PPO vs GRPO 训练流程</p>
 </div>
 
@@ -1185,7 +1185,7 @@ $$
 
 <div align="center">
   <p>表 11.6 PPO vs GRPO 对比</p>
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-table-6.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-table-6.png" alt="" width="85%"/>
 </div>
 
 
@@ -1565,7 +1565,7 @@ $$
 
 <div align="center">
   <p>表 11.7 评估指标对比</p>
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-table-7.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-table-7.png" alt="" width="85%"/>
 </div>
 
 
@@ -1752,7 +1752,7 @@ for group_name, results in step_groups.items():
 基于评估和分析结果，我们可以确定模型的改进方向，如图 11.8 所示。
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-8.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-8.png" alt="" width="85%"/>
   <p>图 11.8 模型改进迭代流程</p>
 </div>
 
@@ -1767,7 +1767,7 @@ for group_name, results in step_groups.items():
 一个完整的 Agentic RL 训练流程包括以下阶段:数据准备、SFT 训练、SFT 评估、GRPO 训练、GRPO 评估、模型部署。如图 11.9 所示。
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-9.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-9.png" alt="" width="85%"/>
   <p>图 11.9 端到端训练流程</p>
 </div>
 
@@ -2205,7 +2205,7 @@ print(f"最佳准确率: {study.best_value:.2%}")
 
 <div align="center">
   <p>表 11.8 超参数调优方法对比</p>
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-table-8.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-table-8.png" alt="" width="85%"/>
 </div>
 
 ### 11.6.3 分布式训练
@@ -2354,7 +2354,7 @@ accelerate launch --config_file deepspeed_zero3.yaml train_script.py
 
 <div align="center">
   <p>表 11.9 显存对比 (Qwen3-0.6B 模型)</p>
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/11-figures/11-table-9.png" alt="" width="85%"/>
+  <img src="../images/11-figures/11-table-9.png" alt="" width="85%"/>
 </div>
 
 <strong>（4）多节点训练</strong>
@@ -2685,4 +2685,5 @@ Agentic RL 旨在提升智能体的六大核心能力:
    - 在 11.1.3 节中提到，Agentic RL 适合优化"需要多步推理、工具使用、长期规划"的任务。请设计一个"工具学习"训练方案：给定一组工具（如搜索引擎、计算器、代码执行器），如何训练智能体学会在合适的时机选择合适的工具？奖励函数应该如何设计？
    - 工具使用往往涉及复杂的依赖关系（如"必须先调用工具 A 获取信息，才能调用工具 B"）。请设计一个"分层强化学习"方案：高层策略负责任务规划，低层策略负责工具调用。这种分层结构如何训练？如何协调高层和低层的优化目标？
    - 在实际应用中，工具的数量可能非常多（如 50+个 API），直接训练可能面临"探索效率低"的问题。请设计一个"课程学习"（curriculum learning）方案：从简单任务（使用少量工具）开始训练，逐步增加任务难度和工具数量。这个方案应该如何设计课程顺序？如何评估智能体是否准备好进入下一阶段？
+
 

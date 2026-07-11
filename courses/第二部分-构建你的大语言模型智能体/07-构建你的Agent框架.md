@@ -1,4 +1,4 @@
-# 第七章 构建你的智能体框架
+﻿# 第七章 构建你的智能体框架
 
 在前面的章节中，我们讲解了智能体的基础知识，并体验了主流框架带来的开发便利。从本章开始，我们将进入一个更具挑战也更有价值的阶段：**从零开始，逐步构建一个智能体框架——HelloAgents**。
 
@@ -449,7 +449,7 @@ for chunk in llm.think(messages):
 
 <div align="center">
   <p>表 7.1 HelloAgentLLM不同版本特性对比</p>
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/7-figures/table-01.png" alt="" width="90%"/>
+  <img src="../images/7-figures/table-01.png" alt="" width="90%"/>
 </div>
 
 如上表7.1所示，这种演进体现了框架设计的重要原则：**从简单开始，逐步完善**。我们在保持接口简洁的同时，增强了功能的完整性。
@@ -1277,7 +1277,7 @@ print(f"数学专用Agent结果: {math_result}")
 
 <div align="center">
   <p>表 7.2 Agent不同章节实现对比</p>
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/7-figures/table-02.png" alt="" width="90%"/>
+  <img src="../images/7-figures/table-02.png" alt="" width="90%"/>
 </div>
 
 ### 7.4.5 FunctionCallAgent
@@ -1657,7 +1657,7 @@ if __name__ == "__main__":
 通过这个简化的数学计算工具案例，我们学会了如何快速开发自定义工具：编写一个简单的计算函数，通过ToolRegistry注册，然后与SimpleAgent集成使用。为了更直观的观察，这里提供了图7.1，可以清晰理解代码的运行逻辑。
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/datawhalechina/Hello-Agents/main/docs/images/7-figures/01.png" alt="" width="90%"/>
+  <img src="../images/7-figures/01.png" alt="" width="90%"/>
   <p>图 7.1 基于Helloagents的SimpleAgent运行工作流</p>
 </div>
 
@@ -2198,3 +2198,4 @@ async def test_parallel_execution():
    - 首先为 `HelloAgents` 添加一个"流式输出"功能，使得 `Agent` 在生成响应时能够实时返回中间结果（类似 `ChatGPT` 用户界面的打字效果）。请设计这个功能的实现方案，说明需要修改哪些类和方法。
    - 然后为框架添加"多轮对话管理"功能，能够自动管理对话历史、支持对话分支和回溯，你会如何设计？需要新增哪些类？如何与现有的 `Message` 系统集成？
    - 最后请为 `HelloAgents` 设计一个"插件系统"，允许第三方开发者通过插件的方式扩展框架功能（如添加新的 `Agent` 类型、新的工具类型等），而无需修改框架核心代码。要求画出插件系统的架构图并说明关键接口。
+

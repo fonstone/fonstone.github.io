@@ -1,0 +1,360 @@
+---
+title: "FIQ 真抢占实现"
+description: "调度器设计 - FIQ 真抢占实现"
+date: "2026-07-12"
+order: 8002
+tags: ["SRSDB", "RFEIA", "FIQ handler", "真抢占", "优先级调度", "16字帧"]
+est_time: "60分钟"
+---
+
+# 本章目标
+
+- 用 `SRSDB + CPS + PUSH` 在 FIQ handler 内完整保存任务上下文（无需任务配合）
+- 实现优先级调度：`add_task(entry, priority)`，调度器始终选最高优先级 Ready 任务
+- 实现立即抢占：时间片到期 OR 更高优先级任务 Ready → FIQ 直接切换，任务不需要调用 yield
+- 在 QEMU 上验证：高优先级任务独占 CPU，退出后低优先级均分时间片
+
+## 前置知识
+
+### 已完成的章节
+
+`07-scheduler/01-ready-queue.md` 已完成，调度器数据结构与 Round-Robin 逻辑就绪，但上一节的 `fiq_handler` 只通过标志触发协作切换（需要任务主动调用 `yield_now`）。本节用 SRSDB 重写 `fiq_handler`，实现真正的硬件级抢占。
+
+### 两条关键 ARM 指令
+
+### SRSDB SP!, #mode（Store Return State, Decrement Before）
+
+```text
+执行前（FIQ 模式）：
+  lr_fiq  = 被中断的 PC + 4（ARM 流水线偏移）
+  spsr_fiq= 被中断的 CPSR（含条件标志、模式位）
+  sp_svc  = T（任务当前 SVC 栈顶）
+
+执行 SUB LR, LR, #4（先调整）后执行 SRSDB SP!, #0x13：
+  [T - 8] = lr_fiq       （= 被中断的 PC）← resume_pc
+  [T - 4] = spsr_fiq     （= 被中断的 CPSR）
+  sp_svc  = T - 8        （更新 SVC 模式的栈指针）
+```
+
+一条指令完成了"把 FIQ 现场信息转移到任务 SVC 栈"的操作，绕开了 FIQ r8-r12 banking 问题。
+
+### RFEIA SP!（Return From Exception, Increment After）
+
+```text
+执行 RFEIA SP!：
+  PC   = [sp]       （= 保存的 resume_pc）
+  CPSR = [sp + 4]   （= 保存的 cpsr）
+  sp  += 8          （消费这两个槽）
+```
+
+原子地恢复 PC 和 CPSR，并正确处理模式切换，是异常返回的标准做法。
+
+### 16 字 Context Frame
+
+```text
+sp+0:  r0       ─┐
+sp+4:  r1        │ PUSH {R0-R12, LR} 写入
+...              │（在 CPS 切到 SVC 模式后执行，r8-r12 = 任务的寄存器）
+sp+48: r12       │
+sp+52: lr_svc   ─┘  任务的 lr 寄存器
+sp+56: resume_pc ─── SRSDB 写入（= 被中断的 PC）
+sp+60: cpsr      ─── SRSDB 写入（= 被中断的 CPSR）
+```
+
+协作式和抢占式共用同一格式，恢复路径完全相同（`POP {R0-R12,LR}; RFEIA SP!`）。
+
+> **注意：** `delay_ticks()` 是忙等（内部 poll `get_ticks()`），任务在等待期间仍占用 CPU（处于 Running 状态，而非 Blocked）。真正的"睡眠"（Blocked 状态）需要第 08 章的同步原语才能实现。因此，当前系统的优先级效果体现为：**所有任务 Ready 时，高优先级优先获得 CPU**；若高优先级任务处于忙等，低优先级仍无法运行。
+
+# FIQ Handler 完整改写
+
+## 新的 fiq_handler（main.rs）
+
+**位置：`src/main.rs` → `global_asm!` 块，替换原有的 FIQ 向量跳转代码**
+
+```asm
+// ── fiq_handler：SRSDB + CPS + PUSH，在任务 SVC 栈上直接建 16 字帧 ──────────
+fiq_handler:
+    sub  lr, lr, #4              // ① lr_fiq = 被中断的 PC
+    srsdb sp!, #0x13             // ② {lr_fiq, spsr_fiq} → SVC 栈顶，sp_svc -= 8
+    cps  #0x13                   // ③ 切到 SVC 模式；r8-r12 现在是任务的
+    push {r0-r12, lr}            // ④ 保存 r0-r12 + lr_svc（sp -= 56）
+    // 现在 sp_svc 指向完整 16 字帧底部（r0 处）
+
+    ldr  r0, =CURRENT_TASK       // r0 = &CURRENT_TASK
+    ldr  r0, [r0]                // r0 = CURRENT_TASK（当前任务 Task 指针）
+    str  sp, [r0]                // Task.stack_ptr = sp（保存帧地址到 TCB）
+
+    bl   scheduler_tick          // tick++ + ACK + EOI + 优先级选下一任务 + 更新 CURRENT_TASK
+
+    ldr  r0, =CURRENT_TASK       // 重新读（scheduler_tick 可能已切换）
+    ldr  r0, [r0]
+    ldr  sp, [r0]                // sp = 下一任务的 stack_ptr
+
+    pop  {r0-r12, lr}            // 恢复 r0-r12 + lr_svc
+    rfeia sp!                    // PC=[sp], CPSR=[sp+4], sp+=8，跳入目标任务
+    .ltorg                       // 此处刷新 literal pool，保证偏移正确
+```
+
+这 9 步就是完整的 FIQ 抢占流程。关键点：
+- 步骤②（SRSDB）在 FIQ 模式执行，把 {PC, CPSR} 存到 SVC 栈（不用 FIQ 自己的栈）
+- 步骤③（CPS）后，r8-r12 变为任务的寄存器（FIQ banking 限制解除）
+- 步骤④（PUSH）建完整帧，之后所有操作都在正常 SVC 模式下进行
+
+## 为什么要 `.ltorg`
+
+`ldr r0, =CURRENT_TASK` 会生成一个 literal pool 条目（存放 CURRENT_TASK 的地址）。如果不强制刷新，assembler 会把 literal pool 放到整个 global_asm! 块的末尾。当 fiq_handler 与 context_switch、start_first_task 共用一个 global_asm! 块时，literal pool 可能被放到离 ldr 指令很远的位置，导致 `[PC, #offset]` 的 offset 计算错误，加载到错误的地址（而不是 CURRENT_TASK 的地址）。
+
+`.ltorg` 指令强制 assembler 在该处立即刷新 literal pool，确保每个函数的 literal pool 都紧跟在函数之后。
+
+## 协作式 context_switch（手动建相同格式的帧）
+
+**位置：`src/task.rs` → `global_asm!` 块，替换第 06 章的 `context_switch`（原来的 push/pop/bx lr 版本）**
+
+```asm
+context_switch:                  // r0=curr, r1=next
+    sub  sp, sp, #64             // 预留 16 字
+    stmia sp, {r0-r12}           // [sp+0..sp+48] = r0-r12
+    str  lr, [sp, #52]           // [sp+52] = lr_svc（协作式 = return addr）
+    str  lr, [sp, #56]           // [sp+56] = resume_pc（同上）
+    mrs  r2, cpsr
+    str  r2, [sp, #60]           // [sp+60] = cpsr
+    str  sp, [r0]                // curr->stack_ptr = sp（r0 仍 = curr）
+    ldr  sp, [r1]                // sp = next->stack_ptr
+    pop  {r0-r12, lr}            // 恢复 r0-r12 + lr_svc
+    rfeia sp!                    // 恢复 PC + CPSR，跳入目标任务
+    .ltorg
+```
+
+协作式也用 `rfeia sp!` 恢复，与抢占式恢复路径完全相同。
+
+## create_task_with_arg 初始帧
+
+**位置：`src/task.rs`，将 01 节中的 `create_task_with_arg`（14 字帧）替换为此 16 字帧版本**
+
+16 字帧与 FIQ handler 保存的帧格式完全相同，恢复路径统一为 `pop {r0-r12, lr}; rfeia sp!`：
+
+```rust
+pub fn create_task_with_arg(wrapper: usize, arg: usize) -> Task {
+    unsafe {
+        let id = TASK_COUNT;
+        TASK_COUNT += 1;
+
+        let stack = &mut TASK_STACKS[id];
+        // 16 字初始帧，布局与 fiq_handler 保存的帧相同：
+        //   [STACK_SIZE-16..STACK_SIZE-4]  r0-r12
+        //   [STACK_SIZE-3]                 lr_svc
+        //   [STACK_SIZE-2]                 resume_pc  ← rfeia 加载 PC 的位置
+        //   [STACK_SIZE-1]                 cpsr       ← rfeia 加载 CPSR 的位置
+        stack[STACK_SIZE - 16] = arg as u32;     // r0 = 用户函数指针（wrapper 进入时读取）
+        // r1-r12 已为 0（static 零初始化）
+        stack[STACK_SIZE - 3]  = 0;              // lr_svc（新任务无调用链，rfeia 不会用到它）
+        stack[STACK_SIZE - 2]  = wrapper as u32; // resume_pc = task_entry_wrapper 地址
+        stack[STACK_SIZE - 1]  = 0x13;           // cpsr = 0x13：SVC 模式，F/I 位 = 0（FIQ/IRQ 使能）
+
+        Task {
+            stack_ptr: &mut stack[STACK_SIZE - 16] as *mut u32,
+        }
+    }
+}
+```
+
+与 01 节的 14 字帧相比，三处变化：
+
+| 字段 | 14 字帧（01 节） | 16 字帧（本节） |
+| --- | --- | --- |
+| `stack_ptr` 指向 | `STACK_SIZE - 14`（r0 处） | `STACK_SIZE - 16`（r0 处） |
+| `lr`（位置 13） | `wrapper` 地址，`bx lr` 跳入 | `0`，新任务无调用链 |
+| `resume_pc`（位置 14） | 不存在 | `wrapper` 地址，`rfeia` 加载 PC |
+| `cpsr`（位置 15） | 不存在 | `0x13`，`rfeia` 加载 CPSR |
+
+旧版本用 `bx lr` 跳入 wrapper，新版本用 `rfeia sp!` 同时恢复 PC 和 CPSR，两种方式最终效果相同，但新版本 CPSR 被正确初始化（SVC 模式、中断使能），任务从第一条指令开始就处于正确的处理器状态。
+
+# 优先级调度
+
+## add_task 新增 priority 参数
+
+**位置：`src/scheduler.rs`，01 节已完整实现，此处仅示意函数签名包含 `priority: u8`**
+
+```rust
+// scheduler.rs
+pub fn add_task(entry: fn(), priority: u8) {
+    // priority: 0 = 最低，255 = 最高
+}
+```
+
+## scheduler_tick 优先级逻辑
+
+**位置：`src/scheduler.rs`，01 节已给出完整代码，此处为关键优先级逻辑的摘要视图**
+
+```rust
+#[unsafe(no_mangle)]
+pub extern "C" fn scheduler_tick() {
+    // 1. tick++ + ACK + 清中断 + EOI
+    tick::tick_increment();
+    gic::gic_ack0();
+    timer::TIMER1INTCLR.write_volatile(1);
+    gic::gic_eoi0(33);
+
+    // 2. 递减时间片
+    let (slice_expired, cur_prio) = { ... };
+
+    // 3. 检查是否有更高优先级任务 Ready（立即抢占，不等时间片）
+    let higher_ready = (0..count).any(|i| {
+        slot.state == Ready && slot.priority > cur_prio
+    });
+
+    if !slice_expired && !higher_ready { return; }  // 继续当前任务
+
+    // 4. 当前任务退回 Ready
+    current.state = Ready;
+
+    // 5. 选下一个最高优先级任务（同优先级 Round-Robin）
+    if let Some(next) = select_next() {
+        next.state = Running;
+        CURRENT_TASK = &next.task;
+    }
+}
+```
+
+关键：即使时间片未到期，一旦更高优先级任务 Ready，也立刻触发切换（高优先级立即抢占）。
+
+# 验证方法
+
+## 修改 main.rs — 演示一：抢占验证
+
+用两个不同优先级的任务验证真抢占：高优先级任务（`task_10ms`）在低优先级任务（`task_20ms`）的忙等过程中强制插入。
+
+**将 `src/main.rs` 里的任务函数和 `rust_main` 替换为以下内容：**
+
+```rust
+fn task_10ms() {   // priority 3，最高
+    loop {
+        println!("[10ms p3] <<< PREEMPT >>> tick={}", tick::get_ticks());
+        scheduler::sleep_ticks(10);
+    }
+}
+
+fn task_20ms() {   // priority 2，用 delay_ticks 忙等模拟长时间工作
+    loop {
+        println!("[20ms p2] START tick={}", tick::get_ticks());
+        tick::delay_ticks(15);   // 忙等 15 tick，期间不主动让出 CPU
+        println!("[20ms p2] END   tick={}", tick::get_ticks());
+        scheduler::sleep_ticks(5);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_main() -> ! {
+    uart::uart_init();
+    println!("Hello from RTOS!");
+    gic::gic_init();
+    timer::timer_init();
+
+    scheduler::add_task(task_20ms, 2);
+    scheduler::add_task(task_10ms, 3);
+    scheduler::start();
+}
+```
+
+## 编译并运行
+
+```bash
+cargo build
+qemu-system-arm \
+  -machine mps3-an536 \
+  -nographic \
+  -device loader,file=target/armv8r-none-eabihf/debug/rtos
+```
+
+## 预期输出
+
+```text
+[20ms p2] START tick=0
+[10ms p3] <<< PREEMPT >>> tick=10   ← task_10ms 在 task_20ms 忙等期间强制插入
+[20ms p2] END   tick=15             ← task_10ms sleep 结束后，task_20ms 从被打断处继续
+[10ms p3] <<< PREEMPT >>> tick=20
+[20ms p2] START tick=20
+...
+```
+
+抢占发生在 `START` 和 `END` 之间——`task_20ms` 并没有调用 yield，是被 FIQ 定时器强制切换的。
+
+## 修改 main.rs — 演示二：多优先级周期任务
+
+**将任务函数和 `rust_main` 替换为以下内容：**
+
+```rust
+fn task_5ms() {    // priority 3
+    loop {
+        println!("[5ms  p3] tick={}", tick::get_ticks());
+        scheduler::sleep_ticks(5);
+    }
+}
+
+fn task_13ms() {   // priority 2
+    loop {
+        println!("[13ms p2] tick={}", tick::get_ticks());
+        scheduler::sleep_ticks(13);
+    }
+}
+
+fn task_bg() {     // priority 1，填补空隙
+    loop {
+        println!("[bg   p1] tick={}", tick::get_ticks());
+        scheduler::sleep_ticks(3);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_main() -> ! {
+    uart::uart_init();
+    println!("Hello from RTOS!");
+    gic::gic_init();
+    timer::timer_init();
+
+    scheduler::add_task(task_bg,   1);
+    scheduler::add_task(task_13ms, 2);
+    scheduler::add_task(task_5ms,  3);
+    scheduler::start();
+}
+```
+
+预期：5ms 任务精确每 5 tick 出现，期间 13ms 和 bg 任务分别填补空隙；所有任务都睡眠时 idle 任务执行 `wfi`，输出静默直到下一次唤醒。
+
+# 练习题
+
+```quiz single
+Q: fiq_handler 里为什么要在 SRSDB 之前执行 SUB LR, LR, #4？
++ 因为 FIQ 进入时 lr_fiq = 被中断指令的 PC + 4（ARM 流水线偏移），减 4 才是应该恢复执行的正确地址；不减 4 会跳过被中断的指令
+- 因为 SRSDB 指令要求 LR 必须是 4 字节对齐
+- 为了把 lr_fiq 转换成 Thumb 模式地址
+- 这是 ARM 架构规定的固定操作
+E: ARM 流水线在取到第 N 条指令时，PC 寄存器已经指向 N+8（三级流水线）。当 FIQ 发生时，lr_fiq 被设置为"如果没有中断，下一条该执行的指令"的地址，即被中断指令的 PC + 4。这是 FIQ 特定的偏移（IRQ 相同，但 Data Abort 等不同）。减 4 才能得到真正被中断的那条指令地址，让任务从正确的位置继续。
+```
+
+```quiz single
+Q: SRSDB SP!, #0x13 在 FIQ 模式执行，它往哪里存储，存储什么内容？
+- 往 FIQ 模式自己的栈（sp_fiq）存储 r0-r7 的值
++ 往 SVC 模式的栈（sp_svc，即任务的栈）存储 {lr_fiq（被中断 PC）, spsr_fiq（被中断 CPSR）}，同时更新 sp_svc
+- 往系统内存的固定地址存储
+- 往 SVC 模式的寄存器而非内存存储
+E: SRS 指令（Store Return State）的参数 #0x13 指定使用 SVC 模式（0x13）的 SP 作为目标，而不是当前 FIQ 模式的 SP。这正是绕开 FIQ r8-r12 register banking 问题的关键：我们在 FIQ 模式执行，但数据存到了任务的 SVC 栈上。CPS #0x13 后立刻可以 PUSH 任务的完整寄存器，形成一个完整的 16 字帧。
+```
+
+```quiz single
+Q: 为什么 global_asm! 里的 ldr r0, =CURRENT_TASK 后面需要 .ltorg？
++ 因为多个函数共用一个 global_asm! 块时，literal pool 会被放到块末尾，导致 ldr 指令的 [PC, #offset] 偏移超出范围或指向错误位置；.ltorg 强制在当前位置刷新 literal pool，保证偏移计算正确
+- 因为 CURRENT_TASK 是全局变量，必须用特殊指令加载
+- 因为 .ltorg 是 ARM 汇编的强制要求
+- 为了让汇编器生成更快的代码
+E: ldr r0, =symbol 是伪指令，assembler 会生成 ldr r0, [PC, #N] 并在 literal pool 里放 symbol 的地址。这个 N 是从 ldr 指令到 literal pool 的字节距离。如果 literal pool 被放到几百字节之外（因为后面还有 context_switch 等函数），N 可能指向错误位置或超出范围（ARM ldr 字面量最大偏移 4KB，但实际很容易用完）。.ltorg 强制立即刷新，N 就是从 ldr 到紧跟着的 .word 条目的距离，几十字节以内，绝对正确。
+```
+
+```quiz single
+Q: 为什么 delay_ticks() 忙等时，低优先级任务仍然无法运行？
+- 因为 delay_ticks 内部禁止了 FIQ 中断
+- 因为 delay_ticks 使用了 WFI 指令让 CPU 休眠
+- 因为调度器没有时间片机制
++ 因为 delay_ticks 是忙等（不停轮询 get_ticks()），任务始终处于 Running/Ready 状态而非 Blocked；每次 FIQ 调度时高优先级任务仍然是"最高 Ready"，所以始终被选中
+E: Blocked 状态（真正的睡眠）意味着任务不参与调度，直到被事件唤醒。delay_ticks 只是一个轮询循环，任务还在 Running/Ready 状态。每次 FIQ 调度时，高优先级任务仍然满足"最高优先级 Ready"，所以总被选中。真正的优先级抢占（高优先级任务被唤醒后立刻打断低优先级）需要 Blocked 状态支持，这是第 08 章同步原语要实现的功能。
+```

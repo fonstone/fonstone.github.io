@@ -1,0 +1,372 @@
+---
+title: "串口输出与调试宏"
+description: "串口输出与调试宏 - 串口输出与调试宏"
+date: "2026-07-12"
+order: 4000
+tags: ["UART", "串口", "print!", "println!", "PL011", "CMSDK", "寄存器", "调试输出"]
+est_time: "50分钟"
+---
+
+# 本章目标
+
+- 理解 UART 串口通信的基本原理
+- 了解 mps3-an536 上 UART 的寄存器结构
+- 实现一个最小的 UART 驱动，能发送单个字符
+- 实现 `print!` / `println!` 宏，支持格式化输出
+- 在 QEMU 上看到程序输出的文字
+
+## 前置知识
+
+### 已完成的章节
+
+`02-minimal-boot` 章节全部完成，`cargo build` 编译无误，QEMU 能正常启动程序。
+
+### 知道什么是指针
+
+理解指针是一个内存地址，向某个地址写入数据就是向该地址对应的硬件寄存器发命令。
+
+# UART 是什么
+
+UART（Universal Asynchronous Receiver/Transmitter，通用异步收发器）是嵌入式开发中最基础的通信接口。在没有屏幕的开发板上，程序的调试信息几乎都通过 UART 发出来，再由连接到开发板的电脑读取显示。
+
+类比：UART 就像古代的电报机——你把想说的话一个字一个字地发出去，对面收到后打印出来。不需要握手，不需要协商，最基础的串行通信。
+
+在 QEMU 中，模拟的 UART 输出直接显示在你的终端里，不需要真实的串口线。这正是 QEMU 调试的便利之处。
+
+# mps3-an536 的 UART
+
+mps3-an536 使用 ARM CMSDK APB UART，这是 ARM Cortex-M 系统设计套件中的标准 UART 外设。相比 PL011 这类复杂的 UART，CMSDK APB UART 寄存器极少，非常适合学习。
+
+UART0 的基址是 `0xe7c00000`（CPU0 专用 UART，连接到 QEMU 的第一个串口后端）。从这个地址开始依次排列以下寄存器：
+
+| 偏移 | 名称 | 读/写 | 作用 |
+| --- | --- | --- | --- |
+| `+0x00` | DATA | 读/写 | 数据寄存器。写入一个字节，UART 就发出这个字节 |
+| `+0x04` | STATE | 只读 | 状态寄存器。bit 1 = 发送缓冲区满（1 表示满，需等待） |
+| `+0x08` | CTRL | 读/写 | 控制寄存器。bit 0 = 发送使能（写 1 开启发送功能） |
+
+> **💡 硬件寄存器小科普：它是如何工作的？**
+>
+> 初次接触硬件寄存器，大家经常会有几个疑问：
+>
+> - **CTRL 开关是一次性的吗？**
+>   控制寄存器（CTRL）就像机器的 **“总电源开关”** 。你只要开启了“发送使能”（写 `1`），它就一直保持通电状态，不会自动清零。除非你手动写 `0` 关掉它。所以我们只需要在内核启动时调一次初始化，以后就不需要再管它了。
+>
+> - **开启后会一直发相同的数据吗？**
+>   不会的！数据寄存器（DATA）的工作方式像是一台 **“饮水机”** 的入口。当你往 `DATA` 里塞入一个新字符，就像放了一个杯子；机器一旦扫描到有字符进来，就会将其顺着线路上推发出去。发完之后内部缓冲区就空了，必须等你再写下一次（Write 操作），才会发送下一个。
+>
+> - **STATE 是只读的吗？为什么需要按位操作？**
+>   是的，状态寄存器通常是**只读的（Read-Only）**，它是机器对外展示的信号灯，比如“发送缓冲区满了”。此外，每个寄存器本身是 **32 位** 宽的，能承载 32 个独立的开关或信号灯。比如 `CTRL` 的 bit 1 可能是“接收使能”，bit 2 可能是“中断开启”，但现在我们只发不收，所以只要点亮 `bit 0` 这一盏灯即可；同理，检查状态时也只用位运算（`& 0b10`）来偷瞄第 1 位。
+
+## UART 标准使用流程
+
+了解了寄存器的运作方式，我们就能总结出通过串口发数据的三大核心步骤（这不仅适用于我们这款芯片，对于大部分简单串口驱动都是通用的）：
+
+1. **初始化（Init）**：这部分只要做一次。写入 `CTRL` 把“总电源”打开，也就是令 bit 0 为 1。
+2. **检查状态（Check State）**：由于 CPU 的速度远比串口外设发信号的速度快得多，在每次发数据前，必须要盯住 `STATE` 寄存器。如果发现发送缓冲区是满的（bit 1 为 1），就要原地死循环等待，也就是俗称的 **“轮询（Polling）”** 。
+3. **写入数据（Write Data）**：一旦发现缓冲区有空位了（bit 1 变为 0），立刻把准备发送的一个字符装入 `DATA` 寄存器。硬件会自动接手剩下的发送工作。
+
+# 发送单个字符
+
+## 步骤一：定义寄存器地址
+
+在 `src/uart.rs` 中定义 UART 寄存器地址和基础操作（也可以直接写在 `main.rs` 里，本章为清晰起见单独建文件）：
+
+```rust
+const UART0_BASE: usize = 0xe7c00000;
+
+const UART0_DATA:  *mut   u32 = (UART0_BASE + 0x00) as *mut   u32;
+const UART0_STATE: *const u32 = (UART0_BASE + 0x04) as *const u32;
+const UART0_CTRL:  *mut   u32 = (UART0_BASE + 0x08) as *mut   u32;
+```
+
+> **语法小提示：为什么用 `const UART0_BASE`？**
+> `const` 在 Rust 中定义的是**编译期常量**。它非常适合用来定义硬件内存地址这种“雷打不动”的值：
+> 1. 不同于普通的 `let` 变量，`const` 常量不仅不会变化，而且**连内存占用都没有**。
+> 2. 编译器会在编译（汇编）的时候，像查找替换一样，将你代码中出现 `UART0_DATA` 的地方直接替换成最底层的物理常数 `0xe7c00000`。可以说使用 `const` 是给硬件寻址贴上了一个零开销的“人类可读标签”。
+
+代码里除了基地址，还有 `*mut u32` 和 `*const u32` 的语法，这用来区分“可写寄存器”和“只读寄存器”。虽然硬件地址本身只是长整数，但通过转换成对应权限的裸指针，能帮助读者（甚至编译器）理解哪些寄存器能改、哪些只能看。
+
+## 步骤二：实现 uart_init 和 uart_putc
+
+> **注意：** 裸指针操作（涉及解引用裸指针）必须放在 `unsafe` 块里。这是 Rust 提醒你：你在绕过内存安全检查，直接操作硬件地址，后果自负。
+
+```rust
+/// 初始化 UART：开启发送使能
+pub fn uart_init() {
+    // 读写裸指针（直接操作物理内存）属于可能破坏内存安全的行为，
+    // 必须要用 unsafe 块显式接管安全责任
+    unsafe {
+        // CTRL bit 0 = TX enable（发送使能）
+        UART0_CTRL.write_volatile(0b01);
+    }
+}
+
+/// 发送单个字节
+pub fn uart_putc(byte: u8) {
+    // 同理，读取状态和写入数据寄存器都需要 unsafe 块
+    unsafe {
+        // 等待发送缓冲区不满（STATE bit 1 = TXBF，1 表示满）
+        while (UART0_STATE.read_volatile() & 0b10) != 0 {}
+        // 写入数据寄存器，UART 开始发送
+        UART0_DATA.write_volatile(byte as u32);
+    }
+}
+```
+
+`write_volatile` 和 `read_volatile` 是 Rust 的"不可优化读写"，告诉编译器不要把这些操作优化掉——对于硬件寄存器，每次读写都有意义，不能被跳过或重排。如果用普通的指针赋值，编译器可能会认为"这段内存没被读过，写了也没用"，直接把整个操作删掉。
+
+> **💡 进阶思考：这里的 while 循环会导致死机吗？**
+> `while (UART0_STATE.read_volatile() & 0b10) != 0 {}` 这种写法叫 **“忙等待（Busy-waiting）”**。只要外设没准备好，CPU 就会一直死等。
+> - 在目前的 **QEMU 模拟环境**里，它非常安全，因为模拟外设几乎瞬间就能发完数据，不会真正卡住。
+> - 但在**真正的物理硬件**上，如果串口芯片损坏、时钟没配好，或者因为线缆故障触发了流控阻塞，这个循环就有可能变成永远出不来的**死循环**，导致整个操作系统瘫痪（Hang）。
+> - **真实的工业级代码会怎么处理？** 通常会加入**超时机制（Timeout）**（比如循环 10 万次还没发完就返回错误），或者改用后面会讲到的 **中断（Interrupt）** 甚至 **DMA 技术**，让硬件在后台悄悄发送，解放 CPU。因为我们目前还在系统刚上电、什么设施都没建好的“洪荒时代”（俗称 Early UART 阶段），这种极简粗暴的“死等”策略其实恰好是最实用和最可靠的！
+
+## 步骤三：发送字符串
+
+有了 `uart_putc`，发送字符串只需遍历每个字节：
+
+```rust
+/// 发送字符串
+pub fn uart_puts(s: &str) {
+    for byte in s.bytes() {
+        uart_putc(byte);
+    }
+}
+```
+
+`s.bytes()` 把字符串的每个字节（UTF-8 编码）依次取出来。对于纯 ASCII 文本，每个字符对应一个字节。
+
+# 实现 print! 宏
+
+`uart_puts` 只能发送固定字符串。实际调试时需要打印变量值，比如 `print!("count = {}", count)`。这就需要格式化输出。
+
+Rust 的 `core::fmt` 模块提供了格式化的底层机制，我们只需要告诉它"格式化完了把字节输出到哪里"。
+
+> **💡 原理解析：Rust 的格式化系统是怎么工作的？**
+>
+> 在底层系统开发中，最麻烦的往往不是发送字符，而是**把各种各样的整数、变量转换成可读的字符**（比如把整数 `42` 拆解并转变成 ASCII 字符 `'4'` 和 `'2'`，或者转化成十六进制 `'2'` 和 `'a'`）。
+> Rust 极其优雅地解决了这个问题，它采用了 **分离关注点（Separation of Concerns）** 的设计：
+> 1. **格式化引擎**：`core::fmt` 内部包揽了所有的数学转换与文本拼接逻辑。当遇到 `print!("count = {}", 42)` 时，系统负责排版，并把变量翻译成文本片段。
+> 2. **输出信道（Writer）**：引擎完全不关心最终文本要送到终端屏幕、写入磁盘，还是通过串口发给外部硬件。它只要求你供出一个“信道接口”。引擎每生产拼装出一段文本，就会主动调用信道的 `write_str` 方法，把数据灌塞进去。
+>
+> **因此，我们的任务被大幅简化了**：完全不需要自己去手写枯燥的整型转字符串（`itoa`）算法！只需封装一个带有 `Write` 标签（Trait）的壳子，在它收到引擎送来的文本时，默默通过串口转发出去（`uart_puts`）即可。
+
+## 步骤一：实现 Write trait
+
+`core::fmt::Write` 也就是上述所说的“信道”标准契约（Trait）。只要我们为自己的类型实现 `write_str` 方法，格式化系统就能用 UART 发送格式化后的字符串（相当于把 write_str 的函数功能重写了，这里通过我们的 UART 驱动实现了消息打印）：
+
+```rust
+use core::fmt::{self, Write};
+
+/// UART 写入器，用于对接 core::fmt 的格式化系统
+pub struct UartWriter;
+
+impl Write for UartWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        uart_puts(s);
+        Ok(())
+    }
+}
+```
+
+1. **为什么要专门造一个结构体？不造不行吗？**
+   **答案是：必须造，不建不行！** 在 Rust 的类型系统中，Trait（即接口契约）必须附着在一个具体的**类型（Type）**上，它无法像 C 语言的回调一样只扔个孤零零的函数指针进去。并且，底层的 `core::fmt::write` 系统在启动时，强制要求你递给它一个**实实在在的对象实例**作为替它输出内容的“打工人”。所以，我们不得不先捏造一个类型出来。
+2. **零大小类型（ZST, Zero-Sized Type）**：既然被系统逼着必须造打工人对象，而我们的串口硬件就固定在那里（地址是常量），根本不需要用任何变量去记录“当前写入状态、下标等信息”，于是我们就聪明地写了 `struct UartWriter;`。这种既没有花括号也没有字段的体例，在内存中**完全不占用任何空间（大小为 0 字节）**。它纯粹是一个逻辑上的“马甲/挂载点”，满足了编译器需要对象的苛刻要求，同时又做到了 0 运行成本的极致抽象。
+3. **基于 Trait 的强大抽象**：想要借用 Rust 极为强大的系统级格式化引擎（即支持 `{}`、`{:#x}` 十六进制打印等极度复杂的解析功能），我们完全不需要去手写字符串拼接函数，或者像 C++ 那样继承某个“打印基类”。我们只需要为我们的结构体打上 `core::fmt::Write` 这一纸“契约（Trait）”。
+4. **极度简单的对接（它是给谁用的？）**：`Write` 这份契约只强制要求实现唯一的一个动作——`write_str`。**注意：这个函数通常不是留给你（程序员）手动调用的！** 它是专门留给 Rust 底层格式化引擎（宏）调用的“回调函数/底层钩子”。当我们在代码里写下 `println!("A={}", 1)` 时，Rust 会在后台费尽心思把参数拼装成完整文本，然后把文本塞进这个 `write_str` 的 `s` 参数里。我们在方法体里只要无脑转交给之前写好的硬件驱动 `uart_puts(s)` 即可。
+5. **永远成功的 `Ok(())`**：由于接口规定必须要返回状态 `fmt::Result`，而我们最底层的串口硬件没有诸如“磁盘已满，写入失败”之类的烦恼，因此直接返回 `Ok(())` 告诉系统“成功发送”就可以了。
+
+可以说，这段代码是 Rust 抽象哲学的最佳示范：以 0 成本内存，仅仅实现了一个函数包装，就完美“白嫖”了整个庞大而安全的标准格式化库！
+
+## 步骤二：实现 print! 和 println! 宏
+
+```rust
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => {{
+        let mut w = $crate::uart::UartWriter;
+        core::fmt::write(&mut w, core::format_args!($($arg)*)).ok();
+    }};
+}
+
+#[macro_export]
+macro_rules! println {
+    () => { $crate::print!("\n") };
+    ($($arg:tt)*) => {{
+        $crate::print!($($arg)*);
+        $crate::print!("\n");
+    }};
+}
+```
+
+**💡 宏原理深度解析：我们是如何“伪造”出 print 的？**
+
+在 C 语言里，`printf` 是标准库的一个可变参数函数；但在 Rust 里，像 `print!` 和 `println!` 这样的工具全部是使用 `macro_rules!` 定义的**宏（Macro）**。（如果你对宏本身的语法还不熟悉，可以先查阅这里的：[Rust 宏语法详解教程](https://xyfx-fhw.github.io/RustCourse/chapters/02-basic-syntax/08-macros)）
+
+1. **`#[macro_export]`**：类似于函数的 `pub`，它把下面定义的宏暴露到整个项目中，这样我们在 `main.rs` 甚至未来的任意文件里都可以随指随用。
+2. **`($($arg:tt)*)` 与任意参数捕获**：这是一个非常经典的 Rust 宏匹配模式。它表示“接收无论多少个、无论什么格式的代码片段（Token Tree，简称 `tt`），并把它们统统打包进变量 `$arg` 里”。这使得我们的 `print!` 能像官方一样容纳任意长度的格式化参数。
+3. **`$crate::uart::UartWriter`**：实例化刚才定义好的写入器。前缀 `$crate` 表示项目的根目录（Root）。无论这个宏被哪个文件调用，它都能无视相对路径，稳稳地找到 `uart` 模块里的 `UartWriter`。
+4. **解开谜团：固定的 `core` 怎么认识我们的外设？**：很多读者疑惑，系统库 `core::fmt` 的解析代码是固定写死的，它怎么知道要把字丢给这颗具体芯片的串口？玄机就在 `core::fmt::write(&mut w, ...)` 这行代码里——我们在宏展开的第一时间主动塞入了刚刚实例化好的 `w`。标准库的 `write` 函数接收的第一个参数类型是 `&mut dyn Write`，即一个“任何签了 Write 契约的对象”的**动态接口（胖指针，Trait Object）**。这就好比 `core` 是一个只管发包不管落地的外包公司，我们借着宏的壳子，在这里硬生生把自己的临时派送员 `w` 塞给它，它就会通过预设的接口完美盲调，根本不需要提前认识它是谁！
+
+   **用一段伪代码来看看 `core::fmt::write` 的内部逻辑：**
+   ```rust
+   // 伪代码：Rust 标准库的内部实现大约是这样的
+   pub fn write(output: &mut dyn core::fmt::Write, args: Arguments) -> Result {
+       // ... 标准库辛辛苦苦把各种参数(整数、浮点数等)转换拼接成了字符串 s ...
+       let s: &str = format_engine(args);
+
+       // 重点！标准库闭着眼睛调用了 output.write_str。
+       // 此时传进来的 output 实际上是我们的 UartWriter 实例（动态分发 / Trait Object）。
+       // 因此这行代码实际上毫无滞后地执行了咱们自己写的 `UartWriter.write_str(s)`！
+       output.write_str(s)
+   }
+   ```
+5. **`core::format_args!($($arg)*)`**：核心魔法所在！由于裸机环境（`no_std`）没有操作系统的堆内存管理器（即没有 `String` 类型），它巧妙地在**编译期**检查格式，然后在运行期的**栈内存**上组装参数。全过程不会发生任何内存分配。
+6. **`.ok()` 压制结果**：因为我们在 `UartWriter` 里必定返回成功，且内核的最底层打印是不需要也不好去处理打印失败的情况的，使用 `.ok()` 可以优雅地忽略掉返回值，避免编译器报出“返回值未被使用（Result not used）”的警告。
+7. **`println!` 的复用**：`println!` 完全复用了我们写好的 `print!` 宏。如果没有参数，打印个换行 `\n`；如果有参数，先打印内容，再补个换行。非常 DRY (Don't Repeat Yourself)！
+
+## 步骤三：完整的 src/uart.rs
+
+```rust
+use core::fmt::{self, Write};
+
+const UART0_BASE: usize = 0xe7c00000;
+
+const UART0_DATA:  *mut   u32 = (UART0_BASE + 0x00) as *mut   u32;
+const UART0_STATE: *const u32 = (UART0_BASE + 0x04) as *const u32;
+const UART0_CTRL:  *mut   u32 = (UART0_BASE + 0x08) as *mut   u32;
+
+pub fn uart_init() {
+    unsafe {
+        UART0_CTRL.write_volatile(0b01);
+    }
+}
+
+pub fn uart_putc(byte: u8) {
+    unsafe {
+        while (UART0_STATE.read_volatile() & 0b10) != 0 {}
+        UART0_DATA.write_volatile(byte as u32);
+    }
+}
+
+pub fn uart_puts(s: &str) {
+    for byte in s.bytes() {
+        uart_putc(byte);
+    }
+}
+
+pub struct UartWriter;
+
+impl Write for UartWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        uart_puts(s);
+        Ok(())
+    }
+}
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => {{
+        let mut w = $crate::uart::UartWriter;
+        core::fmt::write(&mut w, core::format_args!($($arg)*)).ok();
+    }};
+}
+
+#[macro_export]
+macro_rules! println {
+    () => { $crate::print!("\n") };
+    ($($arg:tt)*) => {{
+        $crate::print!($($arg)*);
+        $crate::print!("\n");
+    }};
+}
+```
+
+## 步骤四：更新 src/main.rs
+
+将 UART 模块引入，并在 `rust_main` 里输出：
+
+```rust
+#![no_std]
+#![no_main]
+
+mod uart;
+
+use core::arch::global_asm;
+use core::panic::PanicInfo;
+
+global_asm!(r#"
+    ...(略，这里是汇编启动代码，和上一章一样)...
+"#);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_main() -> ! {
+    uart::uart_init();
+    println!("Hello from RTOS!");
+    println!("Board: mps3-an536  CPU: Cortex-R52");
+    loop {}
+}
+
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    println!("PANIC!");
+    loop {}
+}
+```
+
+# 验证方法
+
+编译并用 QEMU 运行，观察串口输出：
+
+```bash
+cargo build
+qemu-system-arm \
+  -machine mps3-an536 \
+  -nographic \
+  -device loader,file=target/armv8r-none-eabihf/debug/rtos
+```
+
+预期输出：
+
+```text
+Hello from RTOS!
+Board: mps3-an536  CPU: Cortex-R52
+```
+
+之后 QEMU 进入 `loop {}`，屏幕无新输出。按 **Ctrl+A 然后 X** 退出。
+
+> **注意：** 如果没有任何输出，可能是 UART 基地址不对。检查 QEMU 文档或用 `-d guest_errors` 标志查看访问了哪些外设地址：
+
+```bash
+qemu-system-arm -machine mps3-an536 -nographic -device loader,file=... -d guest_errors 2>&1 | head
+```
+
+# 练习题
+
+```quiz single
+Q: 为什么向硬件寄存器读写必须使用 write_volatile / read_volatile，而不是普通指针赋值？
+- 因为 volatile 访问速度更快
+- 因为硬件寄存器地址超出了正常内存范围
++ 因为编译器可能把"看似无用"的内存读写优化掉，volatile 告诉编译器每次操作都有实际意义不能省略
+- 因为 Rust 的借用检查器不允许普通指针访问固定地址
+E: 编译器的优化器会分析数据流，发现"写入了一个值但没有读取"时可能直接删掉写入操作。对于普通内存这是合理的，但对于硬件寄存器，写入操作本身就是向硬件发命令，不能被删除。volatile 读写绕过这类优化，保证每条读写指令都实际执行。
+```
+
+```quiz single
+Q: uart_putc 函数里 while (STATE.read_volatile() & 0b10) != 0 {} 这个循环的目的是什么？
++ 等待发送缓冲区空出来，防止新字节在上一个字节还没发完时覆盖掉它
+- 等待接收缓冲区有新数据
+- 检测 UART 是否初始化完成
+- 等待对方发回确认信号
+E: CMSDK APB UART 的 STATE 寄存器 bit 1（TXBF）为 1 时表示发送缓冲区已满，不能写入新数据。while 循环持续检查这个位，直到为 0（缓冲区有空间）才继续写入，防止数据丢失。
+```
+
+```quiz single
+Q: 为什么实现 print! 宏要先实现 core::fmt::Write trait，而不是直接调用 uart_putc？
+- 因为 uart_putc 太慢，Write trait 会自动缓冲数据
+- 因为 Write trait 会自动处理 UTF-8 编码
+- 因为直接调用 uart_putc 无法在 no_std 环境使用
++ 因为 core::fmt 的格式化系统（如 {} 占位符）需要一个实现了 Write 的类型来接收格式化后的字符串，通过 trait 可以复用整个格式化基础设施
+E: core::fmt::write() 函数接受一个 &mut dyn Write 参数，负责把格式字符串和参数组合成最终字符串，每拼出一段就调用 write_str 输出。我们只要实现 write_str（转调 uart_puts），就能借用整个格式化系统，自动支持 {}、{:x}、{:#?} 等所有格式符号。
+```

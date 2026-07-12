@@ -46,6 +46,7 @@ const PROJECT_SLUG_MAP: Record<string, string> = {
   "autosar-functional-safety": "autosar-functional-safety",
   "ai-infra": "ai-infra",
   "rust-learning": "rust-learning",
+  "rust-os": "rust-os",
 };
 
 const SLUG_TO_PROJECT_MAP: Record<string, string> = Object.fromEntries(

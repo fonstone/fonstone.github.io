@@ -2,12 +2,13 @@ import Link from "next/link";
 import {
   getProjectCategories,
 } from "@/lib/projects/projects";
-import { ArrowRight, Monitor, Binary } from "lucide-react";
+import { ArrowRight, Monitor, Binary, Cpu } from "lucide-react";
 
 export default async function OsProjectIndexPage() {
   const categories = await getProjectCategories();
   const chcoreCat = categories.find((c) => c.slug === "chcore");
   const rustCat = categories.find((c) => c.slug === "rust-learning");
+  const rustOsCat = categories.find((c) => c.slug === "rust-os");
 
   const courses = [
     {
@@ -23,7 +24,7 @@ export default async function OsProjectIndexPage() {
     },
     {
       slug: "rust-learning",
-      name: "Rust",
+      name: "Rust 语言",
       title: "Rust 编程语言入门教程",
       description:
         "从零开始学习 Rust——涵盖安装环境、基础语法、所有权系统、生命周期、泛型与 trait、并发编程、错误处理、工程化实践等核心内容。",
@@ -31,6 +32,17 @@ export default async function OsProjectIndexPage() {
       iconClassName: "bg-orange-100 dark:bg-orange-500/15",
       iconColor: "text-orange-500 dark:text-orange-300",
       count: rustCat?.posts.length ?? 0,
+    },
+    {
+      slug: "rust-os",
+      name: "Rust RTOS",
+      title: "从零写 Rust RTOS",
+      description:
+        "在 QEMU 模拟的 ARM Cortex-R52 上从零实现一个简易 RTOS——串口驱动、异常向量表、系统定时器、上下文切换、抢占式调度器、同步原语与任务间通信。",
+      icon: Cpu,
+      iconClassName: "bg-red-100 dark:bg-red-500/15",
+      iconColor: "text-red-500 dark:text-red-300",
+      count: rustOsCat?.posts.length ?? 0,
     },
   ];
 

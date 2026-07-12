@@ -1,0 +1,356 @@
+---
+title: "异常与中断体系"
+description: "异常与中断体系 - 异常与中断体系"
+date: "2026-07-12"
+order: 5000
+tags: ["异常", "向量表", "vector table", "IRQ", "FIQ", "ARMv8-R", "Cortex-R52"]
+est_time: "50分钟"
+---
+
+# 本章目标
+
+- 理解异常（Exception）和中断（Interrupt）的区别与联系
+- 掌握 ARMv8-R 的 8 种异常类型和它们的触发条件
+- 理解向量表的作用，以及 ARMv8-R 与 Cortex-M 向量表的本质区别
+- 实现独立的向量表段，为每种异常登记跳转入口
+- 为未实现的异常添加默认处理桩，防止 CPU 跑飞
+
+## 前置知识
+
+### 已完成的章节
+
+`03-uart` 章节已完成，`println!` 能正常输出。
+
+### 了解函数调用和跳转
+
+知道 `bl`（跳转并保存返回地址）和 `b`（直接跳转）的区别。
+
+# 什么是异常
+
+异常是处理器停下当前工作、转去处理特殊事件的机制。可以把 CPU 想象成一个一直在执行代码的工人——异常就是打断这个工人的各种突发情况，有的来自外部（比如定时器到点了），有的来自代码自身（比如执行了非法指令）。
+
+## ARMv8-R 的 8 种异常
+
+Cortex-R52 在 AArch32 状态下支持以下 8 种异常，每种都有固定的触发条件：
+
+| 编号 | 类型 | 触发条件 |
+| --- | --- | --- |
+| 1 | **Reset** | 上电或硬件复位 |
+| 2 | **Undefined Instruction** | 执行了 CPU 不认识的指令编码 |
+| 3 | **SVC**（Supervisor Call） | 代码主动执行 `svc` 指令，用于系统调用 |
+| 4 | **Prefetch Abort** | 取指时发生地址错误（要执行的代码地址非法） |
+| 5 | **Data Abort** | 读写数据时发生地址错误（访问了非法内存） |
+| 6 | **HVC**（Hypervisor Call） | 虚拟化相关，当前阶段暂不使用 |
+| 7 | **IRQ** | 普通外部中断，来自 GIC 分发的硬件信号 |
+| 8 | **FIQ** | 快速中断，优先级高于 IRQ，延迟更低 |
+
+> **Reset 异常你已经见过了**：我们从第二章开始一直在写的 `reset_handler` 就是 Reset 异常的处理函数——CPU 上电/复位时触发这个异常，硬件把 PC 指向 `0x00000000`，我们放在那里的代码就开始跑了。
+
+**同步**异常（1–6）在执行到某条具体指令时确定性地发生，CPU 知道是哪条指令触发的；**异步**中断（7–8）由外部硬件随时发出，与当前执行的指令无关。
+
+处理器收到异常后的通用流程是：
+
+1. 保存当前执行状态（把 PC、CPSR 等寄存器存入对应模式的影子寄存器）
+2. 跳转到对应的**异常处理函数**
+3. **如果可以恢复**：处理完后还原现场，继续执行被打断的代码
+
+但"第 3 步"并不总是发生：Reset 从不返回（它直接重启系统）；Data Abort 和 Undefined Instruction 遇到无法修复的错误时，操作系统通常会终止出错的任务或者直接 panic，而不是继续跑。
+
+> 中断（Interrupt）是异常的一种子类型，专指来自外部硬件的信号（如定时器、UART 接收到数据、按下按钮）。
+
+# 向量表：ARMv8-R vs Cortex-M
+
+向量表（Vector Table）告诉 CPU：当某种异常发生时，应该去哪里执行处理代码。
+
+**Cortex-M 的向量表**存的是**函数地址**，CPU 发生异常时从表里读出地址，再跳过去：
+
+```text
+0x00000000:  [_stack_top 地址]       ← 第 0 项：初始栈顶值
+0x00000004:  [reset_handler 地址]    ← 第 1 项：Reset 处理函数地址
+0x00000008:  [nmi_handler 地址]      ← 第 2 项：NMI 处理函数地址
+...
+```
+
+**ARMv8-R 的向量表**存的是**B 跳转指令本身**，CPU 发生异常时直接执行那一格里的指令：
+
+```text
+0x00000000:  b reset_handler      ← Reset 时 CPU 直接执行这条指令跳过去
+0x00000004:  b undef_handler      ← Undefined Instruction 时直接执行
+0x00000008:  b svc_handler
+0x0000000C:  b prefetch_handler
+0x00000010:  b data_handler
+0x00000014:  b hang               ← HVC，当前不用
+0x00000018:  b irq_handler        ← IRQ 中断时直接执行
+0x0000001C:  b fiq_handler
+```
+
+8 个条目固定占 32 字节（每条 B 指令 4 字节）。向量表的基地址默认在 `0x00000000`（由系统内部的 VBAR 寄存器决定）。
+
+> **🤔 释疑：CPU 怎么知道发生 SVC 异常时，要跑到 `0x00000008` 呢？**
+> 这是被**写死在芯片硅片里的硬件逻辑**！ARM 架构官方手册规定好了每种异常的具体“门牌号偏移量”。
+> - Reset 固定在基地址偏移 `0x00`
+> - Undefined Instruction 固定偏移 `0x04`
+> - SVC 固定偏移 `0x08`
+>
+> 当你的代码里执行了一条 `svc` 指令引发异常后，CPU 内部电路会瞬间强制把程序计数器（PC，即下一条要执行的指令地址）修改为 `0x00000000 + 0x08 = 0x00000008`。因为我们恰好在这个地址上填了一句 `b svc_handler`，所以 CPU 跑到这拿到指令后，立刻就被指引到了我们真正的处理函数里！
+
+> **注意：** 目前我们的代码在 `0x00000000` 直接放的是 reset handler 的初始化代码（`ldr sp, ...`）。一旦加入中断，CPU 收到 IRQ 就会跑到 `0x00000018` 执行初始化代码，结果不可预期。必须先把向量表补好。
+
+# 实现向量表
+
+## 步骤一：更新链接脚本
+
+向量表作为独立的段 `.text.vector_table`，必须放在 Flash 最开头，在 reset handler 之前：
+
+```text
+ENTRY(_vectors)
+
+MEMORY
+{
+    FLASH : ORIGIN = 0x00000000, LENGTH = 32K
+    RAM   : ORIGIN = 0x10000000, LENGTH = 512K
+}
+
+SECTIONS
+{
+    .text :
+    {
+        KEEP(*(.text.vector_table))
+        KEEP(*(.text.reset_handler))
+        *(.text .text.*)
+        *(.rodata .rodata.*)
+    } > FLASH
+
+    /* ... 其余不变 ... */
+}
+```
+
+注意两点：
+- `ENTRY(_vectors)` 把入口点改成向量表的起始符号
+- `KEEP(*(.text.vector_table))` 放在 `KEEP(*(.text.reset_handler))` **之前**，保证向量表紧贴 `0x00000000`
+
+## 步骤二：编写向量表和异常处理桩
+
+在 `global_asm!` 中用两个独立段实现：
+
+```rust
+global_asm!(r#"
+    @ ── 向量表：8 条 B 指令，必须在 0x00000000 ──
+    .section .text.vector_table, "ax"
+    .global _vectors
+_vectors:
+    b reset_handler      @ 0x00  Reset
+    b undef_handler      @ 0x04  Undefined Instruction
+    b svc_handler        @ 0x08  SVC
+    b prefetch_handler   @ 0x0C  Prefetch Abort
+    b data_handler       @ 0x10  Data Abort
+    b hang               @ 0x14  HVC（暂不用）
+    b irq_handler        @ 0x18  IRQ  ← 下一章实现
+    b fiq_handler        @ 0x1C  FIQ
+
+    @ ── 异常处理桩：尚未实现的异常全部挂起 CPU ──
+    .section .text.handlers, "ax"
+undef_handler:
+    b undef_handler
+svc_handler:
+    b svc_handler
+prefetch_handler:
+    b prefetch_handler
+data_handler:
+    b data_handler
+hang:
+    wfi
+    b hang
+irq_handler:
+    b irq_handler      @ 下一章替换
+fiq_handler:
+    b fiq_handler
+"#);
+```
+
+每个"处理桩"都是 `b <self>`（也就是跳回自身的死循环）加上可选的 `wfi`（让 CPU 进入低功耗等待）。比如 `undef_handler: b undef_handler`，一旦出现“未定义指令异常”，CPU 就会跳到这里并且永远在此打转。
+这主要是出于 **Fail-Safe（失效安全）** 设计原则：面临不知道如何处理的底层严重错误，宁可让系统卡在死循环停住，也不能让它带着错误状态像无头苍蝇一样乱跑。调试时只要暂停硬件，发现它卡在哪一行，就能立刻反推定位到触发了什么异常。
+
+> **🤔 释疑：向量表霸占了 `0x00000000` 首地址，那系统上电怎么找到初始化入口 `reset_handler` 的？**
+> 结合我们在“步骤一”更新的链接脚本来看：`.text.vector_table` 特意被放在了最前，紧随其后排布的才是存放初始化代码的 `.text.reset_handler`。
+> 当 CPU 上电时，它依然像以前一样从 `0x00000000` 第一时间盲读指令，而此时放在首地址的恰好是向量表的第 0 项——`b reset_handler`。这是一个无条件跳转指令，CPU 读到它后，就如同拿到了向导地图，立刻远距离跳转（Branch）到了真正干活的 `reset_handler` 代码段开始初始化。大门没变，只不过现在我们在门口加塞了一个“引路员”。
+
+## 步骤三：完整的 src/main.rs
+
+```rust
+#![no_std]
+#![no_main]
+
+mod uart;
+
+use core::arch::global_asm;
+use core::panic::PanicInfo;
+
+global_asm!(r#"
+    @ 向量表
+    .section .text.vector_table, "ax"
+    .global _vectors
+_vectors:
+    b reset_handler
+    b undef_handler
+    b svc_handler
+    b prefetch_handler
+    b data_handler
+    b hang
+    b irq_handler
+    b fiq_handler
+
+    @ 异常处理桩
+    .section .text.handlers, "ax"
+undef_handler:
+    b undef_handler
+svc_handler:
+    b svc_handler
+prefetch_handler:
+    b prefetch_handler
+data_handler:
+    b data_handler
+hang:
+    wfi
+    b hang
+irq_handler:
+    b irq_handler
+fiq_handler:
+    b fiq_handler
+
+    @ Reset handler（初始化代码）
+    .section .text.reset_handler, "ax"
+    .global reset_handler
+reset_handler:
+    @ 0. 检测 HYP 模式（mps3-an536 以 HYP 模式启动），切换到 SVC
+    mrs r0, cpsr
+    and r0, r0, #0x1f
+    cmp r0, #0x1a
+    bne .Lnormal_init
+    mov r0, #0xd3
+    msr spsr_cxsf, r0
+    adr r0, .Lnormal_init
+    msr elr_hyp, r0
+    eret                    @ 切换到 SVC 模式（AArch32 EL1），跳到 .Lnormal_init
+.Lnormal_init:
+    @ 1. 设置栈指针
+    ldr sp, =_stack_start
+    ldr r0, =_sbss
+    ldr r1, =_ebss
+    mov r2, #0
+1:
+    cmp r0, r1
+    bhs 2f
+    str r2, [r0]
+    add r0, r0, #4
+    b 1b
+2:
+    ldr r0, =_sdata
+    ldr r1, =_edata
+    ldr r2, =_sidata
+3:
+    cmp r0, r1
+    bhs 4f
+    ldr r3, [r2]
+    str r3, [r0]
+    add r0, r0, #4
+    add r2, r2, #4
+    b 3b
+4:
+    bl rust_main
+
+    @ 安全保底死循环
+5:
+    wfi
+    b 5b
+"#);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_main() -> ! {
+    uart::uart_init();
+    println!("Hello from RTOS!");
+    println!("Board: mps3-an536  CPU: Cortex-R52");
+    loop {}
+}
+
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    println!("PANIC!");
+    loop {}
+}
+```
+
+# 验证方法
+
+```bash
+cargo build
+```
+
+用 `rust-nm` 确认向量表在 `0x00000000`，reset_handler 紧随其后：
+
+```bash
+rust-nm target/armv8r-none-eabihf/debug/rtos | grep -E "_vectors|reset_handler|irq_handler|undef"
+```
+
+预期输出：
+
+```text
+00000000 T _vectors
+00000020 T reset_handler
+```
+
+`_vectors` 在 `0x00000000`，`reset_handler` 在 `0x00000020`（8 条向量 × 4 字节 = 32 字节 = 0x20）✓
+
+QEMU 启动验证，输出和之前一致：
+
+```bash
+qemu-system-arm \
+  -machine mps3-an536 \
+  -nographic \
+  -device loader,file=target/armv8r-none-eabihf/debug/rtos
+```
+
+预期输出：
+
+```text
+Hello from RTOS!
+Board: mps3-an536  CPU: Cortex-R52
+```
+
+# 练习题
+
+```quiz single
+Q: ARMv8-R 向量表中存放的是什么？
+- 各异常处理函数的地址（和 Cortex-M 相同）
+- 异常编号和优先级配置表
++ 可直接执行的 B 跳转指令，CPU 异常时直接在该地址执行这条指令
+- 异常处理函数的名称字符串
+E: ARMv8-R 的向量表每个条目是一条 4 字节的 B 指令。CPU 发生异常后，直接跳到对应偏移地址执行那条指令（通常是跳向实际处理函数）。Cortex-M 存的是地址，CPU 需要先读地址再跳；ARMv8-R 存的是指令，CPU 直接执行。
+```
+
+```quiz single
+Q: 当 IRQ 中断发生时，Cortex-R52 会跳到哪个固定地址执行？
+- 0x00000000
+- 0x00000004
+- 由 GIC 动态决定
++ 0x00000018
+E: ARMv8-R 异常向量表从 0x00000000 开始，每个条目 4 字节，IRQ 是第 7 个条目（从 0 开始数第 6 个），偏移 = 6 × 4 = 0x18，所以 IRQ 向量在 0x00000018。
+```
+
+```quiz single
+Q: 向量表为什么要单独放在 .text.vector_table 段，而不是和 reset handler 合并在一起？
+- 因为汇编器不允许向量表和代码在同一个段
+- 因为向量表必须用不同的编译选项编译
+- 因为合并后代码体积会增大
++ 因为向量表和初始化代码的职责不同，分离后便于链接脚本独立控制位置，也为后续向量表重定位到 RAM 做准备
+E: 向量表是硬件依赖的固定地址结构，而 reset handler 是一次性执行的初始化代码，两者生命周期不同。分离后链接脚本可以精确控制各自的位置，RTOS 后续需要把向量表复制到 RAM（支持动态注册 IRQ handler）时改动最小。
+```
+
+```quiz single
+Q: 尚未实现的异常（如 Undefined Instruction）使用 b undef_handler / undef_handler: b undef_handler 这种死循环处理的好处是什么？
+- 死循环会让 CPU 自动重启
++ CPU 卡在已知位置，便于调试器定位问题；不会带着错误状态继续执行导致更难排查的连锁故障
+- 死循环会触发看门狗复位，实现自动恢复
+- 死循环会清除异常标志，让系统自动恢复
+E: fail-safe 设计原则：未知异常发生时，最坏的结果是系统停住，最好能通过调试器看到 PC 卡在 undef_handler 处，立刻知道是什么类型的异常触发了。如果继续执行，错误状态会污染更多寄存器和内存，使问题更难复现和排查。
+```

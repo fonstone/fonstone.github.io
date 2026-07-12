@@ -1,0 +1,85 @@
+---
+title: "互斥量"
+description: "同步原语 - 互斥量"
+date: "2026-07-12"
+order: 9002
+tags: ["互斥量", "mutex", "阻塞", "任务等待", "锁"]
+est_time: "45分钟"
+---
+
+# 互斥量
+
+## 从自旋锁到互斥量
+
+自旋锁的问题在于：如果临界区执行时间较长，自旋等待会浪费大量 CPU 周期。互斥量（Mutex）提供了另一种策略：**当锁被占用时，尝试获取锁的任务主动放弃 CPU，让调度器去执行其他就绪任务**。
+
+这需要在 RTOS 中引入"任务阻塞（Block）"机制——任务因等待某个资源而暂停执行，被移出就绪队列，直到资源可用时再被唤醒。
+
+## 互斥量的核心设计
+
+一个基本的互斥量需要以下要素：
+
+1. **状态**：锁定/未锁定
+2. **等待队列**：记录哪些任务在等待这把锁
+3. **lock 操作**：如果锁空闲则获取，否则将当前任务加入等待队列并触发调度
+4. **unlock 操作**：释放锁，如果有等待任务则唤醒其中一个
+
+```rust
+use crate::task::{TaskControlBlock, current_task};
+use crate::scheduler::SCHEDULER;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+pub struct Mutex {
+    locked: AtomicBool,
+    wait_queue: [Option<*mut TaskControlBlock>; 8],  // 简化的等待队列
+    wait_count: usize,
+}
+
+impl Mutex {
+    pub const fn new() -> Self {
+        Mutex {
+            locked: AtomicBool::new(false),
+            wait_queue: [None; 8],
+            wait_count: 0,
+        }
+    }
+
+    pub fn lock(&mut self) {
+        if self.locked.swap(true, Ordering::Acquire) {
+            // 锁已被占用，当前任务需要阻塞
+            let task = current_task();
+            self.wait_queue[self.wait_count] = Some(task);
+            self.wait_count += 1;
+            // 标记任务为阻塞状态，触发重新调度
+            unsafe { block_current_and_schedule(); }
+        }
+    }
+
+    pub fn unlock(&mut self) {
+        if self.wait_count > 0 {
+            // 有等待的任务，唤醒一个
+            self.wait_count -= 1;
+            if let Some(task_ptr) = self.wait_queue[0] {
+                // 将剩余等待任务前移
+                for i in 0..self.wait_count {
+                    self.wait_queue[i] = self.wait_queue[i + 1];
+                }
+                self.wait_queue[self.wait_count] = None;
+                unsafe { wakeup_task(task_ptr); }
+            }
+        }
+        self.locked.store(false, Ordering::Release);
+    }
+}
+```
+
+## 互斥量与自旋锁的选择
+
+| 特性 | 自旋锁 | 互斥量 |
+| --- | --- | --- |
+| 等待方式 | 忙等待（消耗 CPU） | 阻塞（让出 CPU） |
+| 临界区长度 | 极短（数条指令） | 可长可短 |
+| 中断上下文 | 可用（配合关中断） | 不可用（阻塞要求调度器） |
+| 实现复杂度 | 极简 | 需要调度器配合 |
+
+> **核心原则**：临界区极短（< 几十条指令）用自旋锁；临界区较长或可能阻塞用互斥量。

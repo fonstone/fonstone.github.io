@@ -1,0 +1,493 @@
+---
+title: "ARM 异常处理机制与 handler 实现"
+description: "异常与中断体系 - ARM 异常处理机制与 handler 实现"
+date: "2026-07-12"
+order: 5001
+tags: ["处理器模式", "banked 寄存器", "SPSR", "异常返回", "context save", "undef", "data abort"]
+est_time: "60分钟"
+---
+
+# 本章目标
+
+- 理解 ARM AArch32 的 7 种处理器模式以及 banked 寄存器的作用
+- 掌握异常发生时 CPU 自动保存了什么、没保存什么
+- 为每种异常编写汇编包装函数，正确保存/恢复现场
+- 理解不同异常类型的返回指令差异（LR 偏移不同）
+- 实现能打印错误信息的 fault handler，替换之前的死循环桩
+
+## 前置知识
+
+### 已完成的章节
+
+`04-exceptions-and-interrupts/00-index.md` 已完成，向量表已就位，8 个异常入口已注册。
+
+### 了解 push/pop 汇编
+
+知道 `push {r0-r3}` 是把寄存器压入栈，`pop {r0-r3}` 是弹出。
+
+# ARM 的 7 种处理器模式
+
+ARM AArch32 定义了 7 种处理器模式，不同模式下 CPU 有不同的权限和不同的寄存器视图：
+
+| 模式 | 缩写 | 触发方式 | 用途 |
+| --- | --- | --- | --- |
+| User | USR | 应用代码运行时 | 普通用户代码，权限最低 |
+| System | SYS | 手动切换 | 和 User 共享寄存器，但有特权 |
+| Supervisor | SVC | 执行 `svc` 指令 | 系统调用入口 |
+| IRQ | IRQ | 外部普通中断 | 处理 IRQ |
+| FIQ | FIQ | 外部快速中断 | 处理 FIQ |
+| Abort | ABT | 访问非法内存 | 处理 Prefetch/Data Abort |
+| Undefined | UND | 执行未定义指令 | 处理 Undef |
+
+类比：把处理器模式想象成一个公司的不同部门——每个部门有自己的内线电话（banked 寄存器），接到紧急电话时自动切换到对应部门接听，不影响其他部门正在进行的工作。
+
+## Banked 寄存器
+
+"banked"（独立的）寄存器的含义是：同一个名字的寄存器，在不同模式下是**物理上不同的存储单元**。
+
+IRQ、FIQ、SVC、ABT、UND 这几种异常模式各自都有独立的 `sp`（SP_irq、SP_abt 等）和 `lr`（LR_irq、LR_abt 等）。这样的好处是：发生异常时，CPU 切换到异常模式，立即就有一个干净的 SP 和 LR 可用，不会破坏被打断代码的栈和返回地址。
+
+> **注意：** `r0`–`r12` 没有 banked 版本（FIQ 例外，它有独立的 `r8`–`r12`）。这意味着异常处理函数**必须手动保存** `r0`–`r12`，否则会覆盖被中断代码的数据。
+
+# 如何写一个正确的 handler
+
+以 IRQ 为例，当外部中断触发时，CPU **自动完成**以下动作（不需要软件干预）：
+
+> **CPSR / SPSR 是什么？**
+> `CPSR`（Current Program Status Register，当前程序状态寄存器）记录 CPU **此刻**的运行状态：当前模式（USR/SVC/IRQ…）、条件标志位（N/Z/C/V）、IRQ/FIQ 是否被屏蔽等。`SPSR`（Saved Program Status Register）是每种异常模式各自拥有的"备份槽"，专门用来在切换模式时保存被打断时的 CPSR，以便之后恢复现场。
+
+1. `SPSR_irq ← CPSR`（把当前程序状态保存到 IRQ 模式的 SPSR）
+2. `LR_irq ← 下一条应执行指令的地址 + 4`（记录返回地址，带 +4 偏移）
+3. 切换到 IRQ 模式（CPSR 中的模式位改变，SP 和 LR 自动切换到 SP_irq、LR_irq）
+4. 禁用 IRQ（防止嵌套中断，CPSR.I 置 1）——此期间新来的中断信号由 GIC 锁存为 Pending 状态，不会丢失，待处理函数返回重新开中断后立即响应
+5. 跳转到向量表 `0x00000018`（执行我们的 `b irq_handler` 指令）
+
+CPU **没有**自动保存的东西：`r0`–`r12`，这些必须由我们的处理函数手动保存。
+
+以 IRQ handler 为例，框架如下：
+
+```asm
+irq_handler:
+    push {r0-r12, lr}        @ 保存 r0-r12 + LR_irq（含返回地址）
+    bl   rust_irq_handler    @ 调用 Rust 实现的中断处理逻辑
+    pop  {r0-r12, lr}        @ 恢复寄存器
+    subs pc, lr, #4          @ 从 IRQ 返回：PC = LR - 4，同时恢复 CPSR
+```
+
+**为什么不需要在 handler 开头初始化 SP？** 每种异常模式都有独立的 banked SP，上电时确实是未初始化的。本章将在后续实现 fault handler 里更新 `reset_handler`，在进入 `rust_main` 之前为所有异常模式批量设置好 SP——这比在每个 handler 里各自初始化更安全（因为连 handler 入口的第一条指令都要用到 SP）。
+
+执行 `subs pc, lr, #4` 时，CPU **原子地**完成两件事：
+
+```text
+1. PC ← LR_irq - 4        （跳回被打断的代码）
+2. CPSR ← SPSR_irq        （还原中断前的 CPU 状态）
+```
+
+"原子地"的意思是这两步同时生效：模式位改变（从 IRQ 模式变回 SVC 模式）、IRQ 使能位恢复、所有条件标志位恢复，都在一条指令里完成。
+
+如果没有 `s` 后缀（写成 `sub pc, lr, #4`），PC 会正确跳回，但 CPSR 留在 IRQ 模式的设置不变：CPU 模式没变、IRQ 还是禁用的、条件标志位也是中断处理过程中的值——程序后续行为完全混乱。
+
+## 不同异常类型的返回指令
+
+不同异常进入时，LR 的偏移不同，返回指令也不同：
+
+| 异常类型 | LR 的含义 | 返回指令 | 说明 |
+| --- | --- | --- | --- |
+| IRQ / FIQ | 被打断指令 + 4 | `subs pc, lr, #4` | 返回被打断的那条指令 |
+| Data Abort | 出错指令 + 8 | `subs pc, lr, #8` | 返回出错的那条指令重试 |
+| Prefetch Abort | 出错指令 + 4 | `subs pc, lr, #4` | 返回出错的取指地址 |
+| Undefined | 出错指令下一条 | `movs pc, lr` | LR 已经是正确返回地址 |
+| SVC | SVC 指令下一条 | `movs pc, lr` | LR 已经是正确返回地址 |
+
+> **提示：** 记不住偏移？只需记一条规则：**LR 始终指向"如果什么都没发生，接下来要执行的地址"**。IRQ 时 CPU 流水线已经取了下一条指令，LR 多记录了 4 字节，所以要减 4。其他异常类推。
+
+# 实现 fault handler
+
+## 步骤一：汇编包装函数
+
+在 main.rs 里为每种异常写一个汇编包装器，保存现场后调用 Rust 函数：
+
+```rust
+undef_handler:
+    push {{r0-r12, lr}}
+    bl rust_undef_handler      @ 不会返回（-> !）
+    pop {{r0-r12, lr}}
+    movs pc, lr
+
+svc_handler:
+    push {{r0-r12, lr}}
+    bl rust_svc_handler
+    pop {{r0-r12, lr}}
+    movs pc, lr
+
+prefetch_handler:
+    sub lr, lr, #4
+    push {{r0-r12, lr}}
+    bl rust_prefetch_handler
+    pop {{r0-r12, lr}}
+    movs pc, lr
+
+data_handler:
+    sub lr, lr, #8             @ Data Abort LR 偏移 8
+    push {{r0-r12, lr}}
+    bl rust_data_handler
+    pop {{r0-r12, lr}}
+    movs pc, lr
+
+hang:
+    wfi
+    b hang
+
+irq_handler:               @ 将在 02-gic-setup.md 中替换为真实实现
+    push {{r0-r12, lr}}
+    bl rust_irq_handler
+    pop {{r0-r12, lr}}
+    subs pc, lr, #4
+
+fiq_handler:
+    push {{r0-r12, lr}}
+    bl rust_fiq_handler
+    pop {{r0-r12, lr}}
+    subs pc, lr, #4
+```
+
+## 步骤二：Rust 处理函数
+
+```rust
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_undef_handler() -> ! {
+    println!("FAULT: Undefined Instruction");
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_svc_handler() -> ! {
+    println!("FAULT: SVC (not implemented)");
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_prefetch_handler() -> ! {
+    println!("FAULT: Prefetch Abort");
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_data_handler() -> ! {
+    println!("FAULT: Data Abort");
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_irq_handler() {
+    // 将在 02-gic-setup.md 中实现
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_fiq_handler() {
+    // 暂不使用
+}
+```
+
+## 步骤三：完善 Reset Handler（初始化各模式影子栈）
+
+前面讲到了我们不在每个 handler 开头各自初始化 SP，而是在 `reset_handler` 里统一批量完成——正是因为如此，单个 handler 才不再需要各自执行 `ldr sp`。
+
+具体位置是在 `reset_handler` 内部 `.Lnormal_init:` 标号之后、清零 BSS 之前（`.Lnormal_init` 只是 reset_handler 内的一个内部跳转锚点，不是独立函数）：
+
+```asm
+.Lnormal_init:
+    @ 初始化各异常模式的栈指针（共享同一个栈顶，仅用于简单 fault 处理）
+    msr cpsr_c, #0xdb
+    ldr sp, =_stack_start  @ Undefined 模式
+    msr cpsr_c, #0xd7
+    ldr sp, =_stack_start  @ Abort 模式
+    msr cpsr_c, #0xd2
+    ldr sp, =_stack_start  @ IRQ 模式
+    msr cpsr_c, #0xd1
+    ldr sp, =_stack_start  @ FIQ 模式
+    msr cpsr_c, #0xd3
+    ldr sp, =_stack_start  @ 回到 SVC 模式
+    @ 之后继续清零 BSS、复制 .data、跳 rust_main...
+```
+
+在 ARM 中，**每进一种异常模式，CPU 都会切出一套专属于该模式的”影子分身（Banked Registers）”——其中包括独立的栈指针 SP**。如果你只在 SVC 模式下设定了 SP，一旦触发 Data Abort 硬件将 CPU 切入 Abort 模式，它使用的专属影子 SP 就会是一片未经设定的内存垃圾！此时你在处理函数里哪怕只要执行一次 `push` ，就会立刻因为内存崩溃（踩到非法地址）引发绝望的连环死机！
+
+所以，在进入内核（`rust_main`）执行前，我们必须通过操作控制寄存器（`CPSR_c`）反复横跳到各个即将使用到的异常模式（Undefined: `0xdb`、Abort: `0xd7`、IRQ: `0xd2` 等），并为它们逐一将 `sp` 设为 `_stack_start`，全部安顿好以后最后再切回 SVC（`0xd3`）。
+
+> **为什么让所有模式共用同一个 `_stack_start`，不会出问题吗？**
+> 在本教程这个场景里，能跑通的原因有两点：
+> 1. 所有 fault handler（Undef、Data Abort 等）的返回类型是 `-> !`，触发后死循环不再返回，不会和 SVC 栈互踩。
+> 2. IRQ handler 虽然会返回，但它的 `push`/`pop` 对称，用完即还原，不留残留。
+>
+> **真正的风险**是异常嵌套：如果 IRQ 处理过程中再发生 Data Abort，两个模式会从同一个地址向下压栈，互相覆盖彼此的数据，造成难以调试的崩溃。生产级 RTOS 会为每个模式划分独立的栈区段（比如 IRQ 栈 512 字节、ABT 栈 256 字节），这里共用是有意识的教学简化，不是正确的工程实践。
+
+## 步骤四：完整的 src/main.rs
+
+```rust
+#![no_std]
+#![no_main]
+
+mod uart;
+
+use core::arch::global_asm;
+use core::panic::PanicInfo;
+
+global_asm!(r#"
+    @ 向量表
+    .section .text.vector_table, "ax"
+    .global _vectors
+_vectors:
+    b reset_handler
+    b undef_handler
+    b svc_handler
+    b prefetch_handler
+    b data_handler
+    b hang
+    b irq_handler
+    b fiq_handler
+
+    @ 异常处理函数
+    .section .text.handlers, "ax"
+undef_handler:
+    push {{r0-r12, lr}}
+    bl rust_undef_handler
+    pop {{r0-r12, lr}}
+    movs pc, lr
+
+svc_handler:
+    push {{r0-r12, lr}}
+    bl rust_svc_handler
+    pop {{r0-r12, lr}}
+    movs pc, lr
+
+prefetch_handler:
+    sub lr, lr, #4
+    push {{r0-r12, lr}}
+    bl rust_prefetch_handler
+    pop {{r0-r12, lr}}
+    movs pc, lr
+
+data_handler:
+    sub lr, lr, #8
+    push {{r0-r12, lr}}
+    bl rust_data_handler
+    pop {{r0-r12, lr}}
+    movs pc, lr
+
+hang:
+    wfi
+    b hang
+
+irq_handler:
+    push {{r0-r12, lr}}
+    bl rust_irq_handler
+    pop {{r0-r12, lr}}
+    subs pc, lr, #4
+
+fiq_handler:
+    push {{r0-r12, lr}}
+    bl rust_fiq_handler
+    pop {{r0-r12, lr}}
+    subs pc, lr, #4
+
+    @ Reset handler
+    .section .text.reset_handler, "ax"
+    .global reset_handler
+reset_handler:
+    @ mps3-an536 以 HYP 模式启动，需切换到 SVC 模式才能使用普通向量表
+    mrs r0, cpsr
+    and r0, r0, #0x1f
+    cmp r0, #0x1a          @ 0x1a = HYP 模式
+    bne .Lnormal_init
+    mov r0, #0xd3           @ SVC 模式，禁 IRQ/FIQ
+    msr spsr_cxsf, r0
+    adr r0, .Lnormal_init
+    msr elr_hyp, r0
+    eret                    @ 切换到 SVC 模式，跳到 .Lnormal_init
+.Lnormal_init:
+    @ 初始化各异常模式的栈指针（共享同一个栈顶，仅用于简单 fault 处理）
+    msr cpsr_c, #0xdb
+    ldr sp, =_stack_start  @ Undefined 模式
+    msr cpsr_c, #0xd7
+    ldr sp, =_stack_start  @ Abort 模式
+    msr cpsr_c, #0xd2
+    ldr sp, =_stack_start  @ IRQ 模式
+    msr cpsr_c, #0xd1
+    ldr sp, =_stack_start  @ FIQ 模式
+    msr cpsr_c, #0xd3
+    ldr sp, =_stack_start  @ 回到 SVC 模式
+    ldr r0, =_sbss
+    ldr r1, =_ebss
+    mov r2, #0
+1:
+    cmp r0, r1
+    bhs 2f
+    str r2, [r0]
+    add r0, r0, #4
+    b 1b
+2:
+    ldr r0, =_sdata
+    ldr r1, =_edata
+    ldr r2, =_sidata
+3:
+    cmp r0, r1
+    bhs 4f
+    ldr r3, [r2]
+    str r3, [r0]
+    add r0, r0, #4
+    add r2, r2, #4
+    b 3b
+4:
+    bl rust_main
+
+    @ 安全保底死循环
+5:
+    wfi
+    b 5b
+"#);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_main() -> ! {
+    uart::uart_init();
+    println!("Hello from RTOS!");
+    println!("Board: mps3-an536  CPU: Cortex-R52");
+
+    // 取消下面任意一行注释，触发对应的异常处理器：
+    // unsafe { core::arch::asm!("udf #0"); }   // → FAULT: Undefined Instruction
+    // unsafe { core::arch::asm!("svc #0"); }   // → FAULT: SVC (not implemented)
+
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_undef_handler() -> ! {
+    println!("FAULT: Undefined Instruction");
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_svc_handler() -> ! {
+    println!("FAULT: SVC (not implemented)");
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_prefetch_handler() -> ! {
+    println!("FAULT: Prefetch Abort");
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_data_handler() -> ! {
+    println!("FAULT: Data Abort");
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_irq_handler() {}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_fiq_handler() {}
+
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    println!("PANIC!");
+    loop {}
+}
+```
+
+# 验证方法
+
+## 正常启动验证
+
+```bash
+cargo build
+qemu-system-arm \
+  -machine mps3-an536 \
+  -nographic \
+  -device loader,file=target/armv8r-none-eabihf/debug/rtos
+```
+
+预期输出：
+
+```text
+Hello from RTOS!
+Board: mps3-an536  CPU: Cortex-R52
+```
+
+## 验证未定义指令异常
+
+在 `rust_main` 里取消注释 `udf #0` 那行，然后重新编译运行：
+
+```rust
+unsafe { core::arch::asm!("udf #0"); }   // 取消注释这行
+```
+
+`udf`（Undefined instruction）是 ARM 提供的标准"故意触发未定义指令异常"的指令，执行后 CPU 立即跳入 `undef_handler`。
+
+预期输出：
+
+```text
+Hello from RTOS!
+Board: mps3-an536  CPU: Cortex-R52
+FAULT: Undefined Instruction
+```
+
+## 验证 SVC 异常
+
+在 `rust_main` 里取消注释 `svc #0` 那行：
+
+```rust
+unsafe { core::arch::asm!("svc #0"); }   // 取消注释这行
+```
+
+`svc #0` 主动发起一次 Supervisor Call，CPU 跳入 `svc_handler`。
+
+预期输出：
+
+```text
+Hello from RTOS!
+Board: mps3-an536  CPU: Cortex-R52
+FAULT: SVC (not implemented)
+```
+
+> **注意：** 验证完毕后记得把这两行重新注释掉，后续章节的代码以正常启动为基础。
+
+# 练习题
+
+```quiz single
+Q: ARM AArch32 中，IRQ 异常发生时 CPU 自动保存了哪些内容？
+- r0-r12、CPSR、PC（全部寄存器）
+- 只保存了 PC
++ 把 CPSR 保存到 SPSR_irq，把返回地址保存到 LR_irq，然后切换到 IRQ 模式
+- 什么都不保存，全靠软件
+E: CPU 自动做的只有三件事：保存 CPSR → SPSR_irq、计算返回地址存入 LR_irq、切换处理器模式。r0-r12 没有被保存，处理函数必须手动 push {r0-r12} 才能保护被打断代码的数据。
+```
+
+```quiz single
+Q: 为什么 IRQ handler 返回时要用 subs pc, lr, #4 而不是 subs pc, lr, #0？
++ 因为 IRQ 时 LR 存的是"被打断指令的下一条 + 4"，减 4 才能正确返回到被打断处继续执行
+- 因为 ARM 指令都是 4 字节，需要对齐
+- 因为 SPSR 需要额外 4 个周期才能生效
+- 因为中断处理本身消耗了 4 字节的栈空间
+E: ARM 流水线导致 LR_irq = 实际返回地址 + 4。subs pc, lr, #4 减去这个偏移，同时 s 后缀触发 SPSR_irq → CPSR 的恢复，一条指令完成返回和状态恢复两件事。
+```
+
+```quiz single
+Q: Data Abort 的返回指令是 subs pc, lr, #8，而不是 #4，原因是什么？
+- 因为 Data Abort 处理函数比 IRQ 多占用 4 字节栈空间
++ 因为 Data Abort 时 LR 指向出错指令 + 8，减 8 才能回到出错的那条指令重试
+- 因为 Data Abort 需要额外一个时钟周期处理，导致偏移加倍
+- 因为 Data Abort 和 IRQ 使用不同的 LR 寄存器
+E: 不同异常类型发生时，CPU 保存到 LR 的偏移不同，是 ARM 架构规范的一部分。Data Abort 时 LR = 出错指令 + 8，减 8 可以返回到触发错误的指令，让软件有机会修复映射后重试（在有 MMU/MPU 的系统中）。
+```
+
+```quiz single
+Q: 异常 handler 的 push {{r0-r12, lr}} 中为什么要把 lr 也 push 进去？
+- 因为 ARM 规定所有寄存器都必须保存
+- 因为 lr 是 r14，必须和其他寄存器一起保存才能对齐
++ 因为 lr 保存的是返回地址，push 之后 bl 调用 Rust 函数会覆盖 lr，必须提前保存才能在返回时还原
+- 因为 Rust 函数会修改 lr 寄存器
+E: bl 指令会把返回地址写入 lr，覆盖异常进入时 CPU 存的原始返回地址。如果不在 bl 之前把 lr push 到栈上，异常处理结束后就无从得知应该返回到哪里。pop {{r0-r12, lr}} 恢复 lr，subs pc, lr, #4 才能跳回正确的地址。
+```

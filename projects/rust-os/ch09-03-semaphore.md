@@ -1,0 +1,117 @@
+---
+title: "信号量"
+description: "同步原语 - 信号量"
+date: "2026-07-12"
+order: 9003
+tags: ["信号量", "semaphore", "计数", "资源控制", "事件通知"]
+est_time: "40分钟"
+---
+
+# 信号量
+
+## 什么是信号量
+
+信号量（Semaphore）是 Dijkstra 提出的经典同步原语，本质上是一个**带等待队列的计数器**。它有两种操作：
+
+- **wait / P / acquire**：计数器减 1，如果结果为负则阻塞当前任务
+- **signal / V / release**：计数器加 1，如果有任务在等待则唤醒一个
+
+信号量有两种常见形式：
+
+| 类型 | 初始值 | 用途 |
+| --- | --- | --- |
+| 二进制信号量 | 1 | 类似互斥量，用于互斥访问 |
+| 计数信号量 | N | 管理 N 个相同资源（如缓冲区槽位） |
+
+## 计数信号量的实现
+
+```rust
+use crate::task::TaskControlBlock;
+use crate::scheduler::SCHEDULER;
+use core::sync::atomic::{AtomicI32, Ordering};
+
+pub struct Semaphore {
+    count: AtomicI32,            // 资源计数
+    wait_queue: [Option<*mut TaskControlBlock>; 16],
+    wait_count: usize,
+}
+
+impl Semaphore {
+    pub const fn new(initial: i32) -> Self {
+        Semaphore {
+            count: AtomicI32::new(initial),
+            wait_queue: [None; 16],
+            wait_count: 0,
+        }
+    }
+
+    pub fn wait(&mut self) {
+        loop {
+            let old = self.count.load(Ordering::Relaxed);
+            if old > 0 {
+                if self.count.compare_exchange(old, old - 1, Ordering::Acquire, Ordering::Relaxed).is_ok() {
+                    return;  // 成功获取信号量
+                }
+            } else {
+                // 资源不足，阻塞当前任务
+                let task = unsafe { crate::task::current_task() };
+                self.wait_queue[self.wait_count] = Some(task);
+                self.wait_count += 1;
+                unsafe { block_current_and_schedule(); }
+                // 被唤醒后重新尝试获取
+            }
+        }
+    }
+
+    pub fn signal(&mut self) {
+        if self.wait_count > 0 {
+            // 有等待任务，先唤醒再释放（避免信号量值无限增长）
+            self.wait_count -= 1;
+            if let Some(task_ptr) = self.wait_queue[0] {
+                for i in 0..self.wait_count {
+                    self.wait_queue[i] = self.wait_queue[i + 1];
+                }
+                self.wait_queue[self.wait_count] = None;
+                unsafe { wakeup_task(task_ptr); }
+            }
+        }
+        self.count.fetch_add(1, Ordering::Release);
+    }
+}
+```
+
+## 生产者-消费者示例
+
+```rust
+static SEM_EMPTY: Semaphore = Semaphore::new(8);  // 缓冲区有 8 个空位
+static SEM_FULL:  Semaphore = Semaphore::new(0);   // 初始 0 个数据
+
+fn producer_task() {
+    loop {
+        let item = produce_item();
+        SEM_EMPTY.wait();    // 等待空位
+        buffer[write_pos] = item;
+        SEM_FULL.signal();   // 数据可用
+    }
+}
+
+fn consumer_task() {
+    loop {
+        SEM_FULL.wait();     // 等待数据
+        let item = buffer[read_pos];
+        SEM_EMPTY.signal();  // 空出一个位置
+        consume_item(item);
+    }
+}
+```
+
+## 信号量 vs 互斥量
+
+| 特性 | 互斥量 | 二进制信号量 |
+| --- | --- | --- |
+| 所有权 | 有（只能由持有者释放） | 无（任何任务都可以 signal） |
+| 用途 | 互斥访问 | 事件通知、资源计数 |
+| 优先级反转 | 可能（可引入优先级继承解决） | 可能 |
+| 递归加锁 | 通常不支持 | 不支持 |
+
+> 在 RTOS 中，互斥量和信号量是互补关系而非替代关系。互斥量保护共享数据的互斥访问，信号量则更常用于事件通知和资源计数场景。

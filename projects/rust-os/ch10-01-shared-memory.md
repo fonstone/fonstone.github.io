@@ -1,0 +1,401 @@
+---
+title: "共享内存"
+description: "进程间通信 - 共享内存"
+date: "2026-07-12"
+order: 10001
+tags: ["共享内存", "自旋锁", "spinlock", "无锁", "环形缓冲区", "SPSC", "IPC", "内存序"]
+est_time: "45分钟"
+---
+
+# 本章目标
+
+- 理解为什么裸机 RTOS 的"共享内存"就是普通 `static` 变量——以及为什么仍然需要显式同步
+- 用 `AtomicBool` 实现自旋锁，保护多写多读的共享缓冲区
+- 实现 SPSC（单生产者单消费者）无锁环形缓冲区，理解 Acquire/Release 内存序的作用
+- 验证：生产者任务通过环形缓冲区向消费者任务传递数据，两者用 `sleep_ticks` 分时运行
+
+## 前置知识
+
+### 已完成的章节
+
+`07-scheduler` 已完成，`sleep_ticks` 和调度器就绪。`08-sync-primitives` 的自旋锁概念在本节用到，但本节会从头实现一个最小版本。
+
+### 单地址空间意味着什么
+
+有 MMU 的系统（如 Linux）中，每个进程都有独立的虚拟地址空间，"共享内存"需要内核专门把同一段物理页映射到多个进程的地址空间。
+
+我们的 RTOS **没有 MMU**，所有任务运行在同一地址空间，因此：
+
+- 任何 `static` 变量对所有任务直接可见——**共享内存是默认的**，不需要额外映射
+- 没有地址隔离，意味着任务可以直接读写彼此的数据——**同步保护是调用者的责任**
+
+这是裸机嵌入式的特点：权限极大，约束全靠纪律。
+
+# 数据竞争
+
+两个任务同时读写同一内存位置，会产生不确定的结果。
+
+**示例：lost update（丢失更新）**
+
+```text
+TASK A：count += 1
+  → LDR r0, [count]    ; r0 = 5
+  → ADD r0, r0, #1     ; r0 = 6
+  ← FIQ 在此打断，切换到 TASK B
+TASK B：count += 1
+  → LDR r0, [count]    ; r0 = 5（A 还没写回！）
+  → ADD r0, r0, #1     ; r0 = 6
+  → STR r0, [count]    ; count = 6
+  ← 调度回 TASK A 继续
+TASK A：
+  → STR r0, [count]    ; count = 6（A 覆盖了 B 的写入）
+
+最终 count = 6，而不是正确的 7。
+```
+
+`count += 1` 在源码里看起来是一步，但 CPU 要执行读-改-写三条指令，FIQ 可以在任意两条之间打断。
+
+# 方案一：自旋锁 + 静态缓冲区
+
+适用于**多生产者多消费者**，或缓冲区操作逻辑较复杂的场景。
+
+## 数据结构
+
+**位置：新建 `src/shared.rs`**
+
+```rust
+use core::sync::atomic::{AtomicBool, Ordering};
+
+pub const BUF_LEN: usize = 16;
+
+static LOCK:            AtomicBool       = AtomicBool::new(false);
+static mut BUF_DATA:    [u32; BUF_LEN]   = [0; BUF_LEN];
+static mut BUF_LEN_USED: usize           = 0;
+
+fn acquire() {
+    while LOCK
+        .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        core::hint::spin_loop();
+    }
+}
+
+fn release() {
+    LOCK.store(false, Ordering::Release);
+}
+```
+
+`AtomicBool` 是 Rust 对单字节原子操作的封装，对应 ARM 的 `LDREXB/STREXB` 指令对。`Ordering::Acquire` 保证持锁后能看到所有之前的写入，`Ordering::Release` 保证释放锁前的所有写入对其他任务可见。
+
+## 写入（生产者）
+
+```rust
+/// 向共享缓冲区追加一个值，缓冲区满时返回 false
+pub fn buf_push(val: u32) -> bool {
+    acquire();
+    let ok = unsafe {
+        if BUF_LEN_USED < BUF_LEN {
+            BUF_DATA[BUF_LEN_USED] = val;
+            BUF_LEN_USED += 1;
+            true
+        } else {
+            false
+        }
+    };
+    release();
+    ok
+}
+```
+
+## 读取（消费者）
+
+```rust
+/// 从共享缓冲区取出最早的一个值（FIFO），为空时返回 None
+pub fn buf_pop() -> Option<u32> {
+    acquire();
+    let val = unsafe {
+        if BUF_LEN_USED == 0 {
+            None
+        } else {
+            let v = BUF_DATA[0];
+            // 简单左移（非高效，生产代码用环形缓冲区）
+            for i in 0..BUF_LEN_USED - 1 {
+                BUF_DATA[i] = BUF_DATA[i + 1];
+            }
+            BUF_LEN_USED -= 1;
+            Some(v)
+        }
+    };
+    release();
+    val
+}
+```
+
+> **注意：** 这里的 `buf_pop` 做了线性移位，时间复杂度 O(n)。实际项目用环形缓冲区（方案二）避免移位开销。
+
+# 方案二：SPSC 无锁环形缓冲区
+
+适用于**严格一个生产者、一个消费者**的场景。生产者只写 `tail`，消费者只写 `head`，两者互不干涉，不需要锁。
+
+## 为什么 SPSC 可以无锁
+
+```text
+[0] [1] [2] [3] [4] [5] [6] [7]
+     ↑head              ↑tail
+
+生产者：读 tail → 写 data[tail] → 更新 tail（不碰 head）
+消费者：读 head → 读 data[head] → 更新 head（不碰 tail）
+```
+
+两者操作的指针互不重叠，只要用正确的**内存序**保证写入的可见性，就不需要任何锁。
+
+关键约束：**只能有一个任务调用 `push`，只能有一个任务调用 `pop`**。违反这个约束会产生数据竞争，与方案一的多任务共享场景不同。
+
+## 环形缓冲区结构
+
+**位置：`src/shared.rs`，追加在方案一代码之后（或单独新建 `src/ring.rs`）**
+
+```rust
+use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+pub const RING_SIZE: usize = 8; // 必须是 2 的幂，以便用位掩码取模
+
+pub struct SpscRing {
+    data: UnsafeCell<[u32; RING_SIZE]>,
+    head: AtomicUsize, // 消费者读指针
+    tail: AtomicUsize, // 生产者写指针
+}
+
+// SAFETY：head 只被消费者写，tail 只被生产者写，单核 RTOS 不存在真并发
+unsafe impl Sync for SpscRing {}
+
+impl SpscRing {
+    pub const fn new() -> Self {
+        Self {
+            data: UnsafeCell::new([0; RING_SIZE]),
+            head: AtomicUsize::new(0),
+            tail: AtomicUsize::new(0),
+        }
+    }
+}
+
+pub static RING: SpscRing = SpscRing::new();
+```
+
+`UnsafeCell` 是 Rust 内部可变性的基础原语——它告诉编译器"这块内存可能在共享引用下被修改"，编译器不会对其内容做"值不变"的假设（防止错误优化），同时允许通过 `get()` 拿到裸指针进行写入。
+
+## push（生产者专用）
+
+```rust
+impl SpscRing {
+    /// 生产者调用。队列满时返回 false（val 被丢弃，不阻塞）
+    pub fn push(&self, val: u32) -> bool {
+        let tail = self.tail.load(Ordering::Relaxed);
+        let next = (tail + 1) & (RING_SIZE - 1);
+
+        // Acquire：确保读到消费者最新写入的 head
+        if next == self.head.load(Ordering::Acquire) {
+            return false; // 队列满
+        }
+
+        // SAFETY：只有生产者写 data[tail]，此时消费者不会读这个槽
+        unsafe { (*self.data.get())[tail] = val; }
+
+        // Release：确保 data 写入对消费者可见，再更新 tail
+        self.tail.store(next, Ordering::Release);
+        true
+    }
+}
+```
+
+## pop（消费者专用）
+
+```rust
+impl SpscRing {
+    /// 消费者调用。队列空时返回 None（不阻塞）
+    pub fn pop(&self) -> Option<u32> {
+        let head = self.head.load(Ordering::Relaxed);
+
+        // Acquire：确保读到生产者最新写入的 tail，以及 data 写入
+        if head == self.tail.load(Ordering::Acquire) {
+            return None; // 队列空
+        }
+
+        // SAFETY：只有消费者读 data[head]，此时生产者不会写这个槽
+        let val = unsafe { (*self.data.get())[head] };
+
+        // Release：让生产者知道此槽已读完、可以复用
+        self.head.store((head + 1) & (RING_SIZE - 1), Ordering::Release);
+        Some(val)
+    }
+}
+```
+
+## 内存序一句话总结
+
+| 操作 | Ordering | 作用 |
+| --- | --- | --- |
+| `tail.load`（生产者读自己的指针） | `Relaxed` | 只有生产者写 tail，自身最新值不需要跨任务同步 |
+| `head.load`（生产者读对方的指针） | `Acquire` | 看到消费者释放槽位之前的所有操作 |
+| `tail.store` | `Release` | data 写完后发布 tail，消费者 Acquire 才能看到 data |
+| `head.load`（消费者读自己的指针） | `Relaxed` | 只有消费者写 head，自身最新值不需要跨任务同步 |
+| `tail.load`（消费者读对方的指针） | `Acquire` | 看到生产者写 data 之前的所有操作（含 data 写入） |
+| `head.store` | `Release` | data 读完后发布 head，生产者 Acquire 才能复用此槽 |
+
+## 两种方案对比
+
+| | 自旋锁方案 | SPSC 无锁方案 |
+| --- | --- | --- |
+| 生产者/消费者数量 | 任意多对多 | 严格 1v1 |
+| 死锁风险 | 无（单核，持锁任务最终被调度回来） | 无 |
+| 等待开销 | 竞争时自旋浪费 CPU 时间 | push/pop 立即返回，无等待 |
+| FIQ 响应延迟影响 | 持锁被 FIQ 切走，新任务自旋，增加调度抖动 | 无锁，不影响 FIQ 响应 |
+| 代码复杂度 | 简单，易理解 | 需要理解 Acquire/Release 内存序 |
+
+单核 RTOS 上自旋锁不会死锁：持锁任务最终会被调度回来并释放锁。但自旋期间 CPU 时间被浪费，且若锁被持有期间发生调度，等待任务的自旋会消耗整个时间片。SPSC 完全避免了等待。
+
+# 更新 main.rs
+
+## 1. 声明模块
+
+在已有的 `mod` 声明区追加一行：
+
+```rust
+mod shared;   // 新增
+```
+
+## 2. 任务函数与 rust_main
+
+```rust
+fn producer() {
+    let mut n = 0u32;
+    loop {
+        if shared::RING.push(n) {
+            n = n.wrapping_add(1);
+        }
+        scheduler::sleep_ticks(3);
+    }
+}
+
+fn consumer() {
+    loop {
+        if let Some(val) = shared::RING.pop() {
+            println!("[consumer] got {}", val);
+        }
+        scheduler::sleep_ticks(1);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_main() -> ! {
+    uart::uart_init();
+    println!("Hello from RTOS!");
+    gic::gic_init();
+    timer::timer_init();
+
+    scheduler::add_task(producer, 1);
+    scheduler::add_task(consumer, 1);
+    scheduler::start();
+}
+```
+
+生产者每 3 tick 推一个值，消费者每 1 tick 尝试取一次。由于消费者检查频率更高，每次有新值都能及时打印。
+
+# 验证方法
+
+## 编译验证
+
+```bash
+cargo build
+```
+
+若编译通过，说明 `SpscRing` 的 `Sync` 实现和 `UnsafeCell` 用法正确，`static RING` 的初始化也没问题。
+
+## 运行
+
+```bash
+qemu-system-arm \
+  -machine mps3-an536 \
+  -nographic \
+  -device loader,file=target/armv8r-none-eabihf/debug/rtos
+```
+
+## 预期输出
+
+```text
+Hello from RTOS!
+[consumer] got 0
+[consumer] got 1
+[consumer] got 2
+[consumer] got 3
+[consumer] got 4
+...
+```
+
+输出按顺序递增，无跳号，说明没有数据丢失和数据竞争。
+
+## 验证自旋锁方案
+
+将任务函数改为使用 `shared::buf_push` / `shared::buf_pop`：
+
+```rust
+fn producer_spin() {
+    let mut n = 0u32;
+    loop {
+        shared::buf_push(n);
+        n = n.wrapping_add(1);
+        scheduler::sleep_ticks(3);
+    }
+}
+
+fn consumer_spin() {
+    loop {
+        if let Some(val) = shared::buf_pop() {
+            println!("[spin] got {}", val);
+        }
+        scheduler::sleep_ticks(1);
+    }
+}
+```
+
+行为与 SPSC 方案相同，适合验证自旋锁在多任务竞争时的正确性。
+
+# 练习题
+
+```quiz single
+Q: 为什么 SpscRing 的 push 里读 head 用 Ordering::Acquire，而不是 Ordering::Relaxed？
++ 生产者需要看到消费者在更新 head 之前完成的所有操作（尤其是读取 data 的完成），Acquire 配合消费者写 head 时的 Release 形成 happens-before 关系；若用 Relaxed，生产者可能误以为某个槽已释放（旧的 head 值），错误地写入消费者还未读完的位置
+- 因为 Acquire 比 Relaxed 性能更好
+- ARM 处理器要求所有原子读操作必须用 Acquire
+- 为了防止编译器把 head.load 优化掉
+E: Acquire/Release 是成对使用的内存序原语。消费者写 head 时用 Release 发布"此槽已读完"的信号；生产者读 head 时用 Acquire 接收这个信号，并附带看到消费者此前所有写操作的效果。Relaxed 不提供跨任务的顺序保证，在乱序处理器或编译器优化下会导致生产者在槽未释放时就写入新数据。
+```
+
+```quiz single
+Q: 为什么 RING_SIZE 必须是 2 的幂？
++ 取模可以改为位与运算：`(idx + 1) & (RING_SIZE - 1)` 比 `(idx + 1) % RING_SIZE` 更快，在 ARM 上是单条指令；同时环形缓冲区的"满"判断（next_tail == head）不需要任何特殊处理
+- 因为 ARM 处理器只支持 2 的幂大小的内存分配
+- 为了让 AtomicUsize 对齐到正确的边界
+- 没有特别原因，只是惯例
+E: 当 RING_SIZE 是 2 的幂时，`x % RING_SIZE == x & (RING_SIZE - 1)`，位运算在所有常见架构上都是单条指令，比除法快得多。这是几乎所有环形缓冲区实现都要求大小为 2 的幂的根本原因。
+```
+
+```quiz single
+Q: SPSC 无锁环形缓冲区如果有两个任务同时调用 push，会发生什么？
++ 两个任务都读到相同的 tail 值，都认为同一槽位可用，后写的覆盖先写的，同时 tail 被更新两次导致计数错误——这是经典的 TOCTOU 竞争，SPSC 的正确性完全依赖"只有一个生产者"这一约束
+- 没有问题，AtomicUsize 会让操作串行化
+- 会触发 Rust 的 panic
+- 两个生产者会自动排队等待
+E: SPSC 的第一个 S 代表 Single（单个）。AtomicUsize 保证 tail 的单次读写本身是原子的，但 push 里的"读 tail → 写 data → 更新 tail"整体不是原子序列。两个生产者会同时通过"队列未满"的检查，然后同时写 data[tail]，后者覆盖前者，这是数据损坏。MPMC（多生产者多消费者）环形缓冲区需要基于 CAS 的循环来解决这个问题。
+```
+
+```quiz single
+Q: 单核 RTOS 上，一个任务持有自旋锁时被 FIQ 切走，新任务尝试获取同一把锁会发生什么？
++ 新任务在 acquire() 里原地自旋，消耗完当前时间片，被调度走，直到持锁任务重新被调度且释放锁后，等待任务才能继续；这增加了 FIQ 响应延迟，因为自旋浪费了 CPU 时间
+- 会发生死锁，因为持锁任务永远不会被调度回来
+- 自旋锁会自动放弃，新任务直接进入临界区
+- 单核系统不会发生这种情况，因为 FIQ 禁止中间切换
+E: 单核系统上自旋锁不会死锁——调度器（Round-Robin）保证持锁任务最终会再次获得 CPU 并释放锁。但等待的任务会在自旋上浪费整个时间片（甚至多个时间片），这是"优先级反转"的简单形式。SPSC 无锁方案的 push/pop 立即返回（成功或失败），不会自旋，完全消除了这种延迟。
+```

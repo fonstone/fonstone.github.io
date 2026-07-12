@@ -1,0 +1,385 @@
+---
+title: "上下文保存与恢复实现"
+description: "上下文切换 - 上下文保存与恢复实现"
+date: "2026-07-12"
+order: 7002
+tags: ["global_asm", "裸函数", "寄存器保存", "ABI", "context_switch", "任务切换汇编"]
+est_time: "60分钟"
+---
+
+# 本章目标
+
+- 理解 ARM ABI 与汇编函数的配合方式（r0 = 第一参数，r1 = 第二参数）
+- 用 `global_asm!` 实现 `context_switch`，逐行理解每条汇编的含义
+- 理解"被恢复"与"第一次启动"的区别，实现 `start_first_task`
+- 在 QEMU 上看到两个任务交替输出
+
+## 前置知识
+
+### 已完成的章节
+
+`06-context-switch/01-task-control-block.md` 已完成，`Task` 结构体和 `create_task` 已可编译，初始栈帧（14 个 u32 槽，lr = 入口函数地址）已正确构造。
+
+### ARM 调用约定（ABI）
+
+ARM AArch32 的 C 调用约定（AAPCS）规定：
+
+- 函数的第 1 个参数放在 **r0**
+- 函数的第 2 个参数放在 **r1**
+- 第 3、4 个参数分别在 r2、r3
+- 多余的参数通过栈传递
+
+`context_switch(curr, next)` 调用时，CPU 已经把 `curr` 放进 r0，把 `next` 放进 r1——汇编代码直接使用这两个寄存器即可，不需要额外声明。
+
+### push/pop 的寄存器顺序
+
+ARM 的 `PUSH {r0-r12, lr}` 遵循一条固定规则：**低编号寄存器存在低地址，高编号寄存器存在高地址**。因此：
+
+```text
+执行 push {r0-r12, lr} 后，栈内布局（sp 向低地址增长）：
+
+新 sp → [r0  ] ← 最低地址
+         [r1  ]
+         ...
+         [r12 ]
+         [lr  ] ← 最高地址（sp + 52）
+```
+
+`pop {r0-r12, lr}` 是完全对称的逆操作，按相同顺序从低地址往高地址读回。这条规则决定了 `create_task` 里初始帧的构造方式，两者必须严格一致。
+
+# context_switch
+
+## push 之后 r0 还有效吗？
+
+这是最关键的一个细节。`push {r0-r12, lr}` 会把 r0 的值**复制**到栈上，但**寄存器本身不变**。执行完 push，r0 里还是 `curr` 的地址。所以紧接着的 `str sp, [r0]` 可以正确把 sp 存进 `curr->stack_ptr`。
+
+## 切换过程逐步追踪
+
+假设任务 A 正在运行，调用 `context_switch(&TASK_A, &TASK_B)`：
+
+```text
+调用前（ABI 保证）：r0 = &TASK_A，r1 = &TASK_B
+
+─── 保存任务 A ───────────────────────────────
+
+① push {r0-r12, lr}
+   将 14 个寄存器的当前值依次压入任务 A 的私有栈。
+   sp 向低地址移动 56 字节（14 × 4）。
+   push 只把寄存器值复制到内存，r0 本身不变，仍 = &TASK_A。
+
+② str sp, [r0]
+   str = store，把 sp 的值写到 r0 所指的内存地址。
+   r0 = &TASK_A，[r0] 就是 TASK_A 的第一个字段 stack_ptr（#[repr(C)]，偏移 0）。
+   执行后：TASK_A.stack_ptr = sp  ← 记住 A 被暂停时的栈顶
+
+─── 切换栈 ──────────────────────────────────
+
+③ ldr sp, [r1]
+   ldr = load，从 r1 所指的内存地址读一个 32 位值装进 sp。
+   r1 = &TASK_B，[r1] 就是 TASK_B.stack_ptr。
+   执行后：sp = TASK_B.stack_ptr  ← sp 切换到 B 的私有栈
+
+─── 恢复任务 B ───────────────────────────────
+
+④ pop {r0-r12, lr}
+   此时 sp 指向任务 B 的寄存器帧，pop 把帧里的值依次装回 r0-r12 和 lr。
+   第一次切换到 B 时，帧由 create_task 构造：r0-r12 = 0，lr = task_b_fn 地址。
+
+⑤ bx lr
+   跳到 lr 保存的地址，任务 B 开始（或继续）执行。
+```
+
+当任务 B 之后调用 `context_switch(&TASK_B, &TASK_A)` 时，流程完全对称——A 的 lr 被恢复，`bx lr` 跳回 A 调用 `context_switch` 时的返回地址，A 就从那行代码之后继续执行，就好像 `context_switch` 正常返回了一样。
+
+## 启动第一个任务
+
+`start_first_task` 与 `context_switch` 的关键区别：
+
+- `context_switch`：先**保存**当前任务，再**恢复**下一任务
+- `start_first_task`：直接**恢复**目标任务，**不保存**当前上下文（`rust_main` 到这里就"牺牲"了，之后任务之间只用 `context_switch` 互相切换）
+
+```text
+调用 start_first_task(&TASK_A)：
+
+r0 = &TASK_A
+
+① ldr sp, [r0]
+   → sp = TASK_A.stack_ptr（指向初始帧的 r0 位置）
+
+② pop {r0-r12, lr}
+   → r0-r12 = 0，lr = task_a_fn（入口函数地址）
+
+③ bx lr
+   → 跳到 task_a_fn，任务 A 开始执行
+```
+
+## 用 global_asm! 实现
+
+`global_asm!` 把汇编直接嵌入编译单元，不受 Rust 借用检查或寄存器分配的干扰——这正是 context switch 所需要的。
+
+在 `src/task.rs` 顶部添加：
+
+```rust
+use core::arch::global_asm;
+
+global_asm!(r#"
+    // context_switch(curr: *mut Task, next: *const Task)
+    // r0 = curr（指向当前任务 TCB 的指针）
+    // r1 = next（指向下一任务 TCB 的指针）
+    .global context_switch
+    .type   context_switch, %function
+context_switch:
+    push {{r0-r12, lr}}",   // ① 保存当前任务的寄存器到其私有栈
+    str  sp, [r0]",         // ② curr->stack_ptr = sp（更新 TCB）
+    ldr  sp, [r1]",         // ③ sp = next->stack_ptr（切换到下一任务的栈）
+    pop  {{r0-r12, lr}}",   // ④ 恢复下一任务的寄存器
+    bx   lr",               // ⑤ 跳到下一任务的返回地址（或入口函数）
+
+    // start_first_task(task: *const Task)
+    // r0 = task（指向要启动的任务 TCB）
+    // 注意：此函数永不返回
+    .global start_first_task
+    .type   start_first_task, %function
+start_first_task:
+    ldr  sp, [r0]",         // sp = task->stack_ptr（加载初始栈帧地址）
+    pop  {{r0-r12, lr}}",   // 从初始帧恢复所有寄存器（lr = 入口函数地址）
+    bx   lr",               // 跳到入口函数，第一个任务开始运行
+"#);
+```
+
+然后在同一文件中声明这两个函数的 Rust 签名：
+
+```rust
+unsafe extern "C" {
+    /// 从当前任务切换到下一个任务
+    pub fn context_switch(curr: *mut Task, next: *const Task);
+
+    /// 启动第一个任务（只加载，不保存当前上下文），永不返回
+    pub fn start_first_task(task: *const Task) -> !;
+}
+```
+
+`unsafe extern "C"` 块告诉 Rust：这些函数在别处（汇编里）用 C 调用约定实现，且调用它们是 unsafe 的（Rust 2024 要求外部块必须标记 `unsafe`）。`-> !` 告诉 Rust `start_first_task` 永不返回，满足 `rust_main -> !` 的类型要求。
+
+> **注意：** `global_asm!` 里的花括号必须写成 `{{r0-r12, lr}}`（双花括号），因为 Rust 宏把单花括号作为格式化占位符处理。
+
+# 更新 main.rs
+
+## 定义任务函数
+
+两个任务之间手动轮换（每打印一次就切换一次）：
+
+```rust
+fn task_a_fn() -> ! {
+    let mut count = 0u32;
+    loop {
+        println!("Task A: {}", count);
+        count += 1;
+        unsafe { task::context_switch(&raw mut TASK_A, &raw const TASK_B); }
+    }
+}
+
+fn task_b_fn() -> ! {
+    let mut count = 0u32;
+    loop {
+        println!("Task B: {}", count);
+        count += 1;
+        unsafe { task::context_switch(&raw mut TASK_B, &raw const TASK_A); }
+    }
+}
+```
+
+## 全局任务 TCB
+
+```rust
+static mut TASK_A: task::Task = task::Task { stack_ptr: core::ptr::null_mut() };
+static mut TASK_B: task::Task = task::Task { stack_ptr: core::ptr::null_mut() };
+```
+
+`Task` 包含裸指针，默认不是 `Sync`，但 `static mut` 不需要 `Sync`——访问 `static mut` 本身就在 `unsafe` 里，安全由程序员保证。
+
+## 更新 rust_main
+
+```rust
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_main() -> ! {
+    uart::uart_init();
+    println!("Hello from RTOS!");
+    gic::gic_init();
+    timer::timer_init();
+
+    unsafe {
+        TASK_A = task::create_task(task_a_fn);
+        TASK_B = task::create_task(task_b_fn);
+        task::start_first_task(&raw const TASK_A);
+    }
+}
+```
+
+`&raw const TASK_A` 是 Rust 2024 的原始引用语法，直接取裸指针，等价于旧写法 `&TASK_A as *const _`。
+
+# 完整代码
+
+## src/task.rs
+
+```rust
+use core::arch::global_asm;
+
+pub const STACK_SIZE: usize = 512;
+pub const MAX_TASKS: usize = 8;
+
+#[repr(C)]
+pub struct Task {
+    pub stack_ptr: *mut u32,
+}
+
+static mut TASK_STACKS: [[u32; STACK_SIZE]; MAX_TASKS] = [[0; STACK_SIZE]; MAX_TASKS];
+static mut TASK_COUNT: usize = 0;
+
+pub fn create_task(entry: fn() -> !) -> Task {
+    unsafe {
+        let id = TASK_COUNT;
+        TASK_COUNT += 1;
+
+        let stack = &mut TASK_STACKS[id];
+        stack[STACK_SIZE - 1] = entry as u32; // lr = 入口函数地址
+        // r0-r12 已为 0（static 零初始化）
+
+        Task {
+            stack_ptr: &mut stack[STACK_SIZE - 14] as *mut u32,
+        }
+    }
+}
+
+global_asm!(r#"
+    .global context_switch
+    .type   context_switch, %function
+context_switch:
+    push {{r0-r12, lr}}
+    str  sp, [r0]
+    ldr  sp, [r1]
+    pop  {{r0-r12, lr}}
+    bx   lr
+
+    .global start_first_task
+    .type   start_first_task, %function
+start_first_task:
+    ldr  sp, [r0]
+    pop  {{r0-r12, lr}}
+    bx   lr
+"#);
+
+unsafe extern "C" {
+    pub fn context_switch(curr: *mut Task, next: *const Task);
+    pub fn start_first_task(task: *const Task) -> !;
+}
+```
+
+## src/main.rs（更新后的关键部分）
+
+```rust
+mod task;
+
+static mut TASK_A: task::Task = task::Task { stack_ptr: core::ptr::null_mut() };
+static mut TASK_B: task::Task = task::Task { stack_ptr: core::ptr::null_mut() };
+
+fn task_a_fn() -> ! {
+    let mut count = 0u32;
+    loop {
+        println!("Task A: {}", count);
+        count += 1;
+        unsafe { task::context_switch(&raw mut TASK_A, &raw const TASK_B); }
+    }
+}
+
+fn task_b_fn() -> ! {
+    let mut count = 0u32;
+    loop {
+        println!("Task B: {}", count);
+        count += 1;
+        unsafe { task::context_switch(&raw mut TASK_B, &raw const TASK_A); }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_main() -> ! {
+    uart::uart_init();
+    println!("Hello from RTOS!");
+    gic::gic_init();
+    timer::timer_init();
+
+    unsafe {
+        TASK_A = task::create_task(task_a_fn);
+        TASK_B = task::create_task(task_b_fn);
+        task::start_first_task(&raw const TASK_A);
+    }
+}
+```
+
+# 验证方法
+
+## 更新代码
+
+按照上面的"完整代码"更新 `src/task.rs` 和 `src/main.rs`，然后编译运行：
+
+```bash
+cargo build
+qemu-system-arm \
+  -machine mps3-an536 \
+  -nographic \
+  -device loader,file=target/armv8r-none-eabihf/debug/rtos
+```
+
+## 预期输出
+
+```text
+Hello from RTOS!
+Task A: 0
+Task B: 0
+Task A: 1
+Task B: 1
+Task A: 2
+Task B: 2
+```
+
+两个任务严格交替输出，每次切换后计数器各自递增，说明每个任务有独立的局部变量（独立的栈）。
+
+> **注意：** 如果看到输出乱序或崩溃，最常见的原因是初始帧构造错误（`create_task` 里 14 这个偏移量与 `push {r0-r12, lr}` 的寄存器个数不匹配）。可以在 QEMU 里用 `-d in_asm` 确认汇编指令是否正确生成。
+
+# 练习题
+
+```quiz single
+Q: context_switch 里，push {r0-r12, lr} 之后为什么 str sp, [r0] 仍然有效（r0 还是 curr 的地址）？
++ 因为 push 只是把寄存器的值复制到栈内存，并不修改寄存器本身的值，所以 r0 在 push 后仍等于 curr 的地址
+- 因为 push 之前编译器把 curr 备份到了另一个寄存器
+- 因为 str 指令会自动从栈上读取 curr 的值
+- 因为 r0 是只读寄存器
+E: push {r0-r12, lr} 等价于 STMDB（存储多个寄存器并递减 sp），它把寄存器的当前值写入内存，然后移动 sp。寄存器的值本身不被清除也不被改变。所以 push 之后 r0 仍然保存着调用方传入的 curr 地址，str sp, [r0] 就把 sp 写入了 curr->stack_ptr 字段。
+```
+
+```quiz single
+Q: start_first_task 与 context_switch 的最核心区别是什么？
+- start_first_task 使用 IRQ 中断，context_switch 使用 SVC
++ start_first_task 只恢复（没有保存步骤），context_switch 先保存当前任务再恢复下一个任务
+- start_first_task 恢复 r0-r12，context_switch 只恢复 r4-r11
+- 两者完全相同，start_first_task 只是 context_switch 的别名
+E: context_switch 的第一步是 push {r0-r12, lr} 把当前寄存器保存到当前任务的栈上，然后才切换到下一个任务。start_first_task 跳过了保存步骤，直接把 sp 切换到目标任务的栈上然后 pop/bx lr。这意味着调用 start_first_task 的上下文（rust_main）被永久丢弃，之后只能在任务之间用 context_switch 相互切换。
+```
+
+```quiz single
+Q: 两个任务各自 count 变量互不干扰，这得益于什么机制？
+- 因为 Rust 的所有权系统隔离了变量
++ 因为每个任务有独立的私有栈，count 是局部变量存在各自的栈帧上，context_switch 切换时 sp 也跟着切换，两者永远不会相互覆盖
+- 因为 println! 是线程安全的
+- 因为 count 是 static 变量，每个任务有一个实例
+E: count 是 loop 内的局部变量，存在该任务的栈帧里。任务 A 的 count 在 TASK_STACKS[0] 的某个位置，任务 B 的 count 在 TASK_STACKS[1] 的某个位置。context_switch 切换 sp，CPU 就"看到"了不同的栈，局部变量自然是独立的。这就是为什么每个任务必须有私有栈。
+```
+
+```quiz single
+Q: global_asm! 里写 {{r0-r12, lr}} 而不是 {r0-r12, lr}，原因是什么？
+- 因为 ARM 汇编要求双花括号
+- 因为 r0-r12 包含连字符，需要转义
+- 因为 global_asm! 和 asm! 使用不同的语法规则
++ 因为 Rust 宏把单花括号 { } 解释为格式化占位符，双花括号 {{ }} 才能输出字面量的 { }
+E: Rust 的 format_args!/asm!/global_asm! 等宏都使用 { } 作为占位符语法。要在宏展开后输出字面量的花括号，必须写 {{ 和 }}，它们分别被转义为 { 和 }。ARM 汇编里的 push {r0-r12, lr} 需要字面量花括号，所以在 global_asm! 里必须写成 {{r0-r12, lr}}。
+```

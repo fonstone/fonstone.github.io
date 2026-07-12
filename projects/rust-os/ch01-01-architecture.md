@@ -1,0 +1,185 @@
+---
+title: "项目概述与架构设计"
+description: "项目概述与架构设计 - 项目概述与架构设计"
+date: "2026-07-12"
+order: 1001
+tags: ["RTOS", "微内核", "Cortex-R52", "QEMU", "架构设计", "内存布局", "no_std"]
+est_time: "15分钟"
+---
+
+# 目标平台
+
+我们选择 **QEMU mps3-an536** 作为运行环境，它模拟了一块搭载 ARM Cortex-R52 的开发板。
+
+选择 R52 的原因很直接：
+
+- **AArch32 + Thumb-2**：可以写真实的 ARM 汇编，代码与工业界嵌入式高度一致
+- **FIQ banked 寄存器**：R52 的 FIQ 模式有独立的 r8-r14，是理解抢占调度的绝佳案例
+- **QEMU 完整支持**：无需任何硬件，`qemu-system-arm -machine mps3-an536` 直接跑
+
+芯片关键参数：
+
+| 参数 | 值 |
+| --- | --- |
+| 架构 | ARMv8-R，AArch32 模式 |
+| FLASH | 0x00000000，32 KB |
+| RAM | 0x10000000，512 KB |
+| 定时器 | SP804 Timer1，基地址 0x58000000 |
+| 中断控制器 | GICv3（我们用 GICv2 接口子集） |
+| UART | PL011，基地址 0x58001000 |
+
+# 软件分层架构
+
+整个 RTOS 按职责分为五层，每层只依赖它正下方的层：
+
+```text
+┌──────────────────────────────────────────────────────┐
+│                    用户任务层                          │
+│         task_a()   task_b()   idle_entry()           │
+├──────────────────────────────────────────────────────┤
+│                     IPC 层                            │
+│        shared memory    SPSC ring    message queue   │
+├──────────────────────────────────────────────────────┤
+│                   同步原语层                           │
+│           spinlock    mutex    semaphore             │
+├──────────────────────────────────────────────────────┤
+│                    调度器层                            │
+│    scheduler.rs（就绪队列、抢占）   task.rs（TCB、帧）  │
+├──────────────────────────────────────────────────────┤
+│                   硬件驱动层                           │
+│         uart.rs    gic.rs    timer.rs    tick.rs     │
+├──────────────────────────────────────────────────────┤
+│              启动层（main.rs 汇编部分）                │
+│   vector_table   reset_handler   fiq_handler         │
+├──────────────────────────────────────────────────────┤
+│             QEMU mps3-an536 / Cortex-R52             │
+└──────────────────────────────────────────────────────┘
+```
+
+## 各层职责
+
+**启动层**：reset handler 初始化 BSS、复制 .data 段、设置 SVC 栈，然后跳入 `rust_main`。`fiq_handler` 负责每 tick 保存当前任务帧（SRSDB + PUSH）、调用 `scheduler_tick`、从新任务帧恢复（POP + RFEIA）。
+
+**硬件驱动层**：对 UART / GIC / Timer 寄存器的直接读写封装，不涉及任何调度逻辑。每个驱动只暴露几个函数（`uart_init`、`gic_ack0`、`timer_clear_interrupt`……），上层不需要知道任何寄存器地址。
+
+**调度器层**：`task.rs` 管理任务控制块（TCB）和栈内存，提供 `create_task_with_arg` / `context_switch` / `start_first_task`。`scheduler.rs` 维护就绪队列，实现优先级 Round-Robin 选择和 `sleep_ticks` 真睡眠。
+
+**同步原语层**：在共享内存基础上提供互斥保证，屏蔽数据竞争。
+
+**IPC 层**：基于同步原语构建更高级的任务间通信机制。
+
+**用户任务层**：普通的 `fn()` 函数，由调度器注册和调度，不感知任何底层细节。
+
+# 模块文件结构
+
+最终完成的项目文件树：
+
+```text
+src/
+├── main.rs        — 向量表、reset_handler、fiq_handler（汇编），rust_main，用户任务
+├── uart.rs        — PL011 UART 驱动（uart_init、write_char）
+├── gic.rs         — GIC 驱动（gic_init、gic_ack0、gic_eoi0）
+├── timer.rs       — SP804 定时器驱动（timer_init、timer_clear_interrupt）
+├── tick.rs        — 全局 tick 计数（tick_increment、get_ticks）
+├── task.rs        — TCB 定义、栈内存、create_task_with_arg、context_switch（汇编）
+├── scheduler.rs   — 就绪队列、add_task、sleep_ticks、start、scheduler_tick、task_exit
+└── shared.rs      — 共享内存 IPC（自旋锁缓冲区 + SPSC 环形缓冲区）
+```
+
+各文件的依赖关系：
+
+```text
+main.rs
+ ├── uart.rs       （独立，只依赖硬件地址）
+ ├── gic.rs        （独立）
+ ├── timer.rs      （独立）
+ ├── tick.rs       （独立）
+ ├── task.rs       （独立）
+ └── scheduler.rs  → task.rs, tick.rs, gic.rs, timer.rs
+```
+
+`scheduler.rs` 是唯一需要调用其他模块的文件——它需要 `tick_increment`（tick.rs）、`gic_ack0/eoi`（gic.rs）、`timer_clear_interrupt`（timer.rs）。其余模块互不依赖。
+
+# 内存布局
+
+链接脚本把程序分成两个区域：
+
+```text
+FLASH 0x00000000 (32 KB)          RAM 0x10000000 (512 KB)
+┌───────────────────┐              ┌───────────────────┐
+│ .text.vector_table │              │ .data（初值）      │
+│ .text.reset_handler│              │ .bss（零初始化）   │
+│ .text（其余代码）   │              │                   │
+│ .rodata（常量）    │              │ TASK_STACKS       │
+│                   │              │（8 × 512 × 4 B    │
+│ .data LMA（初值）  │              │ = 16 KB）         │
+└───────────────────┘              │                   │
+                                   │ ← sp（栈顶）       │
+                                   │   (0x10000000     │
+                                   │   + 512 KB)       │
+                                   └───────────────────┘
+```
+
+三个关键点：
+
+- 向量表必须放在 0x00000000，`KEEP(*(.text.vector_table))` 强制它排第一
+- `.data` 的初始值存在 FLASH（LMA），reset handler 把它复制到 RAM（VMA），这是 `_sidata / _sdata / _edata` 三个符号的用途
+- `TASK_STACKS` 是 `static mut` 的二维数组，位于 BSS 段（零初始化），每个任务 512 个 u32（2 KB），8 个任务共 16 KB
+
+# 关键设计约束
+
+## `#![no_std]` + `#![no_main]`
+
+没有标准库，没有堆分配，没有操作系统支持。所有数据结构都是编译期确定大小的静态数组。
+
+这是裸机开发的基本要求，也是本教程的核心挑战——你会看到很多 `unsafe`，每一处都有明确的理由。
+
+## 静态分配，不用 alloc
+
+任务表、任务栈、调度器——全部 `static mut`，大小在编译期固定：
+
+```rust
+pub const MAX_TASKS:  usize = 8;
+pub const STACK_SIZE: usize = 512; // 每任务 512 个 u32 = 2 KB
+
+static mut TASK_STACKS: [[u32; STACK_SIZE]; MAX_TASKS] = [[0; STACK_SIZE]; MAX_TASKS];
+```
+
+上限 8 个任务，每任务 2 KB 栈，共占 16 KB RAM——对于 512 KB 的总 RAM 来说绰绰有余。
+
+## 单核，无原子硬件需求
+
+Cortex-R52 是单核处理器（QEMU 模拟下），任务切换只发生在 FIQ 边界。因此绝大多数临界区可以直接在 FIQ 处理期间通过关中断保护，不需要 CAS 硬件支持——但我们仍然用 `AtomicBool` 实现自旋锁，以养成正确的内存序习惯。
+
+# 一个完整的 FIQ 调度周期
+
+以下是系统运转时最核心的一条数据流路径，把所有层串联起来：
+
+```text
+① 定时器每 100 ms 触发 FIQ 中断
+        │
+② ARM 跳入 fiq_handler（向量表）
+        │
+③ SUB LR,LR,#4
+   SRSDB SP!,#0x13    → {PC, CPSR} 存入当前任务 SVC 栈
+   CPS   #0x13        → 切到 SVC 模式
+   PUSH  {r0-r12, lr} → 完整 16 字帧建成
+   STR   SP, [CURRENT_TASK]  → 更新 TCB.stack_ptr
+        │
+④ BL scheduler_tick
+   ├─ tick_increment()          （tick.rs）
+   ├─ gic_ack0() / gic_eoi0()   （gic.rs）
+   ├─ timer_clear_interrupt()   （timer.rs）
+   ├─ 唤醒所有 sleep_until ≤ cur_tick 的任务
+   ├─ 递减当前任务时间片
+   └─ 若时间片耗尽或有更高优先级任务 Ready
+      → 更新 CURRENT_TASK 指向新任务
+        │
+⑤ LDR SP, [CURRENT_TASK]       → sp = 新任务的 stack_ptr
+   POP  {r0-r12, lr}           → 恢复新任务寄存器
+   RFEIA SP!                   → PC + CPSR 原子恢复，跳入新任务
+        │
+⑥ 新任务从上次被 FIQ 打断的地方继续执行
+```
+
+这个流程贯穿第 04 章（FIQ）、第 06 章（栈帧）、第 07 章（调度器）——理解了这条路径，整个教程的核心就掌握了。

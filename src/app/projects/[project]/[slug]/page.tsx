@@ -86,7 +86,7 @@ export default async function ProjectPostPage({
           <ProjectMdx source={mdxSource} format={post.filePath.endsWith(".mdx") ? "mdx" : "md"} />
         </div>
 
-        {(projSlug === "autosar-functional-safety" || projSlug === "ai-infra" || projSlug === "ai-agent" || projSlug === "qemu" || projSlug === "chcore" || projSlug === "rust-learning") && (
+        {(projSlug === "autosar-functional-safety" || projSlug === "ai-infra" || projSlug === "ai-agent" || projSlug === "qemu" || projSlug === "chcore" || projSlug === "rust-learning" || projSlug === "rust-os") && (
           <div className="mt-8 flex justify-center">
             <MarkCompleteButton projectSlug={projSlug} chapterSlug={post.slug} />
           </div>

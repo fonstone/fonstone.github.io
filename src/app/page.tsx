@@ -320,11 +320,11 @@ export default async function Home() {
                 },
                 {
                   name: "智能时代OS",
-                  desc: "多核协同与混合关键性调度",
+                  desc: "操作系统、虚拟化与系统编程",
                   Icon: Monitor,
                   iconWrapClassName: "bg-cyan-100 dark:bg-cyan-500/15",
                   iconClassName: "text-cyan-500 dark:text-cyan-300",
-                  href: "/projects/chcore",
+                  href: "/projects/os",
                 },
                 {
                   name: "AUTOSAR和功能安全",

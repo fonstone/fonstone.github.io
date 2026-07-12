@@ -45,6 +45,7 @@ const PROJECT_SLUG_MAP: Record<string, string> = {
   "qemu": "qemu",
   "autosar-functional-safety": "autosar-functional-safety",
   "ai-infra": "ai-infra",
+  "rust-learning": "rust-learning",
 };
 
 const SLUG_TO_PROJECT_MAP: Record<string, string> = Object.fromEntries(

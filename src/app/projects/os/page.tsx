@@ -2,12 +2,11 @@ import Link from "next/link";
 import {
   getProjectCategories,
 } from "@/lib/projects/projects";
-import { ArrowRight, Cpu, Monitor, Binary } from "lucide-react";
+import { ArrowRight, Monitor, Binary } from "lucide-react";
 
 export default async function OsProjectIndexPage() {
   const categories = await getProjectCategories();
   const chcoreCat = categories.find((c) => c.slug === "chcore");
-  const qemuCat = categories.find((c) => c.slug === "qemu");
   const rustCat = categories.find((c) => c.slug === "rust-learning");
 
   const courses = [
@@ -21,17 +20,6 @@ export default async function OsProjectIndexPage() {
       iconClassName: "bg-blue-100 dark:bg-blue-500/15",
       iconColor: "text-blue-500 dark:text-blue-300",
       count: chcoreCat?.posts.length ?? 0,
-    },
-    {
-      slug: "qemu",
-      name: "QEMU",
-      title: "QEMU 与 CPU 架构实战教程",
-      description:
-        "从 QEMU 基础使用到完整 CPU 模拟器实现——深入理解计算机体系结构、指令集模拟、中断与异常处理等核心概念。",
-      icon: Cpu,
-      iconClassName: "bg-cyan-100 dark:bg-cyan-500/15",
-      iconColor: "text-cyan-500 dark:text-cyan-300",
-      count: qemuCat?.posts.length ?? 0,
     },
     {
       slug: "rust-learning",
@@ -68,7 +56,7 @@ export default async function OsProjectIndexPage() {
         </p>
       </header>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {courses.map((course) => (
           <Link
             key={course.slug}

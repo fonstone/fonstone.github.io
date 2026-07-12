@@ -1,6 +1,6 @@
 ---
 title: "调度器设计"
-description: "调度器设计 - 调度器设计"
+description: "抢占式调度器核心设计与优先级管理"
 date: "2026-07-12"
 order: 8000
 tags: ["调度器", "抢占", "时间片", "Round-Robin", "SRSDB", "RFEIA", "context frame"]
@@ -111,9 +111,9 @@ fiq_handler 汇编：恢复下一个任务现场
 
 ## 为什么不能直接沿用第 06 章的做法
 
-第 06 章的协作式切换在 SVC 模式下执行 `push {r0-r12, lr}`，完全没问题。但 FIQ 触发时 CPU 已经切换到了 FIQ 模式，**FIQ 模式有自己私有的 banked 寄存器**：r8-r12 和 lr 在 FIQ 模式下指向 FIQ 专属的物理寄存器，任务原本的 r8-r12 和 lr_svc 被硬件屏蔽。
+第 06 章的协作式切换在 SVC 模式下执行 `push &#123;r0-r12, lr&#125;`，完全没问题。但 FIQ 触发时 CPU 已经切换到了 FIQ 模式，**FIQ 模式有自己私有的 banked 寄存器**：r8-r12 和 lr 在 FIQ 模式下指向 FIQ 专属的物理寄存器，任务原本的 r8-r12 和 lr_svc 被硬件屏蔽。
 
-如果在 FIQ 模式下直接执行同一条 `push {r0-r12, lr}`，保存的是错误的值：
+如果在 FIQ 模式下直接执行同一条 `push &#123;r0-r12, lr&#125;`，保存的是错误的值：
 
 | 寄存器 | 协作式（SVC 模式） | 抢占式（FIQ 模式直接 push） |
 | --- | --- | --- |

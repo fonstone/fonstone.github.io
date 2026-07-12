@@ -1,6 +1,6 @@
 ---
 title: "自旋锁"
-description: "同步原语 - 自旋锁"
+description: "AtomicBool 自旋锁与关中断变体实现"
 date: "2026-07-12"
 order: 9001
 tags: ["自旋锁", "spinlock", "忙等待", "原子操作", "互斥"]
@@ -8,6 +8,29 @@ est_time: "35分钟"
 ---
 
 # 自旋锁
+
+
+## 自旋锁工作原理
+
+<MermaidDiagram chart={`
+sequenceDiagram
+    participant CPU1 as CPU 核心 1
+    participant Lock as 自旋锁 (AtomicBool)
+    participant CPU2 as CPU 核心 2
+
+    CPU1->>Lock: swap(true, Acquire)
+    Lock-->>CPU1: false (未锁定)
+    Note over CPU1: 获得锁，进入临界区
+    CPU2->>Lock: swap(true, Acquire)
+    Lock-->>CPU2: true (已锁定)
+    Note over CPU2: 自旋等待...
+    CPU1->>Lock: store(false, Release)
+    Note over CPU1: 释放锁
+    CPU2->>Lock: swap(true, Acquire)
+    Lock-->>CPU2: false (已解锁)
+    Note over CPU2: 获得锁，进入临界区
+`} />
+
 
 ## 什么是自旋锁
 

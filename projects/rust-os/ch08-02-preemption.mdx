@@ -1,6 +1,6 @@
 ---
 title: "FIQ 真抢占实现"
-description: "调度器设计 - FIQ 真抢占实现"
+description: "基于 FIQ 定时器中断的抢占式调度"
 date: "2026-07-12"
 order: 8002
 tags: ["SRSDB", "RFEIA", "FIQ handler", "真抢占", "优先级调度", "16字帧"]
@@ -96,7 +96,7 @@ fiq_handler:
 ```
 
 这 9 步就是完整的 FIQ 抢占流程。关键点：
-- 步骤②（SRSDB）在 FIQ 模式执行，把 {PC, CPSR} 存到 SVC 栈（不用 FIQ 自己的栈）
+- 步骤②（SRSDB）在 FIQ 模式执行，把 &#123;PC, CPSR&#125; 存到 SVC 栈（不用 FIQ 自己的栈）
 - 步骤③（CPS）后，r8-r12 变为任务的寄存器（FIQ banking 限制解除）
 - 步骤④（PUSH）建完整帧，之后所有操作都在正常 SVC 模式下进行
 
@@ -131,7 +131,7 @@ context_switch:                  // r0=curr, r1=next
 
 **位置：`src/task.rs`，将 01 节中的 `create_task_with_arg`（14 字帧）替换为此 16 字帧版本**
 
-16 字帧与 FIQ handler 保存的帧格式完全相同，恢复路径统一为 `pop {r0-r12, lr}; rfeia sp!`：
+16 字帧与 FIQ handler 保存的帧格式完全相同，恢复路径统一为 `pop &#123;r0-r12, lr&#125;; rfeia sp!`：
 
 ```rust
 pub fn create_task_with_arg(wrapper: usize, arg: usize) -> Task {

@@ -1,6 +1,6 @@
 ---
 title: "上下文保存与恢复实现"
-description: "上下文切换 - 上下文保存与恢复实现"
+description: "context_switch 汇编实现与首次启动"
 date: "2026-07-12"
 order: 7002
 tags: ["global_asm", "裸函数", "寄存器保存", "ABI", "context_switch", "任务切换汇编"]
@@ -8,6 +8,27 @@ est_time: "60分钟"
 ---
 
 # 本章目标
+
+
+## 上下文切换流程
+
+<MermaidDiagram chart={`
+sequenceDiagram
+    participant TaskA as 任务 A
+    participant Kernel as context_switch
+    participant TaskB as 任务 B
+
+    Note over TaskA: 正在执行
+    TaskA->>Kernel: SVC 异常 / 定时器中断
+    Kernel->>Kernel: PUSH {r4-r12, lr}  <br/>保存当前寄存器到 A 的 TCB 栈帧
+    Kernel->>Kernel: 切换 sp 指向 B 的 TCB 栈帧
+    Kernel->>Kernel: POP {r4-r12, lr}   <br/>从 B 的 TCB 栈帧恢复寄存器
+    Kernel->>TaskB: 返回（LR 指向 B 的执行位置）
+    Note over TaskB: Task B 继续执行
+    TaskB->>Kernel: 下一次中断 / 主动让出
+    Kernel->>TaskA: 恢复 A 的上下文
+`} />
+
 
 - 理解 ARM ABI 与汇编函数的配合方式（r0 = 第一参数，r1 = 第二参数）
 - 用 `global_asm!` 实现 `context_switch`，逐行理解每条汇编的含义
@@ -45,13 +66,13 @@ ARM 的 `PUSH {r0-r12, lr}` 遵循一条固定规则：**低编号寄存器存�
          [lr  ] ← 最高地址（sp + 52）
 ```
 
-`pop {r0-r12, lr}` 是完全对称的逆操作，按相同顺序从低地址往高地址读回。这条规则决定了 `create_task` 里初始帧的构造方式，两者必须严格一致。
+`pop &#123;r0-r12, lr&#125;` 是完全对称的逆操作，按相同顺序从低地址往高地址读回。这条规则决定了 `create_task` 里初始帧的构造方式，两者必须严格一致。
 
 # context_switch
 
 ## push 之后 r0 还有效吗？
 
-这是最关键的一个细节。`push {r0-r12, lr}` 会把 r0 的值**复制**到栈上，但**寄存器本身不变**。执行完 push，r0 里还是 `curr` 的地址。所以紧接着的 `str sp, [r0]` 可以正确把 sp 存进 `curr->stack_ptr`。
+这是最关键的一个细节。`push &#123;r0-r12, lr&#125;` 会把 r0 的值**复制**到栈上，但**寄存器本身不变**。执行完 push，r0 里还是 `curr` 的地址。所以紧接着的 `str sp, [r0]` 可以正确把 sp 存进 `curr->stack_ptr`。
 
 ## 切换过程逐步追踪
 
@@ -344,7 +365,7 @@ Task B: 2
 
 两个任务严格交替输出，每次切换后计数器各自递增，说明每个任务有独立的局部变量（独立的栈）。
 
-> **注意：** 如果看到输出乱序或崩溃，最常见的原因是初始帧构造错误（`create_task` 里 14 这个偏移量与 `push {r0-r12, lr}` 的寄存器个数不匹配）。可以在 QEMU 里用 `-d in_asm` 确认汇编指令是否正确生成。
+> **注意：** 如果看到输出乱序或崩溃，最常见的原因是初始帧构造错误（`create_task` 里 14 这个偏移量与 `push &#123;r0-r12, lr&#125;` 的寄存器个数不匹配）。可以在 QEMU 里用 `-d in_asm` 确认汇编指令是否正确生成。
 
 # 练习题
 

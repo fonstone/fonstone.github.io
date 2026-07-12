@@ -1,6 +1,6 @@
 ---
 title: "IPC"
-description: "进程间通信 - IPC"
+description: "共享内存、SPSC 环形缓冲区与消息队列"
 date: "2026-07-12"
 order: 10000
 tags: ["IPC", "进程间通信", "微内核", "消息传递", "设计"]
@@ -8,6 +8,26 @@ est_time: "20分钟"
 ---
 
 # IPC 设计原则
+
+
+## IPC 通信方式对比
+
+<MermaidDiagram chart={`
+graph LR
+    subgraph "共享内存"
+        T1A[Task A] -->|写入| SHM[全局 static 变量<br/>+ 自旋锁保护]
+        SHM -->|读取| T2A[Task B]
+    end
+    subgraph "SPSC 环形缓冲区"
+        T1B[Producer] -->|push| RB[无锁环形缓冲区<br/>单生产者单消费者]
+        RB -->|pop| T2B[Consumer]
+    end
+    subgraph "消息队列"
+        T1C[发送者] -->|send| MQ[消息队列<br/>携带类型+数据]
+        MQ -->|recv| T2C[接收者]
+    end
+`} />
+
 
 ## 什么是 IPC
 

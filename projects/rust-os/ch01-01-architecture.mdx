@@ -1,6 +1,6 @@
 ---
 title: "项目概述与架构设计"
-description: "项目概述与架构设计 - 项目概述与架构设计"
+description: "Cortex-R52 目标平台与 RTOS 五层架构设计"
 date: "2026-07-12"
 order: 1001
 tags: ["RTOS", "微内核", "Cortex-R52", "QEMU", "架构设计", "内存布局", "no_std"]
@@ -8,6 +8,63 @@ est_time: "15分钟"
 ---
 
 # 目标平台
+
+
+## 系统架构图
+
+<MermaidDiagram chart={`
+graph TB
+    subgraph "应用层"
+        T1[用户任务 A]
+        T2[用户任务 B]
+        T3[空闲任务]
+    end
+    subgraph "IPC 层"
+        SM[共享内存]
+        RB[SPSC 环形缓冲区]
+        MQ[消息队列]
+    end
+    subgraph "同步原语层"
+        SL[自旋锁]
+        MT[互斥量]
+        SP[信号量]
+    end
+    subgraph "调度器层"
+        SCHED[调度器]
+        RQ[就绪队列]
+        TC[任务控制块]
+    end
+    subgraph "硬件驱动层"
+        UART[UART 驱动]
+        GIC[GIC 中断控制器]
+        TIM[SP804 定时器]
+    end
+    subgraph "启动层"
+        VEC[异常向量表]
+        RST[Reset Handler]
+        FIQ[FIQ Handler]
+    end
+    T1 --> SM
+    T2 --> RB
+    T3 --> MQ
+    SM --> SL
+    RB --> MT
+    MQ --> SP
+    SL --> SCHED
+    MT --> SCHED
+    SP --> SCHED
+    SCHED --> RQ
+    SCHED --> TC
+    SCHED --> UART
+    SCHED --> GIC
+    SCHED --> TIM
+    RQ --> VEC
+    TC --> RST
+    UART --> VEC
+    GIC --> FIQ
+    TIM --> FIQ
+`} />
+
 
 我们选择 **QEMU mps3-an536** 作为运行环境，它模拟了一块搭载 ARM Cortex-R52 的开发板。
 

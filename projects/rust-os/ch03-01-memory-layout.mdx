@@ -1,6 +1,6 @@
 ---
 title: "内存布局与链接脚本"
-description: "最小裸机启动 - 内存布局与链接脚本"
+description: "mps3-an536 内存地图与 Linker Script 编写"
 date: "2026-07-12"
 order: 3001
 tags: ["链接脚本", "linker script", "内存布局", "Flash", "RAM", "BSS", "data段", "text段"]
@@ -8,6 +8,31 @@ est_time: "45分钟"
 ---
 
 # 本章目标
+
+
+## mps3-an536 内存布局图
+
+<MermaidDiagram chart={`
+graph LR
+    subgraph "0x00000000 - Flash (ATCM) 32KB"
+        VEC[异常向量表<br/>0x00000000]
+        TEXT[.text 代码段]
+        RODATA[.rodata 常量]
+    end
+    subgraph "0x10000000 - RAM (BRAM) 512KB"
+        DATA[.data 已初始化数据]
+        BSS[.bss 零初始化数据]
+        STACK[栈空间<br/>向下增长]
+        HEAP[堆空间]
+    end
+    subgraph "外设"
+        UART_P[UART 0xe7c00000]
+        TIMER_P[SP804 Timer 0x58000000]
+        GIC_P[GICv3]
+    end
+    Flash -->|启动后拷贝| RAM
+`} />
+
 
 - 理解嵌入式系统中 Flash 和 RAM 的作用和区别
 - 了解 mps3-an536 的内存地图（各区域的起始地址和大小）
@@ -22,11 +47,7 @@ est_time: "45分钟"
 
 # mps3-an536 的内存地图
 
-`mps3-an536` 是 ARM 官方提供的一个针对 Cortex-R52 处理器的 FPGA 评估板参考设计。如果你对硬件的所有寄存器定义和完整内存空间分布感兴趣，可以查阅 [ARM 官方的 Application Note 536 (AN536) 文档](https://developer.arm.com/documentation/dai0536/latest/) 以及 [QEMU 官方对应的模拟器支持文档](https://www.qemu.org/docs/master/system/arm/mps2.html)。
-
-<div style="text-align: center; margin: 2rem 0;">
-  <img src="/RustRTOS/diagrams/mps3-memory-map.png" alt="mps3-an536 官方内存地图" style="max-width:100%;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);" />
-</div>
+`mps3-an536` 是 ARM 官方提供的一个针对 Cortex-R52 处理器的 FPGA 评估板参考设计。如果你对硬件的所有寄存器定义和完整内存空间分布感兴趣，可以 查阅 [ARM 官方的 Application Note 536 (AN536) 文档](https://developer.arm.com/documentation/dai0536/latest/) 以及 [QEMU 官方对应的模拟器支持文档](https://www.qemu.org/docs/master/system/arm/mps2.html)。
 
 在本次简易构建之旅中，我们暂时不需要了解全部的外设，把重点先放在最核心的代码和数据存储上：
 

@@ -1,6 +1,6 @@
 ---
 title: "就绪队列与调度器核心"
-description: "调度器设计 - 就绪队列与调度器核心"
+description: "优先级位图、就绪队列与 round-robin 调度"
 date: "2026-07-12"
 order: 8001
 tags: ["就绪队列", "Round-Robin", "优先级", "任务状态", "sleep_ticks", "Sleeping", "空闲任务", "Zombie"]
@@ -8,6 +8,34 @@ est_time: "60分钟"
 ---
 
 # 本章目标
+
+
+## 就绪队列与优先级调度
+
+<MermaidDiagram chart={`
+graph TD
+    subgraph "优先级位图"
+        P0[优先级 0<br/>最高]
+        P1[优先级 1]
+        P2[优先级 2]
+        P3[优先级 3]
+        P4[...]
+    end
+
+    subgraph "就绪队列"
+        Q0[Task_A → Task_B]
+        Q1[Task_C]
+        Q2[(空)]
+        Q3[Task_D → Task_E]
+    end
+
+    P0 --> Q0
+    P1 --> Q1
+    P2 --> Q2
+    P3 --> Q3
+    P4 --> Q4
+`} />
+
 
 - 设计 `TaskState` 枚举（Ready / Running / Sleeping / Zombie），理解完整任务生命周期
 - 实现优先级就绪队列：`add_task(entry, priority)`，调度器始终选最高优先级 Ready 任务
@@ -174,7 +202,7 @@ unsafe extern "C" fn task_entry_wrapper() -> ! {
 }
 ```
 
-为什么要读 r0？`pop {r0-r12, lr}` 恢复初始帧后，r0 的值就是 `create_task_with_arg` 写进帧里的 `arg`（用户函数地址）。包装器在进入时立刻读出来，就能调用正确的函数。
+为什么要读 r0？`pop &#123;r0-r12, lr&#125;` 恢复初始帧后，r0 的值就是 `create_task_with_arg` 写进帧里的 `arg`（用户函数地址）。包装器在进入时立刻读出来，就能调用正确的函数。
 
 ## 步骤三：选最高优先级任务 — select_next()
 

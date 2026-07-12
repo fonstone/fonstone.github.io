@@ -1,6 +1,6 @@
 ---
 title: "串口输出与调试宏"
-description: "串口输出与调试宏 - 串口输出与调试宏"
+description: "CMSDK APB UART 驱动与 println! 调试宏实现"
 date: "2026-07-12"
 order: 4000
 tags: ["UART", "串口", "print!", "println!", "PL011", "CMSDK", "寄存器", "调试输出"]
@@ -8,6 +8,22 @@ est_time: "50分钟"
 ---
 
 # 本章目标
+
+
+## UART 寄存器布局
+
+<MermaidDiagram chart={`
+graph LR
+    subgraph "CMSDK APB UART 寄存器"
+        DATA[+0x00 DATA<br/>读/写数据]
+        STATE[+0x04 STATE<br/>bit1: TX 满标志]
+        CTRL[+0x08 CTRL<br/>bit0: TX 使能]
+    end
+    CPU -->|写入字符| DATA
+    DATA -->|状态查询| STATE
+    CPU -->|初始化| CTRL
+`} />
+
 
 - 理解 UART 串口通信的基本原理
 - 了解 mps3-an536 上 UART 的寄存器结构

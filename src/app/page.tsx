@@ -303,12 +303,12 @@ export default async function Home() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 justify-items-center">
               {[
                 {
-                  name: "AI Infra/Agent",
-                  desc: "推理优化、调度与多智能体协作",
+                  name: "AI Infra & Agent",
+                  desc: "AI 基础设施与多智能体教程",
                   Icon: Brain,
                   iconWrapClassName: "bg-purple-100 dark:bg-purple-500/15",
                   iconClassName: "text-purple-500 dark:text-purple-300",
-                  href: "/projects/ai-infra",
+                  href: "/projects/ai",
                 },
                 {
                   name: "QEMU和CPU架构",

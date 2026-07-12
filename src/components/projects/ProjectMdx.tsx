@@ -7,9 +7,10 @@ import MermaidDiagram from "@/components/knowledge/MermaidDiagram";
 
 type Props = {
   source: string;
+  format?: "md" | "mdx";
 };
 
-export default function ProjectMdx({ source }: Props) {
+export default function ProjectMdx({ source, format }: Props) {
   return (
     <MDXRemote
       source={source}
@@ -19,6 +20,7 @@ export default function ProjectMdx({ source }: Props) {
       }}
       options={{
         mdxOptions: {
+          format: format ?? "mdx",
           rehypePlugins: [
             rehypeSlug,
             [

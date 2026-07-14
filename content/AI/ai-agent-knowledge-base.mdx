@@ -20,27 +20,27 @@ tags: ["AI", "Agent", "LLM", "ReAct", "CoT", "ToT", "GoT", "RAG", "Function Call
         LLM[大型语言模型<br/>GPT / Gemini / Llama]
     end
     subgraph Planning["📋 规划模块"]
-        CoT[思维链 CoT]
-        ReAct[ReAct 框架]
-        ToT[思维树 ToT]
+        PCoT[思维链 CoT]
+        PReAct[ReAct 框架]
+        PToT[思维树 ToT]
     end
     subgraph Memory["💾 记忆模块"]
-        STM[短期记忆<br/>上下文窗口 / 缓冲区]
-        LTM[长期记忆<br/>向量数据库 / RAG]
+        MSTM[短期记忆<br/>上下文窗口 / 缓冲区]
+        MLTM[长期记忆<br/>向量数据库 / RAG]
     end
     subgraph Tools["🔧 工具使用模块"]
-        API[外部 API]
-        Code[代码执行器]
-        Search[搜索引擎]
+        TAPI[外部 API]
+        TCode[代码执行器]
+        TSearch[搜索引擎]
     end
 
-    User((用户)) -->|输入目标| Brain
-    Brain -->|分解任务| Planning
-    Planning -->|检索上下文| Memory
-    Planning -->|调用工具| Tools
-    Tools -->|返回结果| Planning
-    Planning -->|更新状态| Memory
-    Planning -->|生成输出| User
+    User((用户)) -->|输入目标| LLM
+    LLM -->|分解任务| PCoT
+    PCoT -->|检索上下文| MSTM
+    PCoT -->|调用工具| TAPI
+    TAPI -->|返回结果| PCoT
+    PCoT -->|更新状态| MSTM
+    PCoT -->|生成输出| User
 `}/>
 
 | 组件 | 作用 |
@@ -56,20 +56,18 @@ tags: ["AI", "Agent", "LLM", "ReAct", "CoT", "ToT", "GoT", "RAG", "Function Call
 
 ReAct（Reason and Act）是 Agent 领域最基础、最重要的行为框架，通过让 LLM 协同生成**推理轨迹（reasoning traces）**和**任务相关的行动（actions）** 来实现复杂任务。它模仿人类"**思考 → 行动 → 观察 → 思考...**"的循环模式。
 
-<MermaidDiagram chart={`flowchart LR
+<MermaidDiagram chart={`flowchart TB
     subgraph Loop["🔄 ReAct 循环"]
-        direction TB
-        T[💭 Thought<br/>分析目标与观察<br/>制定下一步策略]
-        A[⚡ Action<br/>生成工具调用指令<br/>Action: [Tool, Input]]
-        O[👁 Observation<br/>执行工具<br/>返回结果]
+        T["💭 Thought<br/>分析目标与观察"]
+        A["⚡ Action<br/>Action: [Tool, Input]"]
+        O["👁 Observation<br/>工具返回结果"]
     end
 
     Start((开始)) -->|用户目标| T
-    T -->|"决定下一步"| A
+    T -->|决定下一步| A
     A -->|调用工具| O
-    O -->|"更新上下文"| T
-
-    O -->|"条件：任务完成"| End((结束))
+    O -->|更新上下文| T
+    O -->|任务完成| End((结束))
 `}/>
 
 **工作流程**：
@@ -97,22 +95,25 @@ ReAct 中的 Thought 本质上是一种**动态的、交互式的思维链**。�
 
 <MermaidDiagram chart={`flowchart TB
     subgraph Implicit["🔤 基于提示的隐式规划"]
-        CoT[Chain-of-Thought<br/>线性思维链<br/>Let's think step by step]
-        ReActP[ReAct<br/>思考-行动-观察动态循环]
+        direction TB
+        CoT["Chain-of-Thought<br/>线性思维链"]
+        ReActP["ReAct<br/>思考-行动-观察循环"]
     end
     subgraph Search["🔍 基于搜索的显式规划"]
-        ToT[Tree-of-Thoughts<br/>思维树 - 多路径探索与回溯]
-        GoT[Graph-of-Thoughts<br/>思维图 - 路径合并与循环优化]
+        direction TB
+        ToT["Tree-of-Thoughts<br/>思维树 - 多路径探索"]
+        GoT["Graph-of-Thoughts<br/>思维图 - 路径合并与循环"]
     end
     subgraph Decomp["📂 基于任务分解的规划"]
-        Planner[规划器 LLM<br/>分解为依赖图]
-        Executor[执行器 LLM<br/>逐一完成子任务]
+        direction TB
+        Planner["规划器 LLM<br/>分解为依赖图"]
+        Executor["执行器 LLM<br/>逐一完成子任务"]
     end
 
-    Simple["简单任务"] --> Implicit
-    Complex["复杂任务"] --> Search
-    Complex --> Decomp
-    ToT -->|泛化| GoT
+    Simple((简单任务)) --> CoT
+    Complex((复杂任务)) --> ToT
+    Complex --> Planner
+    ToT -.->|泛化| GoT
 `}/>
 
 ### 3.1 基于提示的隐式规划
@@ -142,27 +143,25 @@ ReAct 中的 Thought 本质上是一种**动态的、交互式的思维链**。�
 
 <MermaidDiagram chart={`flowchart TB
     subgraph STM["📝 短期记忆 (Short-Term Memory)"]
-        direction TB
-        Ctx[上下文窗口<br/>LLM Context Window]
-        Buf[缓冲区管理<br/>BufferMemory / WindowMemory<br/>SummaryBufferMemory]
-        SP[暂存器 Scratchpad<br/>Thought-Action-Observation 轨迹]
+        Ctx["上下文窗口<br/>LLM Context Window"]
+        Buf["缓冲区管理<br/>ConversationBufferMemory"]
+        SP["暂存器 Scratchpad<br/>Thought-Action-Observation"]
     end
     subgraph LTM["📚 长期记忆 (Long-Term Memory)"]
-        direction TB
-        VE[向量嵌入<br/>Embedding Model]
-        VD[向量数据库<br/>Pinecone / ChromaDB / FAISS]
-        KG[知识图谱<br/>Neo4j / 图数据库]
+        VE["向量嵌入<br/>Embedding Model"]
+        VD["向量数据库<br/>Pinecone / FAISS"]
+        KG["知识图谱<br/>Neo4j"]
     end
     subgraph RAGFlow["🔄 RAG 工作流"]
-        Store[存储: 文本→向量→入库]
-        Retrieve[检索: 查询→向量→相似度搜索]
-        Use[使用: 检索结果→LLM Prompt]
+        Store["存储: 文本→向量→入库"]
+        Retrieve["检索: 查询→相似度搜索"]
+        Use["使用: 检索结果→LLM Prompt"]
     end
 
-    Agent((Agent)) -->|当前会话上下文| STM
-    Agent -->|跨任务知识| LTM
-    LTM --> RAGFlow
-    RAGFlow -->|增强上下文| Agent
+    Agent((Agent)) -->|当前会话上下文| Ctx
+    Agent -->|跨任务知识| VD
+    VD --> Retrieve
+    Retrieve -->|增强上下文| Agent
 `}/>
 
 ### 4.1 短期记忆
@@ -194,20 +193,20 @@ ReAct 中的 Thought 本质上是一种**动态的、交互式的思维链**。�
 LLM 学会调用外部 API 或工具，是其从一个纯粹的"语言模型"转变为一个"行动执行者"的关键一步。主流的实现方式是 **Function Calling**。
 
 <MermaidDiagram chart={`sequenceDiagram
-    participant User as 用户
+    actor User as 用户
     participant LLM as LLM Agent
     participant Ctrl as 控制代码
-    participant API as 外部工具/API
+    participant API as "外部工具 / API"
 
-    User->>LLM: "今天新加坡天气怎么样？"
+    User->>LLM: 今天新加坡天气怎么样
     Note over LLM: 分析意图：需要天气信息
     Note over LLM: 匹配工具 get_current_weather
     LLM->>Ctrl: 输出 JSON 函数调用
-    Note over Ctrl: 解析 JSON {name, arguments}
-    Ctrl->>API: 执行 get_current_weather("Singapore")
-    API->>Ctrl: 返回 {"temp":32, "condition":"sunny"}
+    Note over Ctrl: 解析 JSON name/arguments
+    Ctrl->>API: 执行 get_current_weather
+    API->>Ctrl: 返回天气数据
     Ctrl->>LLM: 将结果作为新上下文输入
-    LLM->>User: "新加坡今天晴天，32°C"
+    LLM->>User: 新加坡今天晴天 32C
 `}/>
 
 ### 5.1 Function Calling 五步流程
@@ -361,21 +360,19 @@ RAG 是一种"**先检索，后生成**"的模式，将信息检索与文本生�
 
 <MermaidDiagram chart={`flowchart TB
     subgraph Offline["📦 离线阶段：数据准备 / 索引"]
-        direction TB
-        Load[数据加载<br/>PDF / HTML / 数据库] --> Split[文本切块 Chunking]
-        Split --> Embed[嵌入 Embedding<br/>文本→向量]
-        Embed --> Store[存储到向量数据库<br/>Pinecone / ChromaDB / FAISS]
+        Load["数据加载<br/>PDF / HTML / 数据库"] --> Split["文本切块 Chunking"]
+        Split --> Embed["嵌入 Embedding<br/>文本→向量"]
+        Embed --> Store["Pinecone / ChromaDB<br/>向量数据库"]
     end
     subgraph Online["🌐 在线阶段：查询与推理"]
-        direction TB
-        Query[用户提问] --> QEmbed[查询嵌入<br/>相同嵌入模型]
-        QEmbed --> Retrieve[向量检索<br/>相似度搜索 Top-K]
-        Retrieve --> Rerank[重排序 Re-rank<br/>Cross-Encoder 精细打分]
-        Rerank --> Augment[增强 Prompt<br/>原始问题 + 检索结果]
-        Augment --> Generate[LLM 生成<br/>基于上下文的准确回答]
+        Query["用户提问"] --> QEmbed["查询嵌入<br/>相同嵌入模型"]
+        QEmbed --> Retrieve["向量检索<br/>相似度搜索 Top-K"]
+        Retrieve --> Rerank["重排序 Re-rank<br/>Cross-Encoder"]
+        Rerank --> Augment["增强 Prompt<br/>原始问题 + 检索结果"]
+        Augment --> Generate["LLM 生成<br/>基于上下文的回答"]
     end
 
-    Offline --> Online
+    Store -->|流向在线阶段| Query
 `}/>
 
 **离线阶段（数据准备）**：
@@ -410,27 +407,34 @@ RAG 是一种"**先检索，后生成**"的模式，将信息检索与文本生�
 
 ### 11.5 进阶 RAG 技术
 
-<MermaidDiagram chart={`flowchart LR
-    subgraph Enhance["🔧 检索增强技术"]
-        Hybrid[混合搜索<br/>BM25 + 向量搜索]
-        RerankAdv[两阶段检索<br/>召回 → Cross-Encoder 重排]
-        SmallLarge[小块引用大块<br/>Small-to-Large]
-        GraphKG[图索引<br/>知识图谱 + 向量]
-    end
+<MermaidDiagram chart={`flowchart TB
     subgraph QueryOpt["💡 查询优化技术"]
-        MultiQ[多查询检索<br/>Multi-Query Retrieval]
-        HyDE[假设文档嵌入<br/>HyDE]
-        SubQ[子问题分解<br/>Sub-Querying]
+        MultiQ["多查询检索<br/>Multi-Query Retrieval"]
+        HyDE["假设文档嵌入<br/>HyDE"]
+        SubQ["子问题分解<br/>Sub-Querying"]
+    end
+    subgraph Enhance["🔧 检索增强技术"]
+        Hybrid["混合搜索<br/>BM25 + 向量搜索"]
+        RerankAdv["两阶段检索<br/>召回 → Cross-Encoder"]
+        SmallLarge["小块引用大块<br/>Small-to-Large"]
+        GraphKG["图索引<br/>知识图谱 + 向量"]
     end
     subgraph Advance["🔄 高级 RAG 范式"]
-        SelfRAG[迭代式检索 Self-RAG<br/>反思→二次检索→精炼]
-        AdaptRAG[自适应检索 FLARE<br/>生成过程中按需检索]
-        MultiRAG[多源数据 RAG<br/>向量库 + 知识图谱 + SQL]
+        SelfRAG["迭代式检索 Self-RAG<br/>反思→二次检索"]
+        AdaptRAG["自适应检索 FLARE<br/>生成中按需检索"]
+        MultiRAG["多源数据 RAG<br/>向量库 + 知识图谱 + SQL"]
     end
 
-    QueryOpt --> Hybrid
-    Enhance --> Advance
-    Advance --> Final((高质量答案))
+    MultiQ --> Hybrid
+    HyDE --> RerankAdv
+    SubQ --> SmallLarge
+    Hybrid --> SelfRAG
+    RerankAdv --> AdaptRAG
+    SmallLarge --> MultiRAG
+    GraphKG --> MultiRAG
+    SelfRAG --> Final((高质量答案))
+    AdaptRAG --> Final
+    MultiRAG --> Final
 `}/>
 
 **增强检索器**：
@@ -533,22 +537,19 @@ BLEU、ROUGE 等传统指标基于 n-gram 词汇重合度，对现代 LLM 存在
 
 <MermaidDiagram chart={`flowchart TB
     subgraph LLMEval["📊 基础 LLM 评估"]
-        direction TB
-        Static[静态：输入→输出]
-        Accuracy[准确性 / 流畅性]
-        Relevance[相关性 / 安全性]
+        Static["静态：输入→输出"]
+        Accuracy["准确性 / 流畅性"]
+        Relevance["相关性 / 安全性"]
     end
     subgraph AgentEval["🎯 Agent 评估"]
-        direction TB
-        Dynamic[动态：多步交互与环境]
-        Success[任务成功率]
-        Efficiency[效率 / 成本 / 延迟]
-        Robustness[鲁棒性 / 纠错能力]
-        Autonomy[自主性 / 干预次数]
+        Dynamic["动态：多步交互与环境"]
+        Success["任务成功率"]
+        Efficiency["效率 / 成本 / 延迟"]
+        Robustness["鲁棒性 / 纠错能力"]
     end
 
-    LLMEval -->|"产品质量检测"| ResultLLM
-    AgentEval -->|"路况复杂的真实驾驶测试"| ResultAgent
+    Static -->|产品质量检测| ResultType(("LLM 评估：<br/>回答质量"))
+    Dynamic -->|路况复杂的驾驶测试| AgentResult(("Agent 评估：<br/>任务完成过程"))
 `}/>
 
 与评估基础 LLM 相比，评估 Agent 更加复杂：

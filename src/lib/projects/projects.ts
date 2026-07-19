@@ -286,7 +286,7 @@ function generateSlug(text: string, slugCounter: Map<string, number>): string {
     .toLowerCase()
     .replace(/[\u2000-\u206F]/g, "")
     .replace(/[\s]+/g, "-")
-    .replace(/[^\w\u4e00-\u9fff-]/g, "")
+    .replace(/[^\w-]/g, "")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 

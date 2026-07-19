@@ -518,8 +518,8 @@ _**Updated, Oct. 4:** Sample code is now at <https://github.com/tarickb/the-geek
 
 <https://www.researchgate.net/figure/RDMA-Write_fig2_4245345>
 
-![operation diagram: rdma read](images\\d6e8ac758eeb0f437dfb0bc778d9c720.png)
+![operation diagram: rdma read](/images/rdma/\d6e8ac758eeb0f437dfb0bc778d9c720.png)
 
-![operation diagram: rdma write](images\\d96579a2241cde7034c0be5669081eb0.png)
+![operation diagram: rdma write](/images/rdma/\d96579a2241cde7034c0be5669081eb0.png)
 
 [Introduction to Programming Infiniband RDMA | Better Tomorrow with Computer Science](https://insujang.github.io/2020-02-09/introduction-to-programming-infiniband/ "Introduction to Programming Infiniband RDMA | Better Tomorrow with Computer Science")

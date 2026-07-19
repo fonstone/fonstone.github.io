@@ -164,7 +164,7 @@ RDMA子系统跟随Linux维护，**是内核的的一部分** 。一方面提供
 
 下图为OFA给出的OFED的概览：
 
-![43666da8107d1235b94797d995820b3b.png](images\\43666da8107d1235b94797d995820b3b.png)
+![43666da8107d1235b94797d995820b3b.png](/images/rdma/\43666da8107d1235b94797d995820b3b.png)
 
 除了开源OFED之外，各厂商也会提供定制版本的OFED软件包，比如华为的HW_OFED和Mellanox的MLNX_OFED。这些定制版本基于开源OFED开发，由厂商自己测试和维护，会在开源软件包基础上提供私有的增强特性，并附上自己的配置、测试工具等。
 
@@ -182,7 +182,7 @@ Verbs API向用户提供了有关RDMA的一切功能，典型的包括：注册M
 
 结合上一部分的内容，我们给出一个OFED的全景：
 
-![e0eba2a4af3d4e6179e178ec3a005632.png](images\\e0eba2a4af3d4e6179e178ec3a005632.png)
+![e0eba2a4af3d4e6179e178ec3a005632.png](/images/rdma/\e0eba2a4af3d4e6179e178ec3a005632.png)
 
 **广义的Verbs API主要由两大部分组成verbs和rdma_cm：**
 
@@ -374,7 +374,7 @@ WR经由驱动进一步处理后，会转化成WQE下发给硬件。
 
 比如ib_post_send()接口：
 
-![bcd542df2b9ba4968da751fa7e71fa47.png](images\\bcd542df2b9ba4968da751fa7e71fa47.png)
+![bcd542df2b9ba4968da751fa7e71fa47.png](/images/rdma/\bcd542df2b9ba4968da751fa7e71fa47.png)
 
 函数注释中有明确介绍该函数的作用，输入、输出参数以及返回值。
 
@@ -410,7 +410,7 @@ https://linux.die.net/man/3/ibv_post_send
     man ibv_post_send
 [/code]
 
-![e0d2fb93b12caf6996274de5b19dd75b.png](images\\e0d2fb93b12caf6996274de5b19dd75b.png)
+![e0d2fb93b12caf6996274de5b19dd75b.png](/images/rdma/\e0d2fb93b12caf6996274de5b19dd75b.png)
 
   * **查询Mellanox的编程手册**
 
@@ -439,7 +439,7 @@ https://linux.die.net/man/3/ibv_post_send
 
 （假设A节点的某个QP要跟B节点的某个QP交换信息，除了要知道B节点的**QP序号——QPN** 之外，还需要GID--（相当于TCP中的IP），在传统TCP-IP协议栈中，使用了家喻户晓的IP地址来标识网络层的每个节点。而IB协议中的这个标识被称为**GID（Global Identifier，全局ID）**[8\. RDMA之Address Handle - 知乎](https://zhuanlan.zhihu.com/p/163552044 "8. RDMA之Address Handle - 知乎")）
 
-![3bba5d9bae953ee8ca3519516cbfdec5.png](images\\3bba5d9bae953ee8ca3519516cbfdec5.png)
+![3bba5d9bae953ee8ca3519516cbfdec5.png](/images/rdma/\3bba5d9bae953ee8ca3519516cbfdec5.png)
 
 ### 编译 & 执行
 

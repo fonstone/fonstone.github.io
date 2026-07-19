@@ -17,7 +17,7 @@ Infiniband 网络接口卡称为**a (host) channel adapters (HCAs)** （ _HCA：
 
 HCA 使用 工作队列 相互通信。队列的三种类型是：(1)发送队列(SQ)，(2)接收队列(RQ)，和(3)完成队列(CQ)。 SQ 和 RQ 始终作为队列对 (QP) 进行分组和管理。
 
-![qp](images\\ed91ac1a892807ed67caa2d23df4b498.png)
+![qp](/images/rdma/\ed91ac1a892807ed67caa2d23df4b498.png)
 
 [Introduction to Programming Infiniband RDMA | Better Tomorrow with Computer Science](https://insujang.github.io/2020-02-09/introduction-to-programming-infiniband/ "Introduction to Programming Infiniband RDMA | Better Tomorrow with Computer Science")
 

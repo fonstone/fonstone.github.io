@@ -115,7 +115,7 @@ RDMA网卡出包
 
 ![](/images/rdma/e99e04c8dcd33b4bffb552036dd22996.png)​
 
-![在这里插入图片描述](images\\d175e58c96f499b257d4a7c78944c553.png)​
+![在这里插入图片描述](/images/rdma/\d175e58c96f499b257d4a7c78944c553.png)​
 
 [RDMA 架构与实践:https://houmin.cc/posts/454a90d3/](https://houmin.cc/posts/454a90d3/ "RDMA 架构与实践:https://houmin.cc/posts/454a90d3/")
 
@@ -159,7 +159,7 @@ TOE （TCP Offloading Engine），在主机通过网络进行通信的过程中�
 
 
 
-![在这里插入图片描述](images\\c61d1ca9d68abe6962cfffae9f989fc6.png)​
+![在这里插入图片描述](/images/rdma/\c61d1ca9d68abe6962cfffae9f989fc6.png)​
 
 #### 2.2 RDMA （绕过CPU，数据直接‘传’到对端内存）
 
@@ -211,7 +211,7 @@ DMA(直接内存访问)是一种能力，允许在计算机主板上的设备通
 
 DMA模式：可以同DMA Engine之间通过硬件将数据从Buffer1移动到Buffer2,而不需要操作系统CPU的参与，大大降低了CPU Copy的开销。
 
-![在这里插入图片描述](images\\d450a7f4a1db3841846b75dd55453816.png)​
+![在这里插入图片描述](/images/rdma/\d450a7f4a1db3841846b75dd55453816.png)​
 
 **1.2 RDMA**
 
@@ -219,7 +219,7 @@ RDMA，即 `Remote Direct Memory Access`，是一种绕过**远程** 主机 `OS 
 
 RDMA允许用户态的应用程序直接读取或写入远程内存，不经过操作系统，无内核干预和内存拷贝发生，节省了大量 CPU 资源，**提高了系统吞吐量** 、**降低了系统的网络通信延迟。**
 
-![在这里插入图片描述](images\\5383af26eabcfc48ea39499fb60edbbd.png)​
+![在这里插入图片描述](/images/rdma/\5383af26eabcfc48ea39499fb60edbbd.png)​
 
 RDMA是一种概念，在两个或者多个计算机进行通讯的时候使用DMA， (DMA硬件将数据）从一个主机的内存直接读写到另一个主机的内存，技术实现可以有不同的方式，见下节。
 
@@ -240,7 +240,7 @@ RDMA是一种概念，在两个或者多个计算机进行通讯的时候使用D
 
 **需要注意的是，上述几种协议都需要专门的硬件（网卡）支持。**
 
-![在这里插入图片描述](images\\09dfad178d7550c20da6bcf7af0d8e48.png)​
+![在这里插入图片描述](/images/rdma/\09dfad178d7550c20da6bcf7af0d8e48.png)​
 
 ### 3 三种RDMA 技术实现的关系
 
@@ -578,7 +578,7 @@ Work Request(WR）：传输请求，WR描述了应用希望传输到Channel对�
 
 RoCEv2的封包格式如下图所示。
 
-![封包格式](images\\c6d249a43dc6ad916e34113b9d0b22e1.png)​
+![封包格式](/images/rdma/\c6d249a43dc6ad916e34113b9d0b22e1.png)​
 
 其中，UDP包头中，目的端口号为4791即代表是RoCEv2帧。
 
@@ -590,7 +590,7 @@ IB Payload即为消息负载。ICRC和FCS分别对应冗余检测和帧校验。
 
 IB BTH格式和字段定义如下图。
 
-![BTH格式和字段定义如下图](images\\e080b421b0dd13389d3ec1a5dea0d45f.png)​
+![BTH格式和字段定义如下图](/images/rdma/\e080b421b0dd13389d3ec1a5dea0d45f.png)​
 
 其中，Opcode用于表明该包的type或IB PayLoad中更高层的协议类型。
 
@@ -650,11 +650,11 @@ PSN是Packet Sequence Number，用来检测丢失或重复的数据包。
 
 **传统**
 
-![TCP/IP 流程](images\\063050610b559dbfb07139a8c575aee3.png)​
+![TCP/IP 流程](/images/rdma/\063050610b559dbfb07139a8c575aee3.png)​
 
 **RDMA 方式**
 
-![RDMA](images\\eb906c1f1a435a301b77a410b72bdcfe.png)​
+![RDMA](/images/rdma/\eb906c1f1a435a301b77a410b72bdcfe.png)​
 
 如上图，在传统模式下，两台服务器上的应用之间传输数据，过程是这样的：
 

@@ -8,7 +8,6 @@ tags: ["RDMA", "iWARP", "Soft-iWARP", "协议"]
 # RDMA 之 iWARP & Soft-iWARP
 
 
-
 iWARP协议是RDMA Consortium组织推动实现的，它由Broadcom、HP、IBM、Intel和Microsoft等公司在2002年5月成立
 
 2005年11月，Ohio超算中心发布Soft-iWARP，同Soft-RoCE一样，是软件实现的iWARP协议栈，为学习、仿真和使用不支持硬件iWARP的网卡带来了方便。

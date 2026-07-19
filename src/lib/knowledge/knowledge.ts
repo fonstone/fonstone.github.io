@@ -322,9 +322,8 @@ function stripCodeBlocks(content: string): string {
 function generateSlug(text: string, slugCounter: Map<string, number>): string {
   let slug = text
     .toLowerCase()
-    .replace(/[\u2000-\u206F]/g, "")
+    .replace(/[^\w-]/g, " ")
     .replace(/[\s]+/g, "-")
-    .replace(/[^\w-]/g, "")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 

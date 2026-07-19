@@ -7,25 +7,6 @@ tags: ["RDMA", "WRITE", "READ", "SEND", "操作类型"]
 ---
 # RDMA 操作类型——WRITE / READ
 
-**目录**
-
-SEND & RECV
-
-WRITE
-
-READ
-
-总结
-
-参考资料
-
-* * *
-
-
-前面几篇涉及RDMA的通信流程时一直在讲SEND-RECV，然而它其实称不上是“**RDMA** ”，只是一种加入了0拷贝和协议栈卸载的传统收发模型的“升级版”，这种操作类型没有完全发挥RDMA技术全部实力，常用于两端交换控制信息等场景。当涉及大量数据的收发时，更多使用的是两种RDMA独有的操作：WRITE和READ。
-
-我们先来复习下双端操作——SEND和RECV，然后再对比介绍单端操作——WRITE和READ。
-
 ## SEND & RECV
 
 SEND和RECV是两种不同的操作类型，但是因为如果一端进行SEND操作，对端必须进行RECV操作，所以通常都把他们放到一起描述。

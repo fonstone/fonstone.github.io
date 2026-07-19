@@ -7,54 +7,6 @@ tags: ["RDMA", "InfiniBand", "RoCE", "iWARP", "概述"]
 ---
 # RDMA 概述
 
-**目录**
-
-0、前言
-
-一、技术背景
-
-1 传统的 TCP/IP 网络通信的弊端
-
-2 新的网络通信技术（TOE and RDMA）
-
-2.1 TOE （TCP/IP协议处理工作从CPU转移到网卡）
-
-2.2 RDMA （绕过CPU，数据直接‘传’到对端内存）
-
-二、RDMA 详解（发展历程和3种技术实现）
-
-1\. DMA和RDMA概念
-
-2 RDMA 三种不同的技术实现
-
-3 三种RDMA 技术实现的关系
-
-4 RDMA的特点和优势
-
-三、组织、标准和厂商
-
-4\. RDMA基本术语4.1 Fabric
-
-4.2 CA(Channel Adapter)
-
-5\. RDMA 编程
-
-6\. RDMA对于网络的诉求
-
-附录
-
-附录一 IB 和ROCE、iWARP发展历程和主导厂商
-
-附录二 IB和ROCE数据包格式和出包方式
-
-IB和ROCE数据包格式
-
-RDMA网卡出包
-
-附录三 图片和摘抄备份
-
-* * *
-
 
 ## 0、前言
 

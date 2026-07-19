@@ -18,7 +18,6 @@ iWARP协议一共有3层，所以更准确地讲iWARP应该是一组协议的统
 
 iWARP协议栈的层次关系
 
-### 
 
 **DDP（Data Placement Protocol）**
 

@@ -558,7 +558,6 @@ Name| Direction| Description
 
 这种机制用于避免 CPU 反复读取 Work Completion ，若不采用事件的方法则只能通过不断地 ibv_poll_cq() 来轮询是否有事件完成
 
-### 
 
 # Errors记录
 

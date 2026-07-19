@@ -35,16 +35,12 @@ tags: ["RDMA", "InfiniBand", "RoCE", "iWARP", "概述"]
 >     * _After the packet is transmitted to the transmission medium, it has to go through the medium to reach the destination. Hence the time taken by the last bit of the packet to reach the destination is called propagation delay._
 > 
 >     * _计算方法：Delayp=Distance/VelocityDelayp=Distance/Velocity，其中 Distance 是传输链路的距离，Velocity 是物理介质传输速度_
-````r`n_1
->           2_
-```
 > 
-> | 
-````r`n_Velocity =3 X 108 m/s (for air)
->           Velocity= 2.1 X 108 m/s (for optical fibre)_
-```
->   
-> ---|---  
+> | 介质（Medium） | 速度（Velocity） |
+> | --- | --- |
+> | 空气（Air） | 3 × 10⁸ m/s |
+> | 光纤（Optical fibre） | 2.1 × 10⁸ m/s |
+> 
 >   * _**Queueing delay**_
 > 
 >     * _Let the packet is received by the destination, the packet will not be processed by the destination immediately. It has to wait in queue in something called as buffer. So the amount of time it waits in queue before being processed is called queueing delay._
@@ -257,8 +253,6 @@ iWARP 和RoCE 都属于IBoE，所以他们可以在以太网上传播，用以�
 如果你使用roce、iwarp,需要专用网卡，但不需要专用网络（RDMA会转成以太网协议，继续用以太网传输）  
 
 
-#### 
-
 ### 4 RDMA的特点和优势
 
 > 传统的TCP/IP技术在数据包处理过程中，要经过操作系统及其他软件层，需要占用大量的服务器资源和内存总线带宽，数据在系统内存、处理器缓存和网络控制器缓存之间来回进行复制移动，给服务器的CPU和内存造成了沉重负担。尤其是网络带宽、处理器速度与内存带宽三者的严重"不匹配性"，更加剧了网络延迟效应。 
@@ -312,8 +306,6 @@ kernel pass、zero copy、硬件IO
 
 [两种以太网 RDMA 协议： iWARP 和 RoCE - allcloud - 博客园](https://www.cnblogs.com/allcloud/p/7680277.html "两种以太网 RDMA 协议： iWARP 和 RoCE - allcloud - 博客园")
 
-### 
-
 ## 三、组织、标准和厂商
 
 IBTA  Infiniband 行业联盟 (InfiniBand Trade Association)
@@ -323,8 +315,6 @@ IBTA  Infiniband 行业联盟 (InfiniBand Trade Association)
 > CPU 性能的迅猛发展、I/O 系统的性能成为制约服务器性能的主要矛盾，要求构建下一代 I/O 架构的呼声此起彼伏。 Infiniband 行业联盟 也即 [BTA (InfiniBand Trade Association)](https://www.infinibandta.org/ "BTA \(InfiniBand Trade Association\)")，包括了当时的各大厂商 Compaq、Dell、HP、IBM、Intel、Microsoft 和 Sun。
 
 ![](/images/rdma/b577162b1a34a478ee7da8feea7f94a0.png)
-
-#### 
 
 更多详情见：<http://t.csdn.cn/Iswh4>
 
@@ -386,7 +376,6 @@ Verbs api 分为用户态Verbs接口和内核态Verbs接口，分别用于用户
 ```
 所谓Fabric，就是支持RDMA的局域网(LAN)。
 
-###   
 4.2 CA(Channel Adapter)
 ```
     A channel adapter is the hardware component that connects a system to the fabric. 
@@ -407,12 +396,8 @@ Network Interface Controller，网络接口控制器，也就是我们常说的*
 
 [RDMA 架构与实践 | Houmin](https://houmin.cc/posts/454a90d3/ "RDMA 架构与实践 | Houmin") 或 <http://t.csdn.cn/lOoTT>
 
-### 
-
 ##  5\. RDMA 编程
 
-
-### 
 
 ##  6\. **RDMA对于网络的诉求**
 
@@ -433,9 +418,6 @@ Network Interface Controller，网络接口控制器，也就是我们常说的*
 在这个限制条件下，RDMA实现无损主要是依赖基于PFC和ECN的网络流控技术。
 
 
-## 
-
-
 **RMDA 中专有名词和对应缩写：**
 
 Channel-IO：RDMA 在本端应用和远端应用间创建的一个消息通道；
@@ -453,8 +435,6 @@ Work Queue(WQ): 工作队列，在发送过程中 WQ = SQ; 在接收过程中WQ 
 Complete Queue（CQ）: 完成队列，CQ用于告诉用户WQ上的消息已经被处理完成；
 
 Work Request(WR）：传输请求，WR描述了应用希望传输到Channel对端的消息内容，在WQ中转化为 WQE 格式的信息；
-
-## 
 
 ## 附录
 
@@ -562,8 +542,6 @@ PSN是Packet Sequence Number，用来检测丢失或重复的数据包。
 图：
 
 [RDMA-远程直接内存访问-01-RDMA 协议 iWARP 和 RoCE | Echo Blog](https://houbb.github.io/2019/11/20/rdma-01-protocol "RDMA-远程直接内存访问-01-RDMA 协议 iWARP 和 RoCE | Echo Blog")
-
-## 
 
 **传统**
 

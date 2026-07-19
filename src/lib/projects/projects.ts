@@ -43,6 +43,7 @@ const PROJECTS_ROOT = path.join(process.cwd(), "projects");
 const PROJECT_SLUG_MAP: Record<string, string> = {
   "chcore": "chcore",
   "qemu": "qemu",
+  "rdma": "rdma",
   "autosar-functional-safety": "autosar-functional-safety",
   "ai-infra": "ai-infra",
   "rust-learning": "rust-learning",

@@ -1,92 +1,39 @@
-﻿# Hello-Agents：从零开始构建智能体
+# 《RDMA杂谈》专栏文章
 
-> 本目录包含 [Hello-Agents](https://hello-agents.datawhale.cc) 教程全书的中文 Markdown 文档，按原始章节结构组织。
+> 抓取自知乎专栏，因知乎 403 故从 CSDN/博客园镜像获取。
+
+| # | 标题 | 状态 | 原文 |
+|---|------|------|------|
+| 00 | 专栏索引 | ❌ | [知乎](https://zhuanlan.zhihu.com/p/164908617) |
+| 01 | [技术详解（一）：RDMA概述](01_技术详解（一）：RDMA概述.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/138874738) |
+| 02 | [2. 比较基于Socket与RDMA的通信](02_2. 比较基于Socket与RDMA的通信.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/139548242) |
+| 03 | [3. RDMA基本元素和编程基础](03_3. RDMA基本元素和编程基础.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/141267386) |
+| 04 | [4. RDMA操作类型|WRITE|READ](04_4. RDMA操作类型_WRITE_READ.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/142175657) |
+| 05 | [5. RDMA基本服务类型](05_5. RDMA基本服务类型.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/144099636) |
+| 06 | [6. RDMA之Memory Region](06_6. RDMA之Memory Region.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/156975042) |
+| 07 | [7. RDMA之Protection Domain](07_7. RDMA之Protection Domain.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/159493100) |
+| 08 | [8. RDMA之Address Handle](08_8. RDMA之Address Handle.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/163552044) |
+| 09 | [9. RDMA之Queue Pair](09_9. RDMA之Queue Pair.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/195757767) |
+| 10 | [RDMA之Completion Queue](10_RDMA之Completion Queue.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/259650980) |
+| 11 | [11. RDMA之Shared Receive Queue](11_11. RDMA之Shared Receive Queue.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/279904125) |
+| 12 | [RDMA之Memory Window](12_RDMA之Memory Window.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/353590347) |
+| 13 | [技术详解（四）：RDMA之Verbs和编程步骤](13_技术详解（四）：RDMA之Verbs和编程步骤.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/329198771) |
+| 14 | [13. RDMA之用户态与内核态交互](14_13. RDMA之用户态与内核态交互.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/346708569) |
+| 15 | [15. RDMA之RoCE & Soft-RoCE](15_15. RDMA之RoCE & Soft-RoCE.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/361740115) |
+| 16 | [Pyverbs Python Verbs](16_Pyverbs%20Python%20Verbs.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/455174484) |
+| 17 | [内存地址基础知识](17_内存地址基础知识.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/463199854) |
+| 18 | [Queue Buffer](18_Queue%20Buffer.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/565736840) |
+| 19 | [用户态Memory Region Buffer](19_用户态Memory%20Region%20Buffer.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/642286038) |
+| 20 | [19. RDMA之iWARP & Soft-iWARP](20_19. RDMA之iWARP & Soft-iWARP.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/449189540) |
+| 21 | [iWARP之DDP](21_iWARP之DDP.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/408817872) |
+| 22 | [iWARP之RDMAP](22_iWARP之RDMAP.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/421211722) |
+| 23 | [iWARP之MPA](23_iWARP之MPA.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/435467605) |
+| 24 | [Socket建链](24_Socket建链.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/476407641) |
+| 25 | [CM建链](25_CM建链.md) | ✅ | [知乎](https://zhuanlan.zhihu.com/p/494826608) |
+
+---
+> ✅ 完整正文: 25篇 | 📄 摘要: 1篇 (索引) | 共 26 篇
 >
-> 原作者：[Datawhale 社区](https://github.com/datawhalechina/Hello-Agents) | 在线阅读：[国内加速](https://hello-agents.datawhale.cc) · [国外访问](https://datawhalechina.github.io/hello-agents/)
-
-## 项目简介
-
-如果说 2024 年是"百模大战"的元年，那么 2025 年无疑开启了"Agent 元年"。技术的焦点正从训练更大的基础模型，转向构建更聪明的智能体应用。Hello-Agents 是 Datawhale 社区出品的系统性智能体学习教程，旨在带领读者从零开始，理论与实战并重，最终亲手构建属于自己的多智能体应用。
-
-## 目录结构
-
-\\\
-courses/
-├── README.md
-├── 第一部分-智能体与语言模型基础/
-│   ├── 01-初识智能体.md
-│   ├── 02-智能体发展史.md
-│   └── 03-大语言模型基础.md
-├── 第二部分-构建你的大语言模型智能体/
-│   ├── 04-智能体经典范式构建.md
-│   ├── 05-基于低代码平台的智能体搭建.md
-│   ├── 06-框架开发实践.md
-│   └── 07-构建你的Agent框架.md
-├── 第三部分-高级知识扩展/
-│   ├── 08-记忆与检索.md
-│   ├── 09-上下文工程.md
-│   ├── 10-智能体通信协议.md
-│   ├── 11-Agentic-RL.md
-│   └── 12-智能体性能评估.md
-├── 第四部分-综合案例进阶/
-│   ├── 13-智能旅行助手.md
-│   ├── 14-自动化深度研究智能体.md
-│   └── 15-构建赛博小镇.md
-├── 第五部分-毕业设计及未来展望/
-│   └── 16-毕业设计.md
-\\\
-
-## 章节总览
-
-### 第一部分：智能体与语言模型基础
-
-| 章节 | 文件 | 关键内容 |
-|------|------|----------|
-| 第一章 初识智能体 | [01-初识智能体.md](./第一部分-智能体与语言模型基础/01-初识智能体.md) | 智能体定义、类型、范式与应用 |
-| 第二章 智能体发展史 | [02-智能体发展史.md](./第一部分-智能体与语言模型基础/02-智能体发展史.md) | 从符号主义到 LLM 驱动的智能体演进 |
-| 第三章 大语言模型基础 | [03-大语言模型基础.md](./第一部分-智能体与语言模型基础/03-大语言模型基础.md) | Transformer、提示、主流 LLM 及其局限 |
-
-### 第二部分：构建你的大语言模型智能体
-
-| 章节 | 文件 | 关键内容 |
-|------|------|----------|
-| 第四章 智能体经典范式构建 | [04-智能体经典范式构建.md](./第二部分-构建你的大语言模型智能体/04-智能体经典范式构建.md) | 手把手实现 ReAct、Plan-and-Solve、Reflection |
-| 第五章 基于低代码平台的智能体搭建 | [05-基于低代码平台的智能体搭建.md](./第二部分-构建你的大语言模型智能体/05-基于低代码平台的智能体搭建.md) | 了解 Coze、Dify、n8n 等低代码智能体平台使用 |
-| 第六章 框架开发实践 | [06-框架开发实践.md](./第二部分-构建你的大语言模型智能体/06-框架开发实践.md) | AutoGen、AgentScope、LangGraph 等主流框架应用 |
-| 第七章 构建你的Agent框架 | [07-构建你的Agent框架.md](./第二部分-构建你的大语言模型智能体/07-构建你的Agent框架.md) | 从 0 开始构建智能体框架 |
-
-### 第三部分：高级知识扩展
-
-| 章节 | 文件 | 关键内容 |
-|------|------|----------|
-| 第八章 记忆与检索 | [08-记忆与检索.md](./第三部分-高级知识扩展/08-记忆与检索.md) | 记忆系统，RAG，存储 |
-| 第九章 上下文工程 | [09-上下文工程.md](./第三部分-高级知识扩展/09-上下文工程.md) | 持续交互的"情境理解" |
-| 第十章 智能体通信协议 | [10-智能体通信协议.md](./第三部分-高级知识扩展/10-智能体通信协议.md) | MCP、A2A、ANP 等协议解析 |
-| 第十一章 Agentic-RL | [11-Agentic-RL.md](./第三部分-高级知识扩展/11-Agentic-RL.md) | 从 SFT 到 GRPO 的 LLM 训练实战 |
-| 第十二章 智能体性能评估 | [12-智能体性能评估.md](./第三部分-高级知识扩展/12-智能体性能评估.md) | 核心指标、基准测试与评估框架 |
-
-### 第四部分：综合案例进阶
-
-| 章节 | 文件 | 关键内容 |
-|------|------|----------|
-| 第十三章 智能旅行助手 | [13-智能旅行助手.md](./第四部分-综合案例进阶/13-智能旅行助手.md) | MCP 与多智能体协作的真实世界应用 |
-| 第十四章 自动化深度研究智能体 | [14-自动化深度研究智能体.md](./第四部分-综合案例进阶/14-自动化深度研究智能体.md) | DeepResearch Agent 复现与解析 |
-| 第十五章 构建赛博小镇 | [15-构建赛博小镇.md](./第四部分-综合案例进阶/15-构建赛博小镇.md) | Agent 与游戏的结合，模拟社会动态 |
-
-### 第五部分：毕业设计及未来展望
-
-| 章节 | 文件 | 关键内容 |
-|------|------|----------|
-| 第十六章 毕业设计 | [16-毕业设计.md](./第五部分-毕业设计及未来展望/16-毕业设计.md) | 构建属于你的完整多智能体应用 |
-
-## 使用说明
-
-- 所有文档均为纯 Markdown 格式，兼容 GitHub、GitBook、Obsidian 等工具
-- 图片使用 GitHub Raw CDN 绝对路径，离线或在线均可正常渲染
-- 代码块保留语言标识，支持代码高亮
-- 文档中包含大量 \\\python 代码示例，可直接复制运行
-- 完整项目代码请参阅 [Hello-Agents GitHub 仓库](https://github.com/datawhalechina/Hello-Agents)
-
-## 开源许可
-
-[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+> 全部25篇专栏文章已补全为完整正文。索引页(#00)为专栏导航页面。
+>
+> 来源: 知乎专栏(403) → CSDN / 博客园镜像。运行 `python scrape_rdma.py` 可重新抓取。

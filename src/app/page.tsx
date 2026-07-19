@@ -316,7 +316,7 @@ export default async function Home() {
                   Icon: Box,
                   iconWrapClassName: "bg-orange-100 dark:bg-orange-500/15",
                   iconClassName: "text-orange-500 dark:text-orange-300",
-                  href: "/projects/qemu",
+                  href: "/projects/qemu-cpu",
                 },
                 {
                   name: "智能时代OS",

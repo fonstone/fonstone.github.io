@@ -1,4 +1,4 @@
----
+﻿---
 title: "RDMA 之 DDP（Direct Data Placement）"
 description: "详解 iWARP 协议栈中的 DDP 层——直接数据放置协议，功能、报文格式与操作流程。"
 date: "2026-07-19"
@@ -19,7 +19,7 @@ tags: ["RDMA", "iWARP", "DDP", "Direct Data Placement"]
 
 iWARP是在现有TCP/IP协议栈基础上实现RDMA技术，TCP/IP协议早已形成标准，不可能修改现有协议字段，增加DDP，既在TCP基础（或者是SCTP）上加一层，DDP的报文头中，携带了能够帮助网卡识别用户应用程序缓冲区的位置信息。
 
-![](/images/rdma/\cd77be78f571fb130bc6a77e89ccd7d6.jpeg)
+![](/images/rdma/cd77be78f571fb130bc6a77e89ccd7d6.jpeg)
 
 ## 正文
 
@@ -39,13 +39,13 @@ Direct Data Placement，简称为DDP，是iWARP协议栈的核心成员。DDP协
 
 每次数据在内存中的拷贝，都需要CPU一边通过总线从内存中读取数据，一边通过总线向内存中的另外一处写入数据。所以至少需要占用2倍于网卡带宽的CPU负载和3倍于网卡带宽的内存带宽（设备DMA写入一次，CPU读写各一次），因此有必要实现零拷贝技术来解放CPU和内存的带宽。
 
-![](/images/rdma/\d3eac9f77cef3df6fabe6f427d6f729d.jpeg)
+![](/images/rdma/d3eac9f77cef3df6fabe6f427d6f729d.jpeg)
 
 同一份数据，被DMA拷贝了一次（网卡-->驱动内存），CPU拷贝了一次（驱动内存-->应用内存）
 
 Infiniband技术的RDMA Write/Read操作已经有了零拷贝的实现，是通过在报文中携带VA和R_Key的方式来实现的。接收端的硬件通过接收报文中的R_Key找到内存的VA-PA（虚拟地址-物理地址）转换表，然后把报文中的VA转换为PA，最后直接把Payload放到内存的对应位置中。
 
-![](/images/rdma/\1aa75d1e40dc23b3b91d7879aaf8743f.png)
+![](/images/rdma/1aa75d1e40dc23b3b91d7879aaf8743f.png)
 
 RDMA Extended Transport Header (RETH)
 
@@ -57,15 +57,15 @@ DMA技术在以太网卡中早已普及，即网卡收到消息后，可以在CP
 
 既然网卡可以直接将数据放到内核空间，那么为什么不能放用户空间呢？本质上只是地址不同罢了，之所以网卡知道放到内核空间的哪个位置，是因为协议栈已经提前告知网卡缓冲区的地址。同理，只要网卡有办法获取到用户空间内存地址对应的物理地址，就可以直接把数据放到用户空间了，也就是实现了不需要CPU参与的零拷贝：
 
-![](/images/rdma/\6ed41bfe32e1e46292f70cdcd49eb5df.jpeg)
+![](/images/rdma/6ed41bfe32e1e46292f70cdcd49eb5df.jpeg)
 
 iWARP的目标是在现有TCP/IP协议栈基础上实现RDMA技术，而DDP这一层的主要功能就是实现零拷贝。因为TCP/IP协议早已形成标准，不可能修改现有协议字段，所以DDP实现零拷贝的方案就是在TCP基础（或者是SCTP）上加一层，作为其负载。而DDP的报文头中，携带了能够帮助网卡识别用户应用程序缓冲区的位置信息。
 
-![](/images/rdma/\cd77be78f571fb130bc6a77e89ccd7d6.jpeg)
+![](/images/rdma/cd77be78f571fb130bc6a77e89ccd7d6.jpeg)
 
 DDP作为中间层，本身是不限制上层和下层协议的。只是在iWARP协议栈中，DDP向上为RDMAP服务，向下承接TCP（中间有一层很“薄”的MPA，我们在后文介绍）或者SCTP：
 
-![](/images/rdma/\68ed36c43784fe84392e89139b33cec7.png)
+![](/images/rdma/68ed36c43784fe84392e89139b33cec7.png)
 
 iWARP协议栈
 
@@ -85,7 +85,7 @@ OFED**中除了提供向下与RNIC** 基本的队列消息服务，向上还提�
 
 Lower Layer Protocol，下层协议。跟ULP的含义相反，指的是DDP层之下的协议，最常见的是TCP和SCTP。
 
-![](/images/rdma/\720eec693f373d707db66c82f123c262.png)
+![](/images/rdma/720eec693f373d707db66c82f123c262.png)
 
 **RNIC**
 
@@ -111,7 +111,7 @@ Message切分后产生的多个DDP分段。每个Segment都包含Header和Payloa
 
 它们之间的关系如下图所示：
 
-![](/images/rdma/\5671ed86a59f40e4b1cd434f21740654.jpeg)
+![](/images/rdma/5671ed86a59f40e4b1cd434f21740654.jpeg)
 
 **Data Sink**
 
@@ -121,7 +121,7 @@ Message切分后产生的多个DDP分段。每个Segment都包含Header和Payloa
 
 指发送数据的Peer。
 
-![](/images/rdma/\1abf8b4f2358ae8d1b848f814e3b0f28.jpeg)
+![](/images/rdma/1abf8b4f2358ae8d1b848f814e3b0f28.jpeg)
 
 Data Sink和Data Source
 
@@ -133,25 +133,25 @@ Data Sink和Data Source
 
 Data Source的ULP可以将注册MR过程中产生的STag下发给硬件，以使其能够直接访问本地用户Buffer（比如post recv时下发给硬件的WR中指定的Buffer）。也可以把STag发送给对端，对端可以把这个STag携带在报文中，用于指定本端的一个Buffer。
 
-![](/images/rdma/\b05750d025d43873a7df7419df7408a8.jpeg)
+![](/images/rdma/b05750d025d43873a7df7419df7408a8.jpeg)
 
 **Advertisement**
 
 指的是将STag等地址信息告知对端的行为。这个行为是由ULP控制的，具体发送哪些信息，以什么格式发送都由上层决定。通常在通信准备阶段，Local Peer将一块内存区域注册到硬件，产生Stag等信息之后，将这些信息Advertise给Remote Peer。
 
-![](/images/rdma/\58c380d79316865a28cde5400057f071.png)
+![](/images/rdma/58c380d79316865a28cde5400057f071.png)
 
 **Placement**
 
 指的是RNIC根据DDP Header的信息把收到的DDP segment的Payload放到Buffer中的行为。
 
-![](/images/rdma/\55caf8c7cd9a05e3146e25982770436c.jpeg)
+![](/images/rdma/55caf8c7cd9a05e3146e25982770436c.jpeg)
 
 **Delivery**
 
 通知ULP数据已经就绪的行为，即告诉ULP数据已经组装完毕，可以取走使用了。在一个DDP Message的所有Segment都放置完毕后，即已经在Buffer中还原出完整的数据后，DDP会通知ULP。
 
-![](/images/rdma/\986be09f7e83d2d4cda107430cf16381.jpeg)
+![](/images/rdma/986be09f7e83d2d4cda107430cf16381.jpeg)
 
 ### Buffer Model
 
@@ -165,7 +165,7 @@ ULP可以将STag以Socket/CM等方式发送给对端（即上文提到的Adverti
 
 因为DDP的Message可能会被下层的协议分成多个Segment，所以每个DDP分段都要在Header中携带STag。另外由于每个分段可能不按顺序到达对端，所以对端还需要额外的信息把这些分段拼接起来。DDP采用的方式是在Header中携带偏移信息TO（Tagged Offset），接收端的硬件可以通过这些偏移信息，一段一段的把每个DDP Segment的Payload放到STag指向的Buffer中的指定位置（即上文所说的Placement）。当一个消息的所有分段都被放到正确的位置之后，Message也就在接收端的内存被完整的还原了出来。
 
-![](/images/rdma/\87d9048a0e7aeb267459418ec7f34ed0.jpeg)
+![](/images/rdma/87d9048a0e7aeb267459418ec7f34ed0.jpeg)
 
 ULP并不知道从Tagged Buffer的哪个位置开始取数据，即上图中Message 1的起始位置TO 1或者Message 2的起始位置TO 3，它们也被称为Initial TO。ULP需要通过某种方式得到这个TO 1，根据RFC 5041中的描述，有几种解决办法：
 
@@ -183,7 +183,7 @@ DDP中的Untagged Buffer Model，类似于IB规范中的Send-Recv操作中的接
 
 Untagged Buffer Model同样面临着分段后重组的问题，所以也需要在每个Segment中携带偏移信息，Untagged模型下的偏移信息被称为MO（Message Offset）。但是跟Tagged Buffer Model不同，它最终数据放到哪里是由接收端决定的，而且一个接收队列中有很多个Buffer。而同一组消息，是不可能放到不同的Buffer中的，因此需要将一个Message的不同Segment关联起来。DDP设计采用了队列号QN+消息序号MSN（Message Sequence Number）的方式来指定唯一的接收Buffer，这样一个Message的不同Segment就可以被还原到同一个缓冲区中了。
 
-![](/images/rdma/\4910a24483c8e09198a81c0ca0f8299a.jpeg)
+![](/images/rdma/4910a24483c8e09198a81c0ca0f8299a.jpeg)
 
 除了上面的描述之外，RFC 5041还对DDP的这两种模型做了另外的规定：
 
@@ -206,7 +206,7 @@ Untagged Buffer Model同样面临着分段后重组的问题，所以也需要�
 
 [https://gitlab.com/wireshark/wireshark/-/wikis/SampleCaptures#infiniband](https://link.zhihu.com/?target=https%3A//gitlab.com/wireshark/wireshark/-/wikis/SampleCaptures%23iwarp-protocol-suite "https://gitlab.com/wireshark/wireshark/-/wikis/SampleCaptures#infiniband")
 
-![](/images/rdma/\3616aff571c7601657707b4b6e0facf6.png)
+![](/images/rdma/3616aff571c7601657707b4b6e0facf6.png)
 
 建议选择iwarp_rdma.tag.gz，因为里面包含了Tagged/Untagged Buffer Model两种情况。
 
@@ -214,7 +214,7 @@ Untagged Buffer Model同样面临着分段后重组的问题，所以也需要�
 
 依据Buffer Mode的不同，DDP Header有两种格式，但是这两种格式有几个公共域段：
 
-![](/images/rdma/\c69ecc30a38b7aa901da2db4846d78eb.png)
+![](/images/rdma/c69ecc30a38b7aa901da2db4846d78eb.png)
 
 前两个字节是给MPA（Marker Protocol data unit Aligned framing）预留的，在iWARP协议栈中它是TCP和DDP的中间层。如果LLP是STCP，那么就不需要预留这两个字节。我们会在以后的文章中介绍。
 
@@ -235,7 +235,7 @@ DDP版本。为以后的扩展性考虑，目前只有一个DDP版本，所以�
 
 Tagged Buffer Model的Header总长度为14个字节。
 
-![](/images/rdma/\f0338b2b21d670ed9ee81a68a4693be5.png)
+![](/images/rdma/f0338b2b21d670ed9ee81a68a4693be5.png)
 
   * RsvdULP - Reserved for use by the ULP: 8 bits  
 ULP保留域段。这个域段是由ULP定义的，DDP不关心其含义，只需要保证一个Message的每个Segment的该域段保持一致和不变就可以了。在Data Sink，该域段会被原封不动的传递给ULP。
@@ -250,7 +250,7 @@ ULP保留域段。这个域段是由ULP定义的，DDP不关心其含义，只�
 
 总长度为18字节。
 
-![](/images/rdma/\f692f1701649bb77833535142f10aa44.png)
+![](/images/rdma/f692f1701649bb77833535142f10aa44.png)
 
   * RsvdULP - Reserved for use by the ULP: 40 bits  
 虽然跟Tagged Buffer Model中的作用相同，但是这里扩展到了5个字节，并且RFC 5041中补充了一段：
@@ -299,7 +299,7 @@ DDP Header后面紧跟的就是Payload，没有什么需要特别注意的。
 
 此时我们用ibv_devices就能看到新添加的siw设备了：
 
-![](/images/rdma/\74224c2a53c6c6feabf9b34465ffcd23.png)
+![](/images/rdma/74224c2a53c6c6feabf9b34465ffcd23.png)
 
 虚拟机两端都配置好了之后，就可以跑perftest测试了。执行之前请先在宿主机打开wireshark，并选择对应的虚拟网卡。
 
@@ -313,7 +313,7 @@ DDP Header后面紧跟的就是Payload，没有什么需要特别注意的。
 
 所以我们这次跑的测试的内容是：使用CM建链，client端从server端使用RDMA Read操作读回长度为1500的数据，循环5次。
 
-![](/images/rdma/\aaaaadde724bfa97546aaa0d2a46d090.png)
+![](/images/rdma/aaaaadde724bfa97546aaa0d2a46d090.png)
 
 执行完毕后我们来看一下抓包结果，我们只关注其中的DDP/RDMA协议。
 
@@ -321,7 +321,7 @@ DDP Header后面紧跟的就是Payload，没有什么需要特别注意的。
 
 取一个Send操作的DDP Segment，首先我们可以看到自上而下是从Ethernet层到DDP/RDMAP层的清晰的层次关系：
 
-![](/images/rdma/\17bd75f3ed5ebba6b17305ead5cd7fc2.jpeg)
+![](/images/rdma/17bd75f3ed5ebba6b17305ead5cd7fc2.jpeg)
 
 这个DDP消息是用来交换双方的信息的，我们不关注具体内容，只看它的Header。从其中我们可以得到以下信息：
 
@@ -340,21 +340,21 @@ RDMAP和MPA的内容我们会在以后的文章中讲解，目前不用关心。
 
 首先来看Client端发给Server的RDMA Read Request的DDP Message：
 
-![](/images/rdma/\b6775e184d295e6deaab9667d85f6757.jpeg)
+![](/images/rdma/b6775e184d295e6deaab9667d85f6757.jpeg)
 
 还是只看DDP Header部分，发现这也使用了Untagged Buffer，并且只有一个Segment，就不每个字段都解释了。Read Request本身不携带用户数据，可以看到下面的RDMAP Header中携带的是两端的Buffer的信息。
 
 然后我们来看紧跟其后的RDMA Read Request的DDP Message：
 
-![](/images/rdma/\15fd2729a0fcde50a18167903e3432bc.png)
+![](/images/rdma/15fd2729a0fcde50a18167903e3432bc.png)
 
 首先比较明显的是，这个Message包含两个Segment：
 
-![](/images/rdma/\f56cef56d04084e20c4e6479efef74ff.jpeg)
+![](/images/rdma/f56cef56d04084e20c4e6479efef74ff.jpeg)
 
 Segment 1
 
-![](/images/rdma/\212a56707b59490a26da0ed6bafe377e.jpeg)
+![](/images/rdma/212a56707b59490a26da0ed6bafe377e.jpeg)
 
 Segment 2
 
@@ -362,7 +362,7 @@ Segment 2
 
 我们重点来看一下这个TO是怎么来的。
 
-![](/images/rdma/\819eac121da1a3ae7e9f34c2be8f83dd.jpeg)
+![](/images/rdma/819eac121da1a3ae7e9f34c2be8f83dd.jpeg)
 
 环境中两端虚拟机网卡的MTU都是1500，说明Ethernet层之上的内容，需要切割成1500字节为单位的单元。因为要包含各层的Header以及校验信息，所以最终的Payload肯定不能是1500。
 
@@ -372,11 +372,11 @@ Segment 2
 
 > 这里的TCP Header中包含了可选项Timestamp，所以长度不是20字节，而是32字节。 
 
-![](/images/rdma/\c641bdbd9c08b53a32a2090cc52f8403.png)
+![](/images/rdma/c641bdbd9c08b53a32a2090cc52f8403.png)
 
 所以第一个DDP Segment只能承载1428字节的Payload，剩余的72个字节要放到第二个Segment中。
 
-![](/images/rdma/\aefc9d8ff00ca1cef307d6769041c482.jpeg)
+![](/images/rdma/aefc9d8ff00ca1cef307d6769041c482.jpeg)
 
 另外我们从上面的抓包结果我们也可以看出，正如RFC 5042中指出的那样，DDP Untagged Buffer Model通常都用于传递一些控制信息，数据读写更多的还是使用Tagged Buffer Model。
 

@@ -1,4 +1,4 @@
----
+﻿---
 title: "RDMA 之 RoCE & Soft-RoCE"
 description: "详解 RoCEv1/RoCEv2 协议、无损网络要求、PFC/ECN 流控机制，以及 Soft-RoCE 的部署与实验。"
 date: "2026-07-19"
@@ -21,7 +21,7 @@ tags: ["RDMA", "RoCE", "Soft-RoCE", "无损网络", "PFC"]
 
 但是支持RDMA的网卡都比较昂贵，拿Mellanox（现在是NVIDIA）来说，在其官网上最新一代支持Infiniband的网卡——[ConnectX-6](https://link.zhihu.com/?target=https%3A//store.mellanox.com/categories/infiniband/infiniband-vpi-adapters/connectx-6-vpi.html%23 "ConnectX-6")最便宜的单端口型号也要795刀，这对于学生或者是不太富裕的大学实验室来说是一笔不小的开销。
 
-![](/images/rdma/\944f53b89b6306c50bc8a05a5aad037a.jpeg)
+![](/images/rdma/944f53b89b6306c50bc8a05a5aad037a.jpeg)
 
 RDMA技术实际应用的话是得依赖网卡来完成大部分工作的，但是好在我们有Soft-RoCE。它通过软件代替硬件来将IB传输层的报文加在普通UDP报文中，从而得以让普通网卡也可以发送RoCE报文，这对于为我们学习IB传输层协议，以及编写调试基于Verbs的RDMA程序提供了一种非常低成本的方案。
 
@@ -49,11 +49,11 @@ RoCE本身分为两个版本，我们先简单讲一下发展历史：
 
 下面这张图之前出现过，它比较清晰的划分出了这几种协议的关系：
 
-![](/images/rdma/\c3744ce3182f499897d311f1d25b137d.jpeg)
+![](/images/rdma/c3744ce3182f499897d311f1d25b137d.jpeg)
 
 可能还不够直观，我们把RoCE v2的一个报文展开来看（没有画出物理层协议）：
 
-![](/images/rdma/\65665e8ad469b7815040ffd2250274b5.png)
+![](/images/rdma/65665e8ad469b7815040ffd2250274b5.png)
 
 首先是二层的以太网链路帧，然后是IP报文头和UDP报文头，最后是各层级协议的校验。而Infiniband传输层报文实际上是UDP层的负载，也就是深蓝色背景的部分。UDP报文头中有一个字段Destination Port Number（目的端口号），对于RoCE v2来说固定是4791，当对端网卡收到报文后，会根据该字段识别是普通的以太网数据包，还是RoCE数据包，或者是其他协议的数据包，然后再进行解析。深蓝色背景的IB传输层部分又分成了IB报头，实际的用户数据（Payload）以及校验部分。IB传输层实际上有很多种报头以及对应的格式，我们以后再介绍。
 
@@ -103,7 +103,7 @@ Soft-RoCE就是把本来应该卸载到硬件的封包和解析工作，又拿�
 
 下面这张图取自IBTA对于Soft-RoCE的介绍文章[1]，左边是需要硬件的普通RoCE，右边是Soft-RoCE。可以看出普通RoCE是把协议栈卸载到RoCE NIC网卡实现的，而Soft-RoCE则是在软件协议栈中实现的。
 
-![](/images/rdma/\3362d8b8838a53ffe04f14df7f755eae.jpeg)
+![](/images/rdma/3362d8b8838a53ffe04f14df7f755eae.jpeg)
 
 _因为我们使用Soft-RoCE的目的是为了学习协议而不是实现原理，对于其细节待我有时间再写。感兴趣的读者可以查阅参考文献[2]和[3]。_
 
@@ -119,7 +119,7 @@ _因为我们使用Soft-RoCE的目的是为了学习协议而不是实现原理�
 
 我们测试的网络拓扑很简单，一台PC，以及其上运行的两台Ubuntu虚拟机都连接到一个虚拟子网上，两台虚拟机上将运行Soft-RoCE，我们在宿主机上通过Wireshark抓取数据包。
 
-![](/images/rdma/\50c80788ba516e38e5da9c51bce4ecb2.png)
+![](/images/rdma/50c80788ba516e38e5da9c51bce4ecb2.png)
 
 #### 宿主机
 
@@ -147,7 +147,7 @@ VMware Workstation 15 Pro 15.5.7
 
 1）建议配置国内的软件源，否则下软件会慢的出奇。比如我用的华为云的源：
 
-![](/images/rdma/\e270c2c1fd1aa21d820ea36185825982.jpeg)
+![](/images/rdma/e270c2c1fd1aa21d820ea36185825982.jpeg)
 
 2）建议安装VMware Tools，这样在虚拟机和宿主机之间复制粘贴文字/文件会比较方便。我的Ubuntu版本建议通过以下方式安装：
 [code] 
@@ -157,7 +157,7 @@ VMware Workstation 15 Pro 15.5.7
 
 出现重新安装VMware Tools的选项就说明已经装好了，安装完了之后可以试试复制粘贴功能是否正常。
 
-![](/images/rdma/\0f18b6f1c0d11f4e8396455fdf68bb19.jpeg)
+![](/images/rdma/0f18b6f1c0d11f4e8396455fdf68bb19.jpeg)
 
 #### 部署RDMA软件栈*
 
@@ -172,7 +172,7 @@ VMware Workstation 15 Pro 15.5.7
 
 如果CONFIG_RDMA_RXE的值为y或者m，表示当前的操作系统可以使用RXE。
 
-![](/images/rdma/\2efa485962fcb8faa6d80f7b8e924e85.png)
+![](/images/rdma/2efa485962fcb8faa6d80f7b8e924e85.png)
 
 如果该选项值为n或者搜索不到RXE，那么很遗憾你可能需要重新编译内核。编译内核时需要使能以下几个选项：
 [code] 
@@ -211,11 +211,11 @@ rdma-core| 文档及用户态配置文件
 
 可以看到版本是28.0（截至3月28日，rdma-core的最新版本是v34.0）：
 
-![](/images/rdma/\fa860906b2cbdee432ba0df9a612f642.jpeg)
+![](/images/rdma/fa860906b2cbdee432ba0df9a612f642.jpeg)
 
 安装完上述软件之后，可以执行ibv_devices看看有没有报错：
 
-![](/images/rdma/\b44bc9531ec4e459797efee5cc32c12c.png)
+![](/images/rdma/b44bc9531ec4e459797efee5cc32c12c.png)
 
 这是个基于verbs接口编写的小程序，用来获取并打印出当前系统中的RDMA设备列表（现在当然是空的，因为我们还没有添加Soft-RoCE设备）。
 
@@ -241,11 +241,11 @@ perftest是一个基于Verbs接口开发的开源RDMA性能测试工具，可以
 
 因为我们要两个节点，一个节点已经准备完毕了，下面我们利用VMware WorkStation的虚拟机克隆功能直接复制一个相同的虚拟机出来：
 
-![](/images/rdma/\57140f0660b19bb055306deee4d39b75.jpeg)
+![](/images/rdma/57140f0660b19bb055306deee4d39b75.jpeg)
 
 因为我的硬盘还算充裕，所以选的完整克隆：
 
-![](/images/rdma/\3a531c9d38499570f4da5635cb516bc5.jpeg)
+![](/images/rdma/3a531c9d38499570f4da5635cb516bc5.jpeg)
 
 #### 配置虚拟机网卡
 
@@ -253,26 +253,26 @@ perftest是一个基于Verbs接口开发的开源RDMA性能测试工具，可以
 
 分别打开两台虚拟机设置中的网络适配器选项，网络连接模式选择自定义：WMnet1（仅主机模式）
 
-![](/images/rdma/\1bdd7964eaf140a253450ecc632896d4.jpeg)
+![](/images/rdma/1bdd7964eaf140a253450ecc632896d4.jpeg)
 
 确定之后，呼出终端通过ifconfig查看网口配置，我的两个虚拟机的网卡IP分别是：
 
-![](/images/rdma/\4803c9a755b73194d1d7388c4b54701b.jpeg)
+![](/images/rdma/4803c9a755b73194d1d7388c4b54701b.jpeg)
 
-![](/images/rdma/\9bfe0d21fdd8acadb1dc534523fe8fa9.jpeg)
+![](/images/rdma/9bfe0d21fdd8acadb1dc534523fe8fa9.jpeg)
 
 然后查看Windows宿主机的虚拟网卡的IP地址：
 [code] 
     ipconfig /all
 [/code]
 
-![](/images/rdma/\88c40fb4c6433c94d7435562e5414ff5.jpeg)
+![](/images/rdma/88c40fb4c6433c94d7435562e5414ff5.jpeg)
 
 可见这三个网卡都处于192.168.217.x网段。
 
 这时可以用一个虚拟机ping另一个虚拟机测试下网络连通性：
 
-![](/images/rdma/\c26e358f914414f9b6fa05f42aa77d47.png)
+![](/images/rdma/c26e358f914414f9b6fa05f42aa77d47.png)
 
 > 有的读者可能会试着用虚拟机ping宿主机的IP，比如对我来说就是192.168.217.1，结果发现ping不通。这是因为Windows的防火墙造成的，实际不影响稍后的抓包实验。关闭防火墙之后是可以双向ping通的，但是不建议大家关闭防火墙。 
 
@@ -297,15 +297,15 @@ perftest是一个基于Verbs接口开发的开源RDMA性能测试工具，可以
 
 效果如下：
 
-![](/images/rdma/\361b86516c3a195d923b271fc2e02bc8.png)
+![](/images/rdma/361b86516c3a195d923b271fc2e02bc8.png)
 
 也可以跑下我们前文提到的ibv_devices程序了，可以看到已经在设备列表里了：
 
-![](/images/rdma/\9a8db081fe2b92e3b42b665533599cfc.png)
+![](/images/rdma/9a8db081fe2b92e3b42b665533599cfc.png)
 
 也可以看下这个虚拟RDMA设备的信息：
 
-![](/images/rdma/\a79a4fba2cea3a9c7e3e5f021f4ad7d7.jpeg)
+![](/images/rdma/a79a4fba2cea3a9c7e3e5f021f4ad7d7.jpeg)
 
 里面的参数读者现在不需要了解，感兴趣的话可以先自己研究下。
 
@@ -327,11 +327,11 @@ ib_send_bw是用来测试SEND操作的带宽的程序（infiniband_send _bandwid
 
 两端的结果如下，Server端：
 
-![](/images/rdma/\d0cd6e0c8211131c0fa62f3e1a71814e.jpeg)
+![](/images/rdma/d0cd6e0c8211131c0fa62f3e1a71814e.jpeg)
 
 Client端：
 
-![](/images/rdma/\846fe339ff5909af707768d77f307212.jpeg)
+![](/images/rdma/846fe339ff5909af707768d77f307212.jpeg)
 
 可以看到两端都打印出了一些测试信息以及最后的测试结果，也就是带宽信息。读者当前不必关心具体发生了什么，以及这些打印都是什么意思，只需要知道client端向server端发起了Send操作就可以了。以后我会展开讲perftest。
 
@@ -341,29 +341,29 @@ Wireshark是一个开源的抓包软件，我们以后会使用它来分析RoCE�
 
 好了，万事具备，我们打开Wireshark，选择宿主机和两台虚拟机处于同一个子网的虚拟网卡VMnet1：
 
-![](/images/rdma/\65124486a486177613139979aaba4e1d.jpeg)
+![](/images/rdma/65124486a486177613139979aaba4e1d.jpeg)
 
 然后就自动开始抓包了，我们可以看到一些DNS和ARP报文：
 
-![](/images/rdma/\c281a5113e31336dd4a18267a25f4a57.png)
+![](/images/rdma/c281a5113e31336dd4a18267a25f4a57.png)
 
 如果此时我用一台虚拟机去ping另一台虚拟机，那么我们可以看到ICMP的报文：
 
-![](/images/rdma/\564913f8061cd2d7ae27b7b4c5377b1d.jpeg)
+![](/images/rdma/564913f8061cd2d7ae27b7b4c5377b1d.jpeg)
 
 我们此时分别在两端再次上面的执行perftest示例，就可以在Wireshark中看到RoCE报文了：
 
-![](/images/rdma/\b14c99cf971babe74298d488687e1335.jpeg)
+![](/images/rdma/b14c99cf971babe74298d488687e1335.jpeg)
 
 其中RRoCE是Routable RoCE的意思，即可以被路由的RoCE，即RoCE v2。我们随便选中一个条目，下面的窗口中我们就可以看到每一层报文的内容了，非常清晰：
 
-![](/images/rdma/\43c2c0eb5dccc33bfe29a42ba426da9d.jpeg)
+![](/images/rdma/43c2c0eb5dccc33bfe29a42ba426da9d.jpeg)
 
 上图从上到下分别是：物理层-->以太网链路层-->IPv4网络层-->UDP传输层-->IB传输层（BTH头和iCRC校验）-->数据。
 
 Wireshark非常强大，还可以解析CM建链的报文，我们会在后面的文章中进一步讲解和分析CM。
 
-![](/images/rdma/\404036af6922b0c347a61ac0f1dd0b3b.jpeg)
+![](/images/rdma/404036af6922b0c347a61ac0f1dd0b3b.jpeg)
 
 好了，本文就写到这，感谢阅读。读者如有疑问，欢迎在评论区讨论。
 

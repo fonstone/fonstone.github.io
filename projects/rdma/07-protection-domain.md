@@ -1,4 +1,4 @@
----
+﻿---
 title: "RDMA 之 Protection Domain"
 description: "介绍 Protection Domain 的概念和作用，PD 如何隔离不同应用的 RDMA 资源，以及 PD 与 MR、QP、AH 的关系。"
 date: "2026-07-19"
@@ -26,7 +26,7 @@ PD全称是Protection Domain，意为"保护域"。在RDMA中，PD像是一个�
 
 一个用户可能创建多个QP和多个MR，每个QP可能和不同的远端QP建立了连接，比如下图这样（灰色箭头表示QP间的连接关系）：
 
-![](/images/rdma/\ad5d0b27a9b92a11ef0ed805c6820584.png)
+![](/images/rdma/ad5d0b27a9b92a11ef0ed805c6820584.png)
 
 图1 没有PD概念时的RDMA资源
 
@@ -34,7 +34,7 @@ PD全称是Protection Domain，意为"保护域"。在RDMA中，PD像是一个�
 
 其实一般情况下，MR的虚拟地址VA和秘钥R_Key是很难猜到的，已经可以保证一定的安全性了。但是为了更好的保护内存中的数据，把各种资源的权限做进一步的隔离和划分，我们在又在每个节点中定义了PD，如下图所示：
 
-![](/images/rdma/\106cc662fe0a1c2c56678af3514e21e5.png)
+![](/images/rdma/106cc662fe0a1c2c56678af3514e21e5.png)
 
 图2 加入PD概念时的RDMA资源
 

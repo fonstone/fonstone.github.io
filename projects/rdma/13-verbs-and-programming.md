@@ -1,4 +1,4 @@
----
+﻿---
 title: "RDMA 之 Verbs 和编程步骤"
 description: "介绍 RDMA Verbs API 体系、用户态与内核态 Verbs 接口、编程步骤与 WR/WC 的处理流程。"
 date: "2026-07-19"
@@ -536,7 +536,7 @@ ibv_poll_cq（）用于查询cq队列是否有事件产生，如果有调用recv
 
 (fellow0305)
 
-![](/images/rdma/\ec705cadfe79ccd18ad1360b019b4d17.png)
+![](/images/rdma/ec705cadfe79ccd18ad1360b019b4d17.png)
 
 **例子**
 

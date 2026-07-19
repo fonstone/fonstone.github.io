@@ -1,4 +1,4 @@
----
+﻿---
 title: "RDMA 之 iWARP & Soft-iWARP"
 description: "介绍 iWARP 协议栈架构、与 RoCE 的对比、Soft-iWARP 实现以及 iWARP 在标准以太网上的部署方案。"
 date: "2026-07-19"
@@ -19,7 +19,7 @@ iWARP协议是RDMA Consortium组织推动实现的，它由Broadcom、HP、IBM�
 
 iWARP协议一共有3层，所以更准确地讲iWARP应该是一组协议的统称，或者称为协议族。下图中绿色背景的部分，即为iWARP的三层协议，ULP指的是Upper Layer Protocol，即上层协议，iWARP通过Verbs接口向上层提供服务。ULP可以是一些存储协议，比如iSCSI、可能是中间件，比如UCX、也可能是用户的应用程序。
 
-![](/images/rdma/\9dd40ef569e5fb311cdceccc43275f3f.png)
+![](/images/rdma/9dd40ef569e5fb311cdceccc43275f3f.png)
 
 iWARP协议栈的层次关系
 
@@ -33,7 +33,7 @@ DDP是iWARP的核心，负责在传输层协议之上实现零拷贝的功能。
 
 RDMAP最靠近用户的一层，为上层用户提供RDMA语义，支撑它们的Send/RDMA Read/RDMA Write等各种类型的请求。RDMAP依赖于下层的DDP提供的零拷贝功能来实现对应的用户请求。
 
-![](/images/rdma/\7d1e9f5737d2de722658d92650aadbdf.png)
+![](/images/rdma/7d1e9f5737d2de722658d92650aadbdf.png)
 
 ### MPA（Marker Protocol data unit Aligned framing）
 
@@ -61,7 +61,7 @@ Infiniband协议诞生以来，虽然相比传统以太网有着很大的优势�
 
 下面回顾一下这几种协议的分层关系：
 
-![](/images/rdma/\92dd6aebde1195b59f88f1e7b365ad5e.png)
+![](/images/rdma/92dd6aebde1195b59f88f1e7b365ad5e.png)
 
 4种RDMA协议的层次关系
 
@@ -93,7 +93,7 @@ iWARP协议是RDMA Consortium这个组织所推动实现的，它由Broadcom、H
 
 iWARP协议一共有3层，所以更准确地讲iWARP应该是一组协议的统称，或者称为协议族。下图中绿色背景的部分，即为iWARP的三层协议，IETF也将这三层称为RDDP。图中ULP指的是Upper Layer Protocol，即上层协议，iWARP通过Verbs接口向上层提供服务。ULP可以是一些存储协议，比如iSCSI、可能是中间件，比如UCX、也可能是用户的应用程序。
 
-![](/images/rdma/\9dd40ef569e5fb311cdceccc43275f3f.png)
+![](/images/rdma/9dd40ef569e5fb311cdceccc43275f3f.png)
 
 iWARP协议栈的层次关系
 
@@ -105,7 +105,7 @@ iWARP协议栈的层次关系
 
 DDP是iWARP的核心，负责在传输层协议之上实现零拷贝的功能。DDP的报文中包含有描述内存区域的信息，硬件可以直接根据DDP报文中的控制信息，通过DMA搬移DDP报文中的数据到内存中的目的地。上述过程不需要CPU的参与，所以DDP是最能体现RDMA技术核心思想的一层。
 
-![](/images/rdma/\8e1a8655d06fcd161d20c27438ee6cff.png)
+![](/images/rdma/8e1a8655d06fcd161d20c27438ee6cff.png)
 
 DDP层的功能示意图
 
@@ -113,7 +113,7 @@ DDP层的功能示意图
 
 RDMAP是iWARP协议栈中最靠近用户的一层，主要功能是为上层用户提供RDMA语义，支撑它们的Send/RDMA Read/RDMA Write等各种类型的请求。RDMAP依赖于下层的DDP提供的零拷贝功能来实现对应的用户请求。
 
-![](/images/rdma/\7d1e9f5737d2de722658d92650aadbdf.png)
+![](/images/rdma/7d1e9f5737d2de722658d92650aadbdf.png)
 
 RDMAP层的功能示意图
 
@@ -121,7 +121,7 @@ RDMAP层的功能示意图
 
 MPA这一层负责在发送端按照一定的算法在TCP流中加入控制信息，从而使得接收端可以按照算法识别出流中的DDP消息的分界。实际上完成的是将DDP适配TCP的工作。当DDP的下层是SCTP协议时就不需要MPA这一层了，因为SCTP可以识别出上层协议的分界。
 
-![](/images/rdma/\fb3220f971f20ccf4b1ae19286e03d21.png)
+![](/images/rdma/fb3220f971f20ccf4b1ae19286e03d21.png)
 
 MPA层的功能示意图
 
@@ -204,7 +204,7 @@ vmw_pvrdma| VMware| | √| |
 
 [Storage Spaces Direct Hardware Requirements | Microsoft Docs](https://link.zhihu.com/?target=https%3A//docs.microsoft.com/en-us/windows-server/storage/storage-spaces/storage-spaces-direct-hardware-requirements%23networking "Storage Spaces Direct Hardware Requirements | Microsoft Docs")
 
-![](/images/rdma/\1ac66a2a6800dcc98ba957afe4587bd3.png)
+![](/images/rdma/1ac66a2a6800dcc98ba957afe4587bd3.png)
 
 国内而言，阿里内部也在使用自研的iWARP网卡，最近正在向Linux社区上传他们的网卡驱动：
 
@@ -246,7 +246,7 @@ RoCE v2和iWARP的设计初衷都是为了在传统的以太网上技术上实�
 
 因为iWARP是基于TCP的，支持选择性重传，丢哪个包就重传哪个包，因此重传开销极小；而RoCE v2是基于无连接协议的UDP协议，相比面向连接的TCP协议，UDP协议更加快速、占用CPU资源更少，但其不像TCP协议那样有滑动窗口、确认应答等机制来实现可靠传输，一旦出现丢包，只能依靠上层应用检查到了再做重传，会大大降低RDMA的传输效率。RoCE v2采用的是go-back-N的重传方式，即从丢了的包开始重传之后每一个数据包。假设发送端发送了1~5一共5个数据包，但是2号丢了，这时候即使3~5已经被接收端收到，也会被视为无效，需要等待发送端重新发送2~5，可见重传开销是很高的。采用这种方案是因为RoCE v2不支持乱序接收，所有的数据包必须按序处理。（下图未画出ACK报文）
 
-![](/images/rdma/\c8e45f528b1f204c114f66a4571acfe2.png)
+![](/images/rdma/c8e45f528b1f204c114f66a4571acfe2.png)
 
 iWARP和RoCE v2的重传机制对比
 
@@ -256,7 +256,7 @@ iWARP和RoCE v2的重传机制对比
 
 当一个节点的入口流量大于出口流量时，就会通过缓存机制来暂存收到的数据包。当缓冲区满了的时候，只能选择丢弃后收到的数据包，也就是发生了丢包的情况，我们把这种情况称为拥塞。
 
-![](/images/rdma/\d102320953f3f60ed5f699134e98c590.png)
+![](/images/rdma/d102320953f3f60ed5f699134e98c590.png)
 
 网络拥塞示意图
 
@@ -321,7 +321,7 @@ iWARP的协议栈本身比RoCE v2要复杂，光是在硬件中实现TCP/IP协�
 
 由于减少了系统调用，发送方使用零拷贝技术等原因，Soft-iWARP相比于传统TCP/IP也会带来一定的性能提升。但是毕竟是软件实现的iWARP，和硬件实现相比还是有不少的性能差异的。
 
-![](/images/rdma/\3ea78b94ad282de43a72c1cff4224ec3.png)
+![](/images/rdma/3ea78b94ad282de43a72c1cff4224ec3.png)
 
 iWARP实现原理[9]
 
@@ -365,7 +365,7 @@ Soft-iWARP在内核中的驱动名为siw，我们首先加载其驱动程序：
 
 两种命令都可以看到新添加的设备siw_0：
 
-![](/images/rdma/\fb73759657090aa5ba4156b10202485c.png)
+![](/images/rdma/fb73759657090aa5ba4156b10202485c.png)
 
 RDMA设备查询结果
 
@@ -374,7 +374,7 @@ RDMA设备查询结果
     ibv_devinfo -d siw_0
 [/code]
 
-![](/images/rdma/\c29fc7a01d1a6ba86981b5a8bf70bc0c.png)
+![](/images/rdma/c29fc7a01d1a6ba86981b5a8bf70bc0c.png)
 
 ibv_devinfo查询设备信息结果
 
@@ -396,19 +396,19 @@ Client端（RDMA Write发起端）执行：
 
 Server端结果：
 
-![](/images/rdma/\dd081fdd4121f8b9c544ae3dce705d89.png)
+![](/images/rdma/dd081fdd4121f8b9c544ae3dce705d89.png)
 
 Server端perftest执行结果
 
 Client端结果：
 
-![](/images/rdma/\d5b75a68adff152da9508eda583386be.png)
+![](/images/rdma/d5b75a68adff152da9508eda583386be.png)
 
 Client端perftest执行结果
 
 注：使用ib_send_bw测试Send操作，两端在最后都会打印下面的信息，显示销毁PD错误：
 
-![](/images/rdma/\c472e256924b12ed785363d4aa434ba0.png)
+![](/images/rdma/c472e256924b12ed785363d4aa434ba0.png)
 
 Ib_send_bw报错信息
 
@@ -420,7 +420,7 @@ Ib_send_bw报错信息
 
 我们任选一个Write操作的iWARP报文，可以看到从物理层→以太网链路层→IPv4网络层→TCP传输层→iWARP MPA层→iWARP DDP/RDMAP层→用户数据的层次关系。
 
-![](/images/rdma/\d5264440159d516d2f1a586bbd522885.png)
+![](/images/rdma/d5264440159d516d2f1a586bbd522885.png)
 
 因为DDP和RDMAP本身之间没有明确的分界线，所以在Wireshark中它们被划分到了一起，这个我们在《RDMAP》一文中做出了解释。
 

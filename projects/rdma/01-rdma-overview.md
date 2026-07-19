@@ -1,4 +1,4 @@
----
+﻿---
 title: "RDMA 概述"
 description: "介绍 RDMA 技术背景、三种技术实现（InfiniBand/RoCE/iWARP）、特点优势与基本术语。"
 date: "2026-07-19"
@@ -113,7 +113,7 @@ RDMA网卡出包
 
 传统的 TCP/IP 网络通信，数据需要通过用户空间发送到远程机器的用户空间，在这个过程中需要经历若干次内存拷贝：
 
-![](/images/rdma/\e99e04c8dcd33b4bffb552036dd22996.png)​
+![](/images/rdma/e99e04c8dcd33b4bffb552036dd22996.png)​
 
 ![在这里插入图片描述](images\\d175e58c96f499b257d4a7c78944c553.png)​
 
@@ -151,7 +151,7 @@ RDMA网卡出包
 
 TOE （TCP Offloading Engine），在主机通过网络进行通信的过程中，CPU 需要耗费大量资源进行多层网络协议的数据包处理工作，包括数据复制、协议处理和中断处理。当主机收到网络数据包时，会引发大量的网络 I/O 中断，CPU 需要对 I/O 中断信号进行响应和确认。为了将 CPU 从这些操作中解放出来，人们发明了TOE（TCP/IP Offloading Engine）技术，将上述主机处理器的工作转移到网卡上。TOE 技术需要特定支持 Offloading 的网卡，这种特定网卡能够支持封装多层网络协议的数据包。
 
-![](/images/rdma/\44c3cf90037b181e0f73a3f5aa5fb698.png)​
+![](/images/rdma/44c3cf90037b181e0f73a3f5aa5fb698.png)​
 
   * TOE 技术将原来在协议栈中进行的IP分片、TCP分段、重组、checksum校验等操作，转移到网卡硬件中进行，降低系统CPU的消耗，提高服务器处理性能。
   * 普通网卡处理每个数据包都要触发一次中断，TOE 网卡则让每个应用程序完成一次完整的数据处理进程后才触发一次中断，显著减轻服务器对中断的响应负担。
@@ -177,7 +177,7 @@ RDMA 技术有以下几个特点：
 
 下面是 RDMA 整体框架架构图，从图中可以看出，RDMA 提供了一系列 Verbs 接口，可在应用程序用户空间，操作RDMA硬件。RDMA绕过内核直接从用户空间访问RDMA 网卡。RNIC(RDMA 网卡，RNIC _（NIC=Network Interface Card ，网络接口卡、网卡，RNIC即 RDMA Network Interface Card）_ 中包括 Cached Page Table Entry，用来将虚拟页面映射到相应的物理页面。
 
-![](/images/rdma/\f9a391581712b66872fd0301a908c6f9.png)​
+![](/images/rdma/f9a391581712b66872fd0301a908c6f9.png)​
 
 **扩展知识：TOE 和 RDMA的区别、TOE、RDMA、smartNIC 、DPU是什么和区别：**
 
@@ -261,9 +261,9 @@ RoCE协议存在RoCEv1 （RoCE）和RoCEv2 （RRoCE）两个版本，主要区�
 
 RoCE可以被认为是IB的“低成本解决方案”，将IB的报文封装成以太网包进行收发。由于RoCE可以使用以太网的交换设备，所以现在在企业中应用也比较多，但是相同场景下相比IB性能要有一些损失。
 
-![](/images/rdma/\b3e2c3d4a0b0c940407c933703b8df1a.png)​  RoCEv1把以太网L2以上的全部替换IB协议，RoCEv2把以太网L3以上全部替换IB协议 
+![](/images/rdma/b3e2c3d4a0b0c940407c933703b8df1a.png)​  RoCEv1把以太网L2以上的全部替换IB协议，RoCEv2把以太网L3以上全部替换IB协议 
 
-![](/images/rdma/\2d0efa910c08404cab4b986272348e5f.png) 图片来源： <https://zhuanlan.zhihu.com/p/361740115>
+![](/images/rdma/2d0efa910c08404cab4b986272348e5f.png) 图片来源： <https://zhuanlan.zhihu.com/p/361740115>
 
 **RDMA 阵营划分（IB技术和IBoE <RoCE和iWARP>）**
 
@@ -297,7 +297,7 @@ _RoCE和iWARP对比：_
 
 iWARP 和RoCE 都属于IBoE，所以他们可以在以太网上传播，用以太网交换机，IB协议是需要专门的硬件专门的路由器。 
 
-![](/images/rdma/\3501a49b1499085ca0470e0ec2a02e9a.png)​《RDMA 在分布式存储中的应用》 [RDMA 在分布式存储中的应用 - 道客巴巴](https://www.doc88.com/p-73847399626394.html "RDMA 在分布式存储中的应用 - 道客巴巴")
+![](/images/rdma/3501a49b1499085ca0470e0ec2a02e9a.png)​《RDMA 在分布式存储中的应用》 [RDMA 在分布式存储中的应用 - 道客巴巴](https://www.doc88.com/p-73847399626394.html "RDMA 在分布式存储中的应用 - 道客巴巴")
 
 加深了解：[【RDMA】19. RDMA之iWARP & Soft-iWARP-CSDN博客](https://blog.csdn.net/bandaoyu/article/details/125234243 "【RDMA】19. RDMA之iWARP & Soft-iWARP-CSDN博客")
 
@@ -375,7 +375,7 @@ kernel pass、zero copy、硬件IO
 
 
 
-![](/images/rdma/\3fb74e8e0614ca99d2366f45cc54ec8e.jpeg)​
+![](/images/rdma/3fb74e8e0614ca99d2366f45cc54ec8e.jpeg)​
 
 [两种以太网 RDMA 协议： iWARP 和 RoCE - allcloud - 博客园](https://www.cnblogs.com/allcloud/p/7680277.html "两种以太网 RDMA 协议： iWARP 和 RoCE - allcloud - 博客园")
 
@@ -389,7 +389,7 @@ IBTA ​ Infiniband 行业联盟 (InfiniBand Trade Association)
 
 > CPU 性能的迅猛发展、I/O 系统的性能成为制约服务器性能的主要矛盾，要求构建下一代 I/O 架构的呼声此起彼伏。 Infiniband 行业联盟 也即 [BTA (InfiniBand Trade Association)](https://www.infinibandta.org/ "BTA \(InfiniBand Trade Association\)")，包括了当时的各大厂商 Compaq、Dell、HP、IBM、Intel、Microsoft 和 Sun。
 
-![](/images/rdma/\b577162b1a34a478ee7da8feea7f94a0.png)​
+![](/images/rdma/b577162b1a34a478ee7da8feea7f94a0.png)​
 
 #### 
 
@@ -426,7 +426,7 @@ OFA开发出了OFED（Open Fabric Enterprise Distribution）协议栈，支持�
 
 下图为OFA给出的OFED的概览：
 
-![](/images/rdma/\a02cf6c200da397327a8524303b6475d.jpeg)​
+![](/images/rdma/a02cf6c200da397327a8524303b6475d.jpeg)​
 
 除了开源OFED之外，各厂商也会提供定制版本的OFED软件包，比如华为的HW_OFED和Mellanox的MLNX_OFED。这些定制版本基于开源OFED开发，由厂商自己测试和维护，会在开源软件包基础上提供私有的增强特性，并附上自己的配置、测试工具等。
 
@@ -446,7 +446,7 @@ Verbs API是RDMA最基本的软件接口，业界的RDMA应用，要么直接基
 
 Verbs api 分为用户态Verbs接口和内核态Verbs接口，分别用于用户态和内核态的RDMA应用。 对于Linux系统来说，由rdma-core和内核中的RDMA子系统（如intel的irdma）提供。
 
-![](/images/rdma/\871fdf71a43087a5e6070d7e9eb7ac1c.jpeg)​  
+![](/images/rdma/871fdf71a43087a5e6070d7e9eb7ac1c.jpeg)​  
   
 原文链接：https://blog.csdn.net/bandaoyu/article/details/113125244
 
@@ -620,7 +620,7 @@ PSN是Packet Sequence Number，用来检测丢失或重复的数据包。
 
 用户空间的Application通过OFA Stack(亦或其他组织编写的RDMA stack)提供的verbs编程接口(比如WRITE、READ、SEND等)形成IB payload，接下来便直接进入硬件，由RDMA网卡实现负载的层层封装。
 
-![](/images/rdma/\d4a7cca1b6a4380ea1545dddde6af299.jpeg)​
+![](/images/rdma/d4a7cca1b6a4380ea1545dddde6af299.jpeg)​
 
 如上图，在传统模式下，两台服务器上的应用之间传输数据，过程是这样的：
 

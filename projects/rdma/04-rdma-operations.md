@@ -1,4 +1,4 @@
----
+﻿---
 title: "RDMA 操作类型——WRITE / READ"
 description: "详解 RDMA 的 SEND/RECV、WRITE、READ 三种基本操作类型，以及 WRITE/READ 特有的零拷贝远程直接访问语义。"
 date: "2026-07-19"
@@ -37,11 +37,11 @@ SEND和RECV是两种不同的操作类型，但是因为如果一端进行SEND�
 
 为什么称之为“双端操作”？因为**完成一次通信过程需要两端CPU的参与** ，并且收端需要提前显式的下发WQE。下图是一次SEND-RECV操作的过程示意图。原图来自于[1]，我做了一些修改。
 
-![](/images/rdma/\a3a0607c108e765b250e349cffcef696.png)
+![](/images/rdma/a3a0607c108e765b250e349cffcef696.png)
 
 
 
-![](/images/rdma/\010e22a6f38eb98015064108a3a74820.png)
+![](/images/rdma/010e22a6f38eb98015064108a3a74820.png)
 
 下面将介绍WRITE操作，对比之后相信大家可以理解的更好。
 
@@ -53,13 +53,13 @@ WRITE全称是RDMA WRITE操作，是本端主动写入远端内存的行为，�
 
 WRITE/READ操作中的目的地址和钥匙是如何获取的呢？通常可以通过我们刚刚讲过的SEND-RECV操作来完成，因为拿到钥匙这个过程总归是要由远端内存的控制者——CPU允许的。虽然准备工作还比较复杂， 但是一旦完成准备工作，RDMA就可以发挥其优势，对大量数据进行读写。一旦远端的CPU把内存授权给本端使用，它便不再会参与数据收发的过程，这就解放了远端CPU，也降低了通信的时延。
 
-![](/images/rdma/\f906f335786c6d7c8f0a690bc6f3f667.png)
+![](/images/rdma/f906f335786c6d7c8f0a690bc6f3f667.png)
 
 需要注意的是，本端是通过**虚拟地址** 来读写远端内存的，上层应用可以非常方便的对其进行操作。实际的虚拟地址—物理地址的转换是由RDMA网卡完成的。具体是如何转换的，将在后面的文章介绍。
 
 忽略准备阶段key和addr的获取过程，下面我们描述一次WRITE操作的流程，此后我们不再将本端称为“发送”和“接收”端，而是改为“请求”和“响应”端，这样对于描述WRITE和READ操作都更恰当一些，也不容易产生歧义。
 
-![](/images/rdma/\cd8178877a77db6083288b22926c0d9a.png)
+![](/images/rdma/cd8178877a77db6083288b22926c0d9a.png)
 
   1. 请求端APP以WQE（WR）的形式下发一次WRITE任务。
   2. 请求端硬件从SQ中取出WQE，解析信息。
@@ -80,7 +80,7 @@ WRITE/READ操作中的目的地址和钥匙是如何获取的呢？通常可以�
 
 下面描述一次READ操作的流程，注意跟WRITE只是方向和步骤顺序的差别。
 
-![](/images/rdma/\4b6116af88b4138847c2b0ddf0c95dd4.png)
+![](/images/rdma/4b6116af88b4138847c2b0ddf0c95dd4.png)
 
   1. 请求端APP以WQE的形式下发一次READ任务。
   2. 请求端网卡从SQ中取出WQE，解析信息。
@@ -97,7 +97,7 @@ WRITE/READ操作中的目的地址和钥匙是如何获取的呢？通常可以�
 
 我们忽略各种细节进行抽象，RDMA WRITE和READ操作就是在利用网卡完成下面左图的内存拷贝操作而已，只不过复制的过程是由RDMA网卡通过网络链路完成的；而本地内存拷贝则如下面右图所示由CPU通过总线完成的：
 
-![](/images/rdma/\1e1a245c9d8763c889734057314373e8.png)
+![](/images/rdma/1e1a245c9d8763c889734057314373e8.png)
 
 RDMA标准定义上述几种操作的时候使用的单词是非常贴切的，“收”和“发”是需要有对端主动参与的语义 ，而‘读“和”写“更像是本端对一个没有主动性的对端进行操作的语义。
 
@@ -510,11 +510,11 @@ send_mr() 封装了这个函数，并被 rdma-client 用来将它的 MR 发送�
 
 _**Updated, Oct. 4:** Sample code is now at <https://github.com/tarickb/the-geek-in-the-corner/tree/master/02_read-write>._
 
-![](/images/rdma/\55ac3d9fe34a820f3431992ecd68e8a8.png)
+![](/images/rdma/55ac3d9fe34a820f3431992ecd68e8a8.png)
 
 [infiniband概念空间分析 - 知乎](https://zhuanlan.zhihu.com/p/50789624 "infiniband概念空间分析 - 知乎")
 
-![](/images/rdma/\20210809101411186.png)
+![](/images/rdma/20210809101411186.png)
 
 <https://www.researchgate.net/figure/RDMA-Write_fig2_4245345>
 

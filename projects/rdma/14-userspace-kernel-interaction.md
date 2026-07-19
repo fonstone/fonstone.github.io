@@ -1,4 +1,4 @@
----
+﻿---
 title: "RDMA 之用户态与内核态交互"
 description: "分析 RDMA 软件协议栈中用户态与内核态的交互机制，包括系统调用、IOCTL、MMIO 等通路。"
 date: "2026-07-19"
@@ -33,7 +33,7 @@ IB规范中的Table 95列出了所有Verbs的实现必要性和需要的用户�
 
 用户权限上，Privileged表示需要特殊权限，User-Level表示仅需要普通权限。
 
-![](/images/rdma/\39e6ef82c0e83972d9c32918f87a756c.png)
+![](/images/rdma/39e6ef82c0e83972d9c32918f87a756c.png)
 
 通过观察表格我们可以发现，除了下发WR（Post Send和Post Recv）和获取WC（Poll CQ和Request Completion Notification）这种用于数据交互的接口，以及Bind MW和AH的相关操作，其他所有操作都需要特权，即调用对应的Verbs API都需要陷入内核态。
 
@@ -41,7 +41,7 @@ IB规范中的Table 95列出了所有Verbs的实现必要性和需要的用户�
 
 为了便于后文的说明，我们这里以Mellanox的驱动为例，给出RDMA软件栈的粗略架构，以后的文章会更详细的描述这一部分。
 
-![](/images/rdma/\cd4957a1f94eb87e055dbd7a3f2d6cb0.png)
+![](/images/rdma/cd4957a1f94eb87e055dbd7a3f2d6cb0.png)
 
 首先从上往下看：
 
@@ -142,13 +142,13 @@ ABI（Application Binary Interface）是应用程序间的二进制接口，本�
 
 uverbs API规定了用户态和内核态之间的命令消息cmd的格式和返回消息resp的格式，大致是下图这个意思：
 
-![](/images/rdma/\d507fc9150f14deb90147ae44df0fb4f.png)
+![](/images/rdma/d507fc9150f14deb90147ae44df0fb4f.png)
 
 我们在“[RDMA之Verbs](https://zhuanlan.zhihu.com/p/329198771 "RDMA之Verbs")”一文中介绍过用户态库和内核驱动，它们各自都按照自己的节奏发布版本，用户态和内核态之间交互，涉及到很多命令的传递，而不同版本之前的交互格式是有差异的。RDMA软件栈通过设计uverbs ABI接口来**保证不同版本的用户态和内核态之间的兼容性，即某个版本的用户态库，可以直接运行在各种版本的内核上** 。
 
 我们还是拿Create QP的动作来举例，软件栈中是这样ibv_create_qp()的定义cmd和resp的：
 
-![](/images/rdma/\c004a05cf2f8b4214258522ac9eadda4.png)
+![](/images/rdma/c004a05cf2f8b4214258522ac9eadda4.png)
 
 可以看到cmd分为三个部分：
 
@@ -158,7 +158,7 @@ uverbs API规定了用户态和内核态之间的命令消息cmd的格式和返�
 
 
 
-![](/images/rdma/\3415038b6fae31df09bd3e70f62486ce.png)
+![](/images/rdma/3415038b6fae31df09bd3e70f62486ce.png)
 
 resp分为两个部分：
 
@@ -179,7 +179,7 @@ resp分为两个部分：
 
 需要陷入内核态的接口，走的是标红色箭头的“慢路径”：
 
-![](/images/rdma/\12398990dae14cc9aead310a3ccb5ba9.png)
+![](/images/rdma/12398990dae14cc9aead310a3ccb5ba9.png)
 
 ### ibv_open_device()
 
@@ -211,7 +211,7 @@ resp分为两个部分：
 
 这个过程的调用栈如下图所示，这里仅列出了关键函数，红色虚线表示从用户态陷入内核态：
 
-![](/images/rdma/\a422a145bfb7efa2b88d73bad42b36d9.png)
+![](/images/rdma/a422a145bfb7efa2b88d73bad42b36d9.png)
 
 ### ibv_reg_mr()
 
@@ -231,7 +231,7 @@ resp分为两个部分：
 
 这一过程的调用栈如下图所示：
 
-![](/images/rdma/\408cdf72a805290887004fc84d4360d5.png)
+![](/images/rdma/408cdf72a805290887004fc84d4360d5.png)
 
 ### ibv_create_qp()
 
@@ -257,13 +257,13 @@ resp分为两个部分：
 
 这一过程的调用栈如下图所示：
 
-![](/images/rdma/\2f8e27346cd0fcdf2d0f4aefede91db1.png)
+![](/images/rdma/2f8e27346cd0fcdf2d0f4aefede91db1.png)
 
 ### 不需要陷入内核态的接口
 
 不需要陷入内核的Verbs接口走的是左边红色箭头的”快路径“：
 
-![](/images/rdma/\fc52182203eb9791be63f7815184f2a7.png)
+![](/images/rdma/fc52182203eb9791be63f7815184f2a7.png)
 
 ### ibv_post_send()
 

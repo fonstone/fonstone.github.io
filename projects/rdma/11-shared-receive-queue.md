@@ -1,4 +1,4 @@
----
+﻿---
 title: "RDMA 之 Shared Receive Queue"
 description: "介绍 Shared Receive Queue（SRQ）的概念、优势、创建与使用场景，以及 SRQ 如何减少内存占用。"
 date: "2026-07-19"
@@ -25,7 +25,7 @@ tags: ["RDMA", "Shared Receive Queue", "SRQ", "内存优化"]
 
 SRQ是IB协议为了给接收端节省资源而设计的。不同于每个QP都拥有一个独立的RQ，我们可以把一个RQ共享给所有关联的QP使用，这个公用的RQ就称为SRQ。当与其关联的QP想要下发接收WQE时，都填写到这个SRQ中。然后每当硬件接收到数据后，就根据SRQ中的下一个WQE的内容把数据存放到指定位置。
 
-![](/images/rdma/\ed03c730cc264cd77937d5c7b4a1f520.png)
+![](/images/rdma/ed03c730cc264cd77937d5c7b4a1f520.png)
 
 #### 为什么要用SRQ
 
@@ -62,7 +62,7 @@ SEND/WRITE/READ都需要通信发起方向SQ中下发一个WR，而只有和SEND
 
 我们一共节省了（N - K) * M个RQ WQE，RQ WQE本身其实不是很大，大约在几个KB的样子，看起来好像占不了多少内存。但是如前文所说，实际上节省的还有**用于存放数据的内存空间** ，这可是很大一块内存了，我们用图来说明：
 
-![](/images/rdma/\844fbefd7b88b5781a29967317554e12.jpeg)
+![](/images/rdma/844fbefd7b88b5781a29967317554e12.jpeg)
 
 上图中的SRQ中有两个RQ WQE，我们看一下RQ WQE的内容，它们是由数个sge（Scatter/Gather Element）组成的，每个sge由一个内存地址，长度和秘钥组成。有了起始地址和长度，sge就可以指向一块连续的内存区域，那么多个sge就可以表示多个彼此离散的连续内存块，我们称多个sge为sgl（Scatter/Gather List）。sge在IB软件协议栈中随处可见（其实在整个Linux都很常见），可以用非常少的空间表示非常大的内存区域，IB的用户都使用sge来指定发送和接收区域的。
 
@@ -92,7 +92,7 @@ SEND/WRITE/READ都需要通信发起方向SQ中下发一个WR，而只有和SEND
 
 SRQ可以设置一个水线/阈值，当队列中剩余的WQE数量小于水线时，这个SRQ会就上报一个异步事件。提醒用户“队列中的WQE快用完了，请下发更多WQE以防没有地方接收新的数据”。这个水线/阈值就被称为SRQ Limit，这个上报的事件就被称为SRQ Limit Reached。
 
-![](/images/rdma/\320389af26cca93816f80757fa208a1e.png)
+![](/images/rdma/320389af26cca93816f80757fa208a1e.png)
 
 因为SRQ是多个QP共享的，所以如果深度比较小的情况下，很有可能突然里面的WQE就用完了。所以协议设计了这种机制，来保证用户能够及时干预WQE不够的情况。
 
@@ -176,7 +176,7 @@ QP处于错误状态时，可以通过Modify QP来使其回到RESET状态，但�
 
 9\. 用户从CQ2中取出WC（CQE），然后从指定内存区域取走数据。
 
-![](/images/rdma/\15f428783592abb300e6a008488954e0.jpeg)
+![](/images/rdma/15f428783592abb300e6a008488954e0.jpeg)
 
 #### SRQ的接收流程
 
@@ -207,7 +207,7 @@ QP处于错误状态时，可以通过Modify QP来使其回到RESET状态，但�
 
 9\. 用户从CQ2中取出CQE，从指定内存区域取走数据。
 
-![](/images/rdma/\2636bf5fae87144047d6805faffdfa26.jpeg)
+![](/images/rdma/2636bf5fae87144047d6805faffdfa26.jpeg)
 
 ### 总结
 

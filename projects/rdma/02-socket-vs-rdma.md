@@ -1,4 +1,4 @@
----
+﻿---
 title: "比较基于 Socket 与 RDMA 的通信"
 description: "通过对比一次典型的 Socket 和 RDMA 通信流程，直观展示 RDMA 在零拷贝、内核旁路和 CPU 卸载方面的优势。"
 date: "2026-07-19"
@@ -23,7 +23,7 @@ tags: ["RDMA", "Socket", "通信对比", "零拷贝"]
 
 一次典型的Socket通信过程的可以如下图所示进行分层：
 
-![](/images/rdma/\ee70ded335d1cb9f72202ca0b9be7927.png)
+![](/images/rdma/ee70ded335d1cb9f72202ca0b9be7927.png)
 
 一次收-发过程的步骤如下：
 
@@ -35,7 +35,7 @@ tags: ["RDMA", "Socket", "通信对比", "零拷贝"]
 
 
 
-![](/images/rdma/\5319e49b341bae65a4d8befc13a372ed.png)
+![](/images/rdma/5319e49b341bae65a4d8befc13a372ed.png)
 
 Socket模型的数据流向大致是像上图这个样子，数据首先需要从用户空间复制一份到内核空间，这一次复制由CPU完成，将数据块从用户空间复制到内核空间的Socket Buffer中。内核中软件TCP/IP协议栈给数据添加各层头部和校验信息。最后网卡会通过DMA从内存中复制数据，并通过物理链路发送给对端的网卡。
 
@@ -49,7 +49,7 @@ Socket模型的数据流向大致是像上图这个样子，数据首先需要�
 
 同样是一端发送，一端接收的场景，我们将RDMA的分层模型分成两部分“控制通路”和“数据通路”，控制通路需要进入内核态准备通信所需的内存资源，而数据通路指的是实际数据交互过程中的流程。这一过程的分层关系如下图所示：
 
-![](/images/rdma/\3e7e2edbc273f69dead9f8ac9f4c1006.png)
+![](/images/rdma/3e7e2edbc273f69dead9f8ac9f4c1006.png)
 
 同Socket一样，我们简单描述下通信的过程：
 
@@ -61,7 +61,7 @@ Socket模型的数据流向大致是像上图这个样子，数据首先需要�
 
 
 
-![](/images/rdma/\ba847ed500b81393e0533c86d95f1c06.png)
+![](/images/rdma/ba847ed500b81393e0533c86d95f1c06.png)
 
 这一过程中的数据流向大致如上图所示。通过和Socket的对比，我们可以明显看到，**数据收发绕过了内核并且数据交换过程并不需要CPU参与，报文的组装和解析是由硬件完成的** 。
 

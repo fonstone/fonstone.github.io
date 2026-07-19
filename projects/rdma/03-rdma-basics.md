@@ -1,4 +1,4 @@
----
+﻿---
 title: "RDMA 基本元素和编程基础"
 description: "介绍 RDMA 的核心编程元素：Context、Device、PD、MR、QP、CQ、AH 等，以及基本的编程流程。"
 date: "2026-07-19"
@@ -29,7 +29,7 @@ RDMA技术中经常使用缩略语，很容易让刚接触的人一头雾水，�
 
 我将常见的缩略语对照表写在前面，阅读的时候如果忘记了可以翻到前面查阅。
 
-![](/images/rdma/\15ba2263a189ed8b36b36e66ab4a7314.png)
+![](/images/rdma/15ba2263a189ed8b36b36e66ab4a7314.png)
 
 ## WQ（RQ/SQ都是WQ）
 
@@ -41,7 +41,7 @@ WQE可以认为是一种“任务说明”，这个工作请求是软件下发�
 
 WQE的含义应该比较明确了，那么我们最开始提到的WQ是什么呢？它就是用来存放“任务书”的“文件夹”，WQ里面可以容纳很多WQE。有数据结构基础的读者应该都了解，队列是一种先进先出的数据结构，在计算机系统中非常常见，我们可以用下图表示上文中描述的WQ和WQE的关系：
 
-![](/images/rdma/\e28d1ac24685c669d9f869bcef5b180d.png)
+![](/images/rdma/e28d1ac24685c669d9f869bcef5b180d.png)
 
 WQ这个队列总是由软件向其中增加WQE（入队），硬件从中取出WQE，这就是软件给硬件“下发任务”的过程。为什么用队列而不是栈？因为进行“存”和“取“操作的分别是软件和硬件，并且需要保证用户的请求按照顺序被处理在RDMA技术中，所有的通信请求都要按照上图这种方式告知硬件，这种方式常被称为“Post”。
 
@@ -53,7 +53,7 @@ Queue Pair简称QP，就是“一对”WQ的意思。
 
 任何通信过程都要有收发两端，QP就是一个发送工作队列和一个接受工作队列的组合，这两个队列分别称为SQ（Send Queue）和RQ（Receive Queue）。我们再把上面的图丰富一下，左边是发送端，右边是接收端：
 
-![](/images/rdma/\30e2cb0069a0de9d05b73db7c9ff1b3d.png)
+![](/images/rdma/30e2cb0069a0de9d05b73db7c9ff1b3d.png)
 
 WQ怎么不见了？SQ和RQ都是WQ，WQ只是表示一种可以存储WQE的单元，SQ和RQ才是实例。
 
@@ -61,7 +61,7 @@ SQ专门用来存放发送任务，RQ专门用来存放接收任务。在一次S
 
 需要注意的是，在RDMA技术中**通信的基本单元是QP** ，而不是节点。如下图所示，对于每个节点来说，每个进程都可以使用若干个QP，而每个本地QP可以“关联”一个远端的QP。我们用“节点A给节点B发送数据”并不足以完整的描述一次RDMA通信，而应该是类似于“节点A上的QP3给节点C上的QP4发送数据”。
 
-![](/images/rdma/\7bb62c7de65dd75d601f3d9398e6cc7c.png)
+![](/images/rdma/7bb62c7de65dd75d601f3d9398e6cc7c.png)
 
 每个节点的每个QP都有一个唯一的编号，称为QPN（Query Pair Number），通过QPN可以唯一确定一个节点上的QP。
 
@@ -69,7 +69,7 @@ SQ专门用来存放发送任务，RQ专门用来存放接收任务。在一次S
 
 Shared Receive Queue简称SRQ，意为共享接收队列。概念很好理解，就是一种几个QP共享同一个RQ时，我们称其为SRQ。以后我们会了解到，使用RQ的情况要远远小于使用SQ，而每个队列都是要消耗内存资源的。当我们需要使用大量的QP时，可以通过SRQ来节省内存。如下图所示，QP2~QP4一起使用同一个RQ：
 
-![](/images/rdma/\a8a5f4fc99d02ef0899433f855df1107.png)
+![](/images/rdma/a8a5f4fc99d02ef0899433f855df1107.png)
 
 ## CQ
 
@@ -77,15 +77,15 @@ Completion Queue简称CQ，意为完成队列。跟WQ一样，我们先介绍CQ�
 
 而CQ就是承载CQE的容器——一个先进先出的队列。我们把表示WQ和WQE关系的图倒过来画，就得到了CQ和CQE的关系：
 
-![](/images/rdma/\2deecb2c845e2e191cdf661e903c7c25.png)
+![](/images/rdma/2deecb2c845e2e191cdf661e903c7c25.png)
 
 每个CQE都包含某个WQE的完成信息，他们的关系如下图所示：
 
-![](/images/rdma/\9b9fa85dc66186600129a34fbb79a3a8.png)
+![](/images/rdma/9b9fa85dc66186600129a34fbb79a3a8.png)
 
 下面我们把CQ和WQ（QP）放在一起，看一下一次SEND-RECV操作中，软硬件的互动（图中序号顺序不表示实际时序）：
 
-![](/images/rdma/\efb2b8f2bea0b74a9755d431b83765b5.png)
+![](/images/rdma/efb2b8f2bea0b74a9755d431b83765b5.png)
 
 接收端APP以WQE的形式下发一次接收任务。
 
@@ -113,7 +113,7 @@ _用户通过API把WR放到WQ上面就成了WQE，WQE被网卡执行完后生产
 
 WR/WC和WQE/CQE是相同的概念在不同层次的实体，他们都是“任务书”和“任务报告”。于是我们把前文的两个图又加了点内容：
 
-![](/images/rdma/\1a0a202ca9e0987b723a081f38fb1eae.png)
+![](/images/rdma/1a0a202ca9e0987b723a081f38fb1eae.png)
 
 # 总结
 
@@ -131,7 +131,7 @@ CQ:完成队列，CQ中的单元叫CQE；
 
 好了，我们用IB协议[1]3.2.1中的Figure 11这张图总结一下本篇文章的内容：
 
-![](/images/rdma/\3d56f2f2edac68c3d4c18036e06c7c6e.png)
+![](/images/rdma/3d56f2f2edac68c3d4c18036e06c7c6e.png)
 
 用户态的WR，由驱动转化成了WQE填写到了WQ中，WQ可以是负责发送的SQ，也可以是负责接收的RQ。硬件会从各个WQ中取出WQE，并根据WQE中的要求完成发送或者接收任务。任务完成后，会给这个任务生成一个CQE填写到CQ中。驱动会从CQ中取出CQE，并转换成WC返回给用户。
 

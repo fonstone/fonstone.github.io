@@ -7,9 +7,6 @@ tags: ["RDMA", "InfiniBand", "RoCE", "iWARP", "概述"]
 ---
 # RDMA 概述
 
-
----
-
 **目录**
 
 0、前言
@@ -62,8 +59,6 @@ RDMA网卡出包
 ## 0、前言
 
 
-参考：[RDMA技术详解（一）：RDMA概述-CSDN博客](https://blog.csdn.net/qq_21125183/article/details/86522475 "RDMA技术详解（一）：RDMA概述-CSDN博客")
-
 十分推荐文章：《RDMA 架构与实践》 连接：
 
 [RDMA 架构与实践 | Houmin](https://houmin.cc/posts/454a90d3/ "RDMA 架构与实践 | Houmin") 或 <http://t.csdn.cn/lOoTT>
@@ -88,14 +83,14 @@ RDMA网卡出包
 >     * _After the packet is transmitted to the transmission medium, it has to go through the medium to reach the destination. Hence the time taken by the last bit of the packet to reach the destination is called propagation delay._
 > 
 >     * _计算方法：Delayp=Distance/VelocityDelayp=Distance/Velocity，其中 Distance 是传输链路的距离，Velocity 是物理介质传输速度_
-[code] _1
+````r`n_1
 >           2_
-[/code]
+```
 > 
 > | 
-[code] _Velocity =3 X 108 m/s (for air)
+````r`n_Velocity =3 X 108 m/s (for air)
 >           Velocity= 2.1 X 108 m/s (for optical fibre)_
-[/code]  
+```
 >   
 > ---|---  
 >   * _**Queueing delay**_
@@ -113,9 +108,9 @@ RDMA网卡出包
 
 传统的 TCP/IP 网络通信，数据需要通过用户空间发送到远程机器的用户空间，在这个过程中需要经历若干次内存拷贝：
 
-![](/images/rdma/e99e04c8dcd33b4bffb552036dd22996.png)​
+![](/images/rdma/e99e04c8dcd33b4bffb552036dd22996.png)
 
-![在这里插入图片描述](/images/rdma/\d175e58c96f499b257d4a7c78944c553.png)​
+![](/images/rdma/d175e58c96f499b257d4a7c78944c553.png)
 
 [RDMA 架构与实践:https://houmin.cc/posts/454a90d3/](https://houmin.cc/posts/454a90d3/ "RDMA 架构与实践:https://houmin.cc/posts/454a90d3/")
 
@@ -124,7 +119,6 @@ RDMA网卡出包
   * 首先要把数据从应用缓存拷贝到Kernel中的TCP协议栈缓存；
   * 然后再拷贝到驱动层；
   * 最后拷贝到网卡缓存。
-
 
 
 >   * 数据发送方需要讲数据从用户空间 Buffer 复制到内核空间的 Socket Buffer
@@ -140,9 +134,8 @@ RDMA网卡出包
 
 在高速网络条件下，传统的 TPC/IP 网络在**主机侧数据移动和复制操作带来的高开销** 限制了可以在机器之间发送的带宽。为了提高数据传输带宽，人们提出了多种解决方案，这里主要介绍下面两种：
 
-  * TCP Offloading Engine （TOE :<https://blog.csdn.net/bandaoyu/article/details/122868925>）
-  * Remote Direct Memroy Access （RDMA）
 
+  * Remote Direct Memroy Access （RDMA）
 
 
 ### 2 新的网络通信技术（TOE and RDMA）
@@ -151,15 +144,14 @@ RDMA网卡出包
 
 TOE （TCP Offloading Engine），在主机通过网络进行通信的过程中，CPU 需要耗费大量资源进行多层网络协议的数据包处理工作，包括数据复制、协议处理和中断处理。当主机收到网络数据包时，会引发大量的网络 I/O 中断，CPU 需要对 I/O 中断信号进行响应和确认。为了将 CPU 从这些操作中解放出来，人们发明了TOE（TCP/IP Offloading Engine）技术，将上述主机处理器的工作转移到网卡上。TOE 技术需要特定支持 Offloading 的网卡，这种特定网卡能够支持封装多层网络协议的数据包。
 
-![](/images/rdma/44c3cf90037b181e0f73a3f5aa5fb698.png)​
+![](/images/rdma/44c3cf90037b181e0f73a3f5aa5fb698.png)
 
   * TOE 技术将原来在协议栈中进行的IP分片、TCP分段、重组、checksum校验等操作，转移到网卡硬件中进行，降低系统CPU的消耗，提高服务器处理性能。
   * 普通网卡处理每个数据包都要触发一次中断，TOE 网卡则让每个应用程序完成一次完整的数据处理进程后才触发一次中断，显著减轻服务器对中断的响应负担。
   * TOE 网卡在接收数据时，在网卡内进行协议处理，因此，它不必将数据复制到内核空间缓冲区，而是直接复制到用户空间的缓冲区，这种“零拷贝”方式避免了网卡和服务器间的不必要的数据往复拷贝。
 
 
-
-![在这里插入图片描述](/images/rdma/\c61d1ca9d68abe6962cfffae9f989fc6.png)​
+![](/images/rdma/c61d1ca9d68abe6962cfffae9f989fc6.png)
 
 #### 2.2 RDMA （绕过CPU，数据直接‘传’到对端内存）
 
@@ -174,10 +166,9 @@ RDMA 技术有以下几个特点：
   * **Zero Copy** ：每个应用程序都能直接访问集群中的设备的虚拟内存，这意味着应用程序能够直接执行数据传输，在不涉及到网络软件栈的情况下，数据能够被直接发送到缓冲区或者能够直接从缓冲区里接收，而不需要被复制到网络层。
 
 
-
 下面是 RDMA 整体框架架构图，从图中可以看出，RDMA 提供了一系列 Verbs 接口，可在应用程序用户空间，操作RDMA硬件。RDMA绕过内核直接从用户空间访问RDMA 网卡。RNIC(RDMA 网卡，RNIC _（NIC=Network Interface Card ，网络接口卡、网卡，RNIC即 RDMA Network Interface Card）_ 中包括 Cached Page Table Entry，用来将虚拟页面映射到相应的物理页面。
 
-![](/images/rdma/f9a391581712b66872fd0301a908c6f9.png)​
+![](/images/rdma/f9a391581712b66872fd0301a908c6f9.png)
 
 **扩展知识：TOE 和 RDMA的区别、TOE、RDMA、smartNIC 、DPU是什么和区别：**
 
@@ -193,9 +184,9 @@ RDMA 技术有以下几个特点：
 > 
 > 3、TOE网卡和RDMA网卡，都属于SmartNIC。
 > 
-> [更多和更新的内容见： ​​​​​​http://t.csdn.cn/mLK6h](http://t.csdn.cn/mLK6h "更多和更新的内容见： ​​​​​​http://t.csdn.cn/mLK6h")
+> [更多和更新的内容见： http://t.csdn.cn/mLK6h](http://t.csdn.cn/mLK6h "更多和更新的内容见： http://t.csdn.cn/mLK6h")
 > 
-> 连接:[【网络】TOE、RDMA、smartNIC 是什么和区别|DPU_toe协议-CSDN博客](https://blog.csdn.net/bandaoyu/article/details/122868925 "【网络】TOE、RDMA、smartNIC 是什么和区别|DPU_toe协议-CSDN博客")
+
 
 ## 二、RDMA 详解（发展历程和3种技术实现）
 
@@ -211,7 +202,7 @@ DMA(直接内存访问)是一种能力，允许在计算机主板上的设备通
 
 DMA模式：可以同DMA Engine之间通过硬件将数据从Buffer1移动到Buffer2,而不需要操作系统CPU的参与，大大降低了CPU Copy的开销。
 
-![在这里插入图片描述](/images/rdma/\d450a7f4a1db3841846b75dd55453816.png)​
+![](/images/rdma/d450a7f4a1db3841846b75dd55453816.png)
 
 **1.2 RDMA**
 
@@ -219,7 +210,7 @@ RDMA，即 `Remote Direct Memory Access`，是一种绕过**远程** 主机 `OS 
 
 RDMA允许用户态的应用程序直接读取或写入远程内存，不经过操作系统，无内核干预和内存拷贝发生，节省了大量 CPU 资源，**提高了系统吞吐量** 、**降低了系统的网络通信延迟。**
 
-![在这里插入图片描述](/images/rdma/\5383af26eabcfc48ea39499fb60edbbd.png)​
+![](/images/rdma/5383af26eabcfc48ea39499fb60edbbd.png)
 
 RDMA是一种概念，在两个或者多个计算机进行通讯的时候使用DMA， (DMA硬件将数据）从一个主机的内存直接读写到另一个主机的内存，技术实现可以有不同的方式，见下节。
 
@@ -236,11 +227,9 @@ RDMA是一种概念，在两个或者多个计算机进行通讯的时候使用D
   3. iWARP：Internet Wide Area RDMA Protocal，基于 TCP/IP 协议的 RDMA 技术(在现有TCP/IP协议栈基础上实现RDMA技术,在TCP协议上增加一层[DDP](https://link.csdn.net/?target=https%3A%2F%2Fzhuanlan.zhihu.com%2Fp%2F408817872 "DDP"))，由 IETF 标 准定义。iWARP 支持在标准以太网基础设施上使用 RDMA 技术，而不需要交换机支持无损以太网传输，但服务器需要使用支持iWARP 的网卡。与此同时，受 TCP 影响，性能稍差。
 
 
-
-
 **需要注意的是，上述几种协议都需要专门的硬件（网卡）支持。**
 
-![在这里插入图片描述](/images/rdma/\09dfad178d7550c20da6bcf7af0d8e48.png)​
+![](/images/rdma/09dfad178d7550c20da6bcf7af0d8e48.png)
 
 ### 3 三种RDMA 技术实现的关系
 
@@ -258,10 +247,9 @@ RoCE协议存在RoCEv1 （RoCE）和RoCEv2 （RRoCE）两个版本，主要区�
   * RoCEv2是使用以太网TCP/IP协议中UDP+IP作为IB网络层(L3)实现,基于TCP/IP协议的网络层(L3)使得RoCEv2数据包可以被路由。(也可在三层做PFC）
 
 
-
 RoCE可以被认为是IB的“低成本解决方案”，将IB的报文封装成以太网包进行收发。由于RoCE可以使用以太网的交换设备，所以现在在企业中应用也比较多，但是相同场景下相比IB性能要有一些损失。
 
-![](/images/rdma/b3e2c3d4a0b0c940407c933703b8df1a.png)​  RoCEv1把以太网L2以上的全部替换IB协议，RoCEv2把以太网L3以上全部替换IB协议 
+![](/images/rdma/b3e2c3d4a0b0c940407c933703b8df1a.png)  RoCEv1把以太网L2以上的全部替换IB协议，RoCEv2把以太网L3以上全部替换IB协议 
 
 ![](/images/rdma/2d0efa910c08404cab4b986272348e5f.png) 图片来源： <https://zhuanlan.zhihu.com/p/361740115>
 
@@ -288,18 +276,15 @@ iWARP 从以下几个方面降低了主机侧网络负载：
   * 减少应用程序上、下文切换：应用程序可以绕过操作系统，直接在用户空间对 RDMA 网卡下发命令，降低了开销，显著降低了应用程序上、下文切换造成的延迟。
 
 
-
 由于 TCP 协议能够提供流量控制和拥塞管理，因此 iWARP 不需要以太网支持无损传输，仅通过普通以太网交换机和 iWARP 网卡即可实现，因此能够在广域网上应用，具有较好的扩展性。
 
 _RoCE和iWARP对比：_
 
-[【翻译】低延迟选择 RoCE 或 iWARP？_https://blog.csdn.net/bandaoyu/article/details/119001100](https://blog.csdn.net/bandaoyu/article/details/119001100 "【翻译】低延迟选择 RoCE 或 iWARP？_https://blog.csdn.net/bandaoyu/article/details/119001100")
 
 iWARP 和RoCE 都属于IBoE，所以他们可以在以太网上传播，用以太网交换机，IB协议是需要专门的硬件专门的路由器。 
 
-![](/images/rdma/3501a49b1499085ca0470e0ec2a02e9a.png)​《RDMA 在分布式存储中的应用》 [RDMA 在分布式存储中的应用 - 道客巴巴](https://www.doc88.com/p-73847399626394.html "RDMA 在分布式存储中的应用 - 道客巴巴")
+![](/images/rdma/3501a49b1499085ca0470e0ec2a02e9a.png)《RDMA 在分布式存储中的应用》 [RDMA 在分布式存储中的应用 - 道客巴巴](https://www.doc88.com/p-73847399626394.html "RDMA 在分布式存储中的应用 - 道客巴巴")
 
-加深了解：[【RDMA】19. RDMA之iWARP & Soft-iWARP-CSDN博客](https://blog.csdn.net/bandaoyu/article/details/125234243 "【RDMA】19. RDMA之iWARP & Soft-iWARP-CSDN博客")
 
 **小结**
 
@@ -318,8 +303,7 @@ iWARP 和RoCE 都属于IBoE，所以他们可以在以太网上传播，用以�
 3、如果你使用 Infiniband 协议，这个协议作为一个新一代网络协议。它必须依靠专门的硬件才能实现。(专用INC（网卡）—— IB卡+专用交换机===>专用网络）。
 
 如果你使用roce、iwarp,需要专用网卡，但不需要专用网络（RDMA会转成以太网协议，继续用以太网传输）  
-  
-原文链接：https://blog.csdn.net/ljlfather/article/details/102930714
+
 
 #### 
 
@@ -364,18 +348,15 @@ kernel pass、zero copy、硬件IO
   3. 使用cpu资源很少
 
 
-
 **缺点：**
 
-  1. rdma设计本身是为了高性能低延时，这个目标使得**rdma对网络有苛刻的要求，就是网络不丢包，否则性能下降会很大（相关研究：**[《无损网络和PFC（基于优先级的流量控制）|ECN_bandaoyu》https://blog.csdn.net/bandaoyu/article/details/115346857](https://blog.csdn.net/bandaoyu/article/details/115346857 "《无损网络和PFC（基于优先级的流量控制）|ECN_bandaoyu》https://blog.csdn.net/bandaoyu/article/details/115346857")**）** ，这对底层网络硬件提出更大的挑战，同时也**限制了rdma的网络规模** ；相比而言，tcp对于网络丢包抖动的忍受力就大很多。可以认为，如果应用需要追求一定规模内的极限性能，则考虑rdma，如果应用追求的是更好的连接保证和丢包容忍，那tcp更合适。
+
   2. RDMA是通过硬件实现高带宽低时延，对CPU的负载很小。**代价是硬件的使用和管理较为复杂，且应用接口是全新的。** 不能说某个场景不适合使用，只能说收益可能没有那么大。而对时延敏感，还有CPU重负载的应用都会有很好的收益，比如传输量大的TCP应用，交互性的问答式连接。
   3. 其他  
 链接：https://www.jianshu.com/p/22bbb8f029e6
 
 
-
-
-![](/images/rdma/3fb74e8e0614ca99d2366f45cc54ec8e.jpeg)​
+![](/images/rdma/3fb74e8e0614ca99d2366f45cc54ec8e.jpeg)
 
 [两种以太网 RDMA 协议： iWARP 和 RoCE - allcloud - 博客园](https://www.cnblogs.com/allcloud/p/7680277.html "两种以太网 RDMA 协议： iWARP 和 RoCE - allcloud - 博客园")
 
@@ -383,13 +364,13 @@ kernel pass、zero copy、硬件IO
 
 ## 三、组织、标准和厂商
 
-IBTA ​ Infiniband 行业联盟 (InfiniBand Trade Association)
+IBTA  Infiniband 行业联盟 (InfiniBand Trade Association)
 
 成员： Compaq、Dell、HP、IBM、Intel、Microsoft 和 Sun
 
 > CPU 性能的迅猛发展、I/O 系统的性能成为制约服务器性能的主要矛盾，要求构建下一代 I/O 架构的呼声此起彼伏。 Infiniband 行业联盟 也即 [BTA (InfiniBand Trade Association)](https://www.infinibandta.org/ "BTA \(InfiniBand Trade Association\)")，包括了当时的各大厂商 Compaq、Dell、HP、IBM、Intel、Microsoft 和 Sun。
 
-![](/images/rdma/b577162b1a34a478ee7da8feea7f94a0.png)​
+![](/images/rdma/b577162b1a34a478ee7da8feea7f94a0.png)
 
 #### 
 
@@ -402,7 +383,6 @@ RDMAC（RDMA Consortium）和IBTA（InfiniBand Trade Association）主导了RDMA
 
 InfiniBand 架构获得了极好的性能，但要求专门的 InfiniBand 网卡、交换机、路由硬件，成本十分昂贵。而在企业界大量部署的是以太网络，为了复用现有的以太网，同时获得 InfiniBand 强大的性能，IBTA 组织推出了 RoCE（RDMA over Converged Ethernet）。
 
-由于 IB 的丢包处理机制中，任意一个报文的丢失都会造成大量的重传，严重影响数据传输性能。所以ROCE需要**无损以太网络。**(关于无损网络见：[ https://blog.csdn.net/bandaoyu/article/details/115346857](https://blog.csdn.net/bandaoyu/article/details/115346857 " https://blog.csdn.net/bandaoyu/article/details/115346857")）
 
 更多详情见：<http://t.csdn.cn/Iswh4>
 
@@ -426,15 +406,12 @@ OFA开发出了OFED（Open Fabric Enterprise Distribution）协议栈，支持�
 
 下图为OFA给出的OFED的概览：
 
-![](/images/rdma/a02cf6c200da397327a8524303b6475d.jpeg)​
+![](/images/rdma/a02cf6c200da397327a8524303b6475d.jpeg)
 
 除了开源OFED之外，各厂商也会提供定制版本的OFED软件包，比如华为的HW_OFED和Mellanox的MLNX_OFED。这些定制版本基于开源OFED开发，由厂商自己测试和维护，会在开源软件包基础上提供私有的增强特性，并附上自己的配置、测试工具等。
 
 以上三者是包含关系。无论是用户态还是内核态，整个RDMA社区非常活跃，框架几乎每天都在变动，都是平均每两个月一个版本。而OFED会定期从两个社区中取得代码，进行功能和兼容性测试后发布版本，时间跨度较大，以年为单位计。
 
-  
-  
-原文链接：https://blog.csdn.net/bandaoyu/article/details/113125244
 
 > OFED中除了提供向下与RNIC基本的队列消息服务，向上还提供了ULP（Upper Layer Protocols），通过ULPs，上层应用不需要直接到Verbs API对接，而是借助于ULP与应用对接，常见的应用不需要做修改，就可以跑在RDMA传输层上。<\------------------ULP实现socket的api？
 
@@ -446,27 +423,22 @@ Verbs API是RDMA最基本的软件接口，业界的RDMA应用，要么直接基
 
 Verbs api 分为用户态Verbs接口和内核态Verbs接口，分别用于用户态和内核态的RDMA应用。 对于Linux系统来说，由rdma-core和内核中的RDMA子系统（如intel的irdma）提供。
 
-![](/images/rdma/871fdf71a43087a5e6070d7e9eb7ac1c.jpeg)​  
-  
-原文链接：https://blog.csdn.net/bandaoyu/article/details/113125244
+![](/images/rdma/871fdf71a43087a5e6070d7e9eb7ac1c.jpeg)  
+
 
 ## 4\. RDMA基本术语  
   
 4.1 Fabric
-[code] 
+```
     A local-area RDMA network is usually referred to as a fabric. 
-    
-[/code]
-
+```
 所谓Fabric，就是支持RDMA的局域网(LAN)。
 
 ###   
 4.2 CA(Channel Adapter)
-[code] 
+```
     A channel adapter is the hardware component that connects a system to the fabric. 
-    
-[/code]
-
+```
 CA是Channel Adapter(通道适配器)的缩写。那么，CA就是将系统连接到Fabric的硬件组件。 在IBTA中，一个CA就是IB子网中的一个终端结点(End Node)。分为两种类型，一种是HCA, 另一种叫做TCA, 它们合称为xCA。其中， HCA(_HCA：在Infiniband/RoCE规范中，将RDMA网卡称为HCA，全称为Host Channel Adapter_)是支持"verbs"接口的CA, TCA(Target Channel Adapter)可以理解为"weak CA", 不需要像HCA一样支持很多功能。 而在IEEE/IETF中，CA的概念被实体化为RNIC（RDMA Network Interface Card）, iWARP就把一个CA称之为一个RNIC。
 
 **简言之，在IBTA阵营中，CA即HCA或TCA； 而在iWARP阵营中，CA就是RNIC。 总之，无论是HCA、 TCA还是RNIC，它们都是CA, 它们的基本功能本质上都是生产或消费数据包(packet)**
@@ -487,7 +459,6 @@ Network Interface Controller，网络接口控制器，也就是我们常说的*
 
 ##  5\. RDMA 编程
 
-链接：[【RDMA】RDMA编程入门--编辑中_https://blog.csdn.net/bandaoyu/article/details/125681856](https://blog.csdn.net/bandaoyu/article/details/125681856 "【RDMA】RDMA编程入门--编辑中_https://blog.csdn.net/bandaoyu/article/details/125681856")<http://t.csdn.cn/0NgVh>
 
 ### 
 
@@ -504,17 +475,13 @@ Network Interface Controller，网络接口控制器，也就是我们常说的*
   * **重传延时：** 在RDMA网络里会有其他技术确保不丢包，这部分不做分析。
 
 
-
 **无损**
 
-RDMA在无损状态下可以满速率传输，而一旦发生丢包重传，性能会急剧下降(原因见：[【RDMA】无损网络和PFC（基于优先级的流量控制）|ECN_https://blog.csdn.net/bandaoyu/article/details/115346857](https://blog.csdn.net/bandaoyu/article/details/115346857 "【RDMA】无损网络和PFC（基于优先级的流量控制）|ECN_https://blog.csdn.net/bandaoyu/article/details/115346857")《无损网络和PFC（基于优先级的流量控制）|RoCE封装协议|ECN》）。在传统网络模式下，要想实现不丢包最主要的手段就是依赖大缓存，但如前文所说，这又与低延时矛盾了。因此，在RDMA网络环境中，需要实现的是较小Buffer下的不丢包。
 
 在这个限制条件下，RDMA实现无损主要是依赖基于PFC和ECN的网络流控技术。
 
-关于RDMA无损网络：《无损网络和PFC（基于优先级的流量控制）|RoCE封装协议|ECN》[【RDMA】无损网络和PFC（基于优先级的流量控制）|ECN_https://blog.csdn.net/bandaoyu/article/details/115346857](https://blog.csdn.net/bandaoyu/article/details/115346857 "【RDMA】无损网络和PFC（基于优先级的流量控制）|ECN_https://blog.csdn.net/bandaoyu/article/details/115346857")
 
 ## 
-
 
 
 **RMDA 中专有名词和对应缩写：**
@@ -578,7 +545,7 @@ Work Request(WR）：传输请求，WR描述了应用希望传输到Channel对�
 
 RoCEv2的封包格式如下图所示。
 
-![封包格式](/images/rdma/\c6d249a43dc6ad916e34113b9d0b22e1.png)​
+![封包格式](/images/rdma/c6d249a43dc6ad916e34113b9d0b22e1.png)
 
 其中，UDP包头中，目的端口号为4791即代表是RoCEv2帧。
 
@@ -590,7 +557,7 @@ IB Payload即为消息负载。ICRC和FCS分别对应冗余检测和帧校验。
 
 IB BTH格式和字段定义如下图。
 
-![BTH格式和字段定义如下图](/images/rdma/\e080b421b0dd13389d3ec1a5dea0d45f.png)​
+![BTH格式和字段定义如下图](/images/rdma/e080b421b0dd13389d3ec1a5dea0d45f.png)
 
 其中，Opcode用于表明该包的type或IB PayLoad中更高层的协议类型。
 
@@ -620,14 +587,13 @@ PSN是Packet Sequence Number，用来检测丢失或重复的数据包。
 
 用户空间的Application通过OFA Stack(亦或其他组织编写的RDMA stack)提供的verbs编程接口(比如WRITE、READ、SEND等)形成IB payload，接下来便直接进入硬件，由RDMA网卡实现负载的层层封装。
 
-![](/images/rdma/d4a7cca1b6a4380ea1545dddde6af299.jpeg)​
+![](/images/rdma/d4a7cca1b6a4380ea1545dddde6af299.jpeg)
 
 如上图，在传统模式下，两台服务器上的应用之间传输数据，过程是这样的：
 
   * 首先要把数据从应用缓存拷贝到Kernel中的TCP协议栈缓存；
   * 然后再拷贝到驱动层；
   * 最后拷贝到网卡缓存。
-
 
 
 多次内存拷贝需要CPU多次介入，导致处理延时大，达到数十微秒。同时整个过程中CPU过多参与，大量消耗CPU性能，影响正常的数据计算。
@@ -637,7 +603,6 @@ PSN是Packet Sequence Number，用来检测丢失或重复的数据包。
   * 处理延时由数十微秒降低到1微秒内；
   * 整个过程几乎不需要CPU参与，节省性能；
   * 传输带宽更高。
-
 
 
 ### 附录三 图片和摘抄备份
@@ -650,18 +615,17 @@ PSN是Packet Sequence Number，用来检测丢失或重复的数据包。
 
 **传统**
 
-![TCP/IP 流程](/images/rdma/\063050610b559dbfb07139a8c575aee3.png)​
+![TCP/IP 流程](/images/rdma/063050610b559dbfb07139a8c575aee3.png)
 
 **RDMA 方式**
 
-![RDMA](/images/rdma/\eb906c1f1a435a301b77a410b72bdcfe.png)​
+![RDMA](/images/rdma/eb906c1f1a435a301b77a410b72bdcfe.png)
 
 如上图，在传统模式下，两台服务器上的应用之间传输数据，过程是这样的：
 
   * 首先要把数据从应用缓存拷贝到Kernel中的TCP协议栈缓存；
   * 然后再拷贝到驱动层；
   * 最后拷贝到网卡缓存。
-
 
 
 多次内存拷贝需要CPU多次介入，导致处理延时大，达到数十微秒。同时整个过程中CPU过多参与，大量消耗CPU性能，影响正常的数据计算。

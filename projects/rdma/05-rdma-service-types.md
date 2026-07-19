@@ -7,12 +7,6 @@ tags: ["RDMA", "服务类型", "RC", "UC", "UD"]
 ---
 # RDMA 基本服务类型
 
-
----
-
-
-原文：[Savir - https://www.zhihu.com/people/saviour-li/posts](https://www.zhihu.com/people/saviour-li/posts "Savir - https://www.zhihu.com/people/saviour-li/posts")
-
 我们在“3. RDMA基本元素”一文中提到过，**RDMA的基本通信单元是QP** ，而基于QP的通信模型有很多种，我们在RDMA领域称其为“服务类型”。IB协议中通过“可靠”和“连接”两个维度来描述一种服务类型。
 
 ### 可靠

@@ -7,13 +7,6 @@ tags: ["RDMA", "Protection Domain", "PD", "资源隔离"]
 ---
 # RDMA 之 Protection Domain
 
-
----
-
-<https://blog.csdn.net/bandaoyu/article/details/120485737>
-
-原文:[7\. RDMA之Protection Domain - 知乎](https://zhuanlan.zhihu.com/p/159493100 "7. RDMA之Protection Domain - 知乎")
-
 前文我们简单介绍了RDMA中最常见的一些资源，包括各种Queue，以及MR的概念等等。MR用于控制和管理HCA(_HCA：在Infiniband/RoCE规范中，将RDMA网卡称为HCA，全称为Host Channel Adapter)_ 对于本端和远端内存的访问权限，确保HCA只有拿到正确Key之后才能读写用户已经注册了的内存区域。为了更好的保障安全性，IB协议又提出了Protection Domain（PD）的概念，用于保证RDMA资源间的相互隔离，本文就介绍一下PD的概念。
 
 ## PD是什么
@@ -46,7 +39,6 @@ PD全称是Protection Domain，意为"保护域"。在RDMA中，PD像是一个�
   2. Node 0的MR1和QP3属于不同的PD，就算Node 1的QP8拿到了MR1的VA和R_key，硬件也会因为PD不同而拒绝提供服务。
 
 
-
 所以就如本文一开始所说的，PD就像是一个容器，将一些RDMA资源保护起来，彼此隔离，以提高安全性。其实RDMA中不止有QP、MR这些资源，后文即将介绍的Address Handle，Memory Window等也是由PD进行隔离保护的。
 
 ## 如何使用PD
@@ -69,7 +61,6 @@ IB协议中规定：**每个节点都至少要有一个PD，每个QP都必须属
   * 10.2.3 介绍了PD和其他一些RDMA资源的关系，以及PD相关的软件接口。
   * 10.6.3.5 再次强调PD和MR及QP的关系。
   * 11.2.1.5 详细介绍PD的Verbs接口，包括作用、入参、出参和返回值等。
-
 
 
 好了，关于PD的介绍就到这里。下文我会介绍用于UD服务类型的Address Handle的概念。

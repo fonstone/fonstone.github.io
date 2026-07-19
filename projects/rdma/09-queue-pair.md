@@ -7,15 +7,8 @@ tags: ["RDMA", "Queue Pair", "QP", "状态机"]
 ---
 # RDMA 之 Queue Pair
 
-
----
-
-
-原文：[9\. RDMA之Queue Pair - 知乎](https://zhuanlan.zhihu.com/p/195757767 "9. RDMA之Queue Pair - 知乎")
-
 ## Queue Pair
 
-我们曾经在[3\. RDMA基本元素](https://blog.csdn.net/bandaoyu/article/details/112861431 "3. RDMA基本元素")一文中简单的介绍了QP的概念，本文将更深入的讲解一些关于QP的细节。
 
 ## 基本概念回顾
 
@@ -35,7 +28,6 @@ QP有很多种服务类型，包括RC、UD、RD和UC等，所有的源QP和目�
 
   * 硬件上，QP是一段包含着若干个WQE的存储空间，IB网卡会从这段空间中读取WQE的内容，并按照用户的期望去内存中存取数据。至于这个存储空间是内存空间还是IB网卡的片内存储空间，IB协议并未做出限制，每个厂商有各自的实现。
   * 软件上，QP是一个由IB网卡的驱动程序所维护的数据结构，其中包含QP的地址指针以及一些相关的软件属性。
-
 
 
 ## QPC

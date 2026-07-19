@@ -7,9 +7,6 @@ tags: ["RDMA", "Verbs", "编程步骤", "API"]
 ---
 # RDMA 之 Verbs 和编程步骤
 
-
----
-
 **目录**
 
 RDMA编程基础
@@ -61,13 +58,11 @@ IBV_WC_RNR_RETRY_EXC_ERR(13/0xd)
 * * *
 
 
-原文：[access open 知乎_12. RDMA之Verbs_暴躁的巨锤的博客-CSDN博客](https://blog.csdn.net/weixin_33978451/article/details/112398245 "access open 知乎_12. RDMA之Verbs_暴躁的巨锤的博客-CSDN博客")
-
 # RDMA编程基础
 
 [存储大师班 | RDMA简介与编程基础 - 知乎](https://zhuanlan.zhihu.com/p/387549948 "存储大师班 | RDMA简介与编程基础 - 知乎")
 
-[RDMA 和传统网卡编程的区别：​​​​​​NVMe over Fabrics又让RDMA技术火了一把 - rodenpark - 博客园](https://www.cnblogs.com/rodenpark/p/6220474.html "RDMA 和传统网卡编程的区别：​​​​​​NVMe over Fabrics又让RDMA技术火了一把 - rodenpark - 博客园")
+[RDMA 和传统网卡编程的区别：NVMe over Fabrics又让RDMA技术火了一把 - rodenpark - 博客园](https://www.cnblogs.com/rodenpark/p/6220474.html "RDMA 和传统网卡编程的区别：NVMe over Fabrics又让RDMA技术火了一把 - rodenpark - 博客园")
 
 # 什么是Verbs
 
@@ -80,20 +75,20 @@ Verbs直译过来是“动词”的意思，它在RDMA领域中有两种含义�
 举个例子，IB规范要求所有RDMA设备必须支持Create QP的行为（IB 规范11.2.5.1）：
 
 > 描述：   
->  ​ 为指定的设备创建一个QP。   
->  ​ 用户必须指定一组用于初始化QP的属性。   
->  ​ 如果创建QP所需的属性有非法值或者缺失，那么应该返回错误，该QP不会被创建；如果成功， 那么返回该QP的指针和QPN。   
->  ​ ……   
+>   为指定的设备创建一个QP。   
+>   用户必须指定一组用于初始化QP的属性。   
+>   如果创建QP所需的属性有非法值或者缺失，那么应该返回错误，该QP不会被创建；如果成功， 那么返回该QP的指针和QPN。   
+>   ……   
 >  输入：   
->  ​ 设备指针；   
->  ​ SQ关联到的CQ；   
->  ​ RQ关联到的CQ，如果是XRC的INI QP，则可以不携带此参数；   
->  ​ ……   
+>   设备指针；   
+>   SQ关联到的CQ；   
+>   RQ关联到的CQ，如果是XRC的INI QP，则可以不携带此参数；   
+>   ……   
 >  输出：   
->  ​ 新创建的QP的指针；   
->  ​ QP Number;   
->  ​ SQ的最大WR容量。   
->  ​ …… 
+>   新创建的QP的指针；   
+>   QP Number;   
+>   SQ的最大WR容量。   
+>   …… 
 
 可以看出IB规范中的Verbs是对一个概念进行定义，讲的是“需要支持什么，但具体怎么实现我不做规定”。
 
@@ -104,14 +99,14 @@ Verbs直译过来是“动词”的意思，它在RDMA领域中有两种含义�
 以Create QP为例，下文引用自Linux用户态Verbs API的帮助文档（ibv_create_qp(3): create/destroy queue pair）：
 
 > 名称：   
->  ​ ibv_create_qp - create a queue pair (QP)   
+>   ibv_create_qp - create a queue pair (QP)   
 >  概要： 
 > 
 > `#include <infiniband/verbs.h>  
 >  struct ibv_qp ibv_create_qp(struct ibv_pd pd, struct ibv_qp_init_attr *qp_init_attr);`
 
 描述：  
-​ ibv_create_qp()通过一个关联的PD创建一个QP，参数qp_init_attr是一个ibv_qp_init_attr类型的结构体，其定义在<infiniband/verbs.h>中。
+ ibv_create_qp()通过一个关联的PD创建一个QP，参数qp_init_attr是一个ibv_qp_init_attr类型的结构体，其定义在<infiniband/verbs.h>中。
 
 > struct ibv_qp_init_attr {
 > 
@@ -124,9 +119,9 @@ Verbs直译过来是“动词”的意思，它在RDMA领域中有两种含义�
 > 
 > };
 
-​ 函数ibv_create_qp()会更新qp_init_attr->cap struct的内容，返回创建的QP所真正支持的规格……  
+ 函数ibv_create_qp()会更新qp_init_attr->cap struct的内容，返回创建的QP所真正支持的规格……  
 返回值：  
-​ ibv_create_qp()返回被创建的QP的指针，或者在失败时返回NULL。QPN将在返回的指针所指向的结构体中。
+ ibv_create_qp()返回被创建的QP的指针，或者在失败时返回NULL。QPN将在返回的指针所指向的结构体中。
 
 可见Verbs API即是对IB规范中的Verbs定义的具体软件实现。
 
@@ -139,7 +134,6 @@ Verbs的第一种语义直接查阅IB规范的第11章即可，里面做了非�
   * **rdma-core**
 
 
-
 指**开源RDMA用户态软件协议栈** ，（用户空间的驱动）包含用户态框架、各厂商用户态驱动、API帮助手册以及开发自测试工具等。
 
 rdma-core在github上维护，我们的用户态Verbs API实际上就是它实现的。<https://github.com/linux-rdma/rdma-core>
@@ -147,13 +141,11 @@ rdma-core在github上维护，我们的用户态Verbs API实际上就是它实�
   * **kernel RDMA subsystem**
 
 
-
 指**开源的Linux内核中的RDMA子系统** ，（内核空间的驱动）包含RDMA内核框架及各厂商的驱动。
 
 RDMA子系统跟随Linux维护，**是内核的的一部分** 。一方面提供内核态的Verbs API，一方面负责对接用户态的接口。
 
   * **FED**
-
 
 
 全称为OpenFabrics Enterprise Distribution，是一个**开源软件包集合** ，其中包含内核框架和驱动、用户框架和驱动、以及各种中间件、测试工具和API文档。
@@ -164,7 +156,7 @@ RDMA子系统跟随Linux维护，**是内核的的一部分** 。一方面提供
 
 下图为OFA给出的OFED的概览：
 
-![43666da8107d1235b94797d995820b3b.png](/images/rdma/\43666da8107d1235b94797d995820b3b.png)
+![43666da8107d1235b94797d995820b3b.png](/images/rdma/43666da8107d1235b94797d995820b3b.png)
 
 除了开源OFED之外，各厂商也会提供定制版本的OFED软件包，比如华为的HW_OFED和Mellanox的MLNX_OFED。这些定制版本基于开源OFED开发，由厂商自己测试和维护，会在开源软件包基础上提供私有的增强特性，并附上自己的配置、测试工具等。
 
@@ -182,11 +174,10 @@ Verbs API向用户提供了有关RDMA的一切功能，典型的包括：注册M
 
 结合上一部分的内容，我们给出一个OFED的全景：
 
-![e0eba2a4af3d4e6179e178ec3a005632.png](/images/rdma/\e0eba2a4af3d4e6179e178ec3a005632.png)
+![e0eba2a4af3d4e6179e178ec3a005632.png](/images/rdma/e0eba2a4af3d4e6179e178ec3a005632.png)
 
 **广义的Verbs API主要由两大部分组成verbs和rdma_cm：**
 
-**verbs和rdma_cm的区别：**[【RDMA】rdma_cm和verbs的区别_bandaoyu的笔记-CSDN博客](https://blog.csdn.net/bandaoyu/article/details/115668933 "【RDMA】rdma_cm和verbs的区别_bandaoyu的笔记-CSDN博客")
 
 **1、****IB_VERBS**
 
@@ -197,7 +188,6 @@ Verbs API向用户提供了有关RDMA的一切功能，典型的包括：注册M
   * ibv_create_qp() 用于创建QP
   * ibv_post_send() 用于下发Send WR
   * ibv_poll_cq() 用于从CQ中轮询CQE
-
 
 
 **2、RDMA_CM**
@@ -214,7 +204,6 @@ Verbs API向用户提供了有关RDMA的一切功能，典型的包括：注册M
   * rdma_connect()用于确认CM连接。
 
 
-
 2）CM VERBS ----收发数据
 
 RDMA_CM也可以用于~~数据交换~~ (收发数据），相当于在verbs API上又封装了一套数据交换接口。
@@ -223,7 +212,6 @@ RDMA_CM也可以用于~~数据交换~~ (收发数据），相当于在verbs API�
 
   * rdma_post_read()可以直接下发RDMA READ操作的WR，而不像ibv_post_send()，需要在参数中指定操作类型为READ。
   * rdma_post_ud_send()可以直接传入远端QPN，指向远端的AH，本地缓冲区指针等信息触发一次UD SEND操作。
-
 
 
 上述接口虽然方便，但是需要配合CMA管理的链路使用，不能配合Verbs API使用。
@@ -253,17 +241,14 @@ RDMA有三种协议IB/iWARP/RoCE，设计Verbs API通过统一接口，让同一
   * _device_list_ **ibv_get_device_list**()
 
 
-
 用户获取可用的RDMA设备列表，会返回一组可用设备的指针。
 
   * _device_context_ **ibv_open_device**(_device_)
 
 
-
 打开一个可用的RDMA设备，返回其上下文指针（这个指针会在以后用来对这个设备进行各种操作）。
 
   * _device_attr, errno**ibv_query_device**(_device_context*)
-
 
 
 查询一个设备的属性/能力，比如其支持的最大QP，CQ数量等。返回设备的属性结构体指针，以及错误码。
@@ -273,11 +258,7 @@ RDMA有三种协议IB/iWARP/RoCE，设计Verbs API通过统一接口，让同一
   * _pd_ **ibv_alloc_pd**(_device_context_)
 
 
-
-申请PD。该函数会返回一个PD的指针。(PD(内存)保护域--见:[【RDMA】技术详解（三）：理解RDMA Scatter Gather List|聚散表_bandaoyu的笔记-CSDN博客](https://blog.csdn.net/bandaoyu/article/details/112859981 "【RDMA】技术详解（三）：理解RDMA Scatter Gather List|聚散表_bandaoyu的笔记-CSDN博客")）
-
   * _mr_ **ibv_reg_mr**(_pd, addr, length, access_flag_)
-
 
 
 注册MR。用户传入要注册的内存的起始地址和长度，以及这个MR将要从属的PD和它的访问权限（本地读/写，远端读/写等），返回一个MR的指针给用户。
@@ -285,11 +266,9 @@ RDMA有三种协议IB/iWARP/RoCE，设计Verbs API通过统一接口，让同一
   * _cq_**ibv_create_cq**(_device_context, cqe_depth, ..._)
 
 
-
 创建CQ。用户传入CQ的最小深度（驱动实际申请的可能比这个值大），然后该函数返回CQ的指针。
 
   * _qp_ **ibv_create_qp**(_pd, qp_init_attr_)
-
 
 
 创建QP。用户传入PD和一组属性（包括RQ和SQ绑定到的CQ、QP绑定的SRQ、QP的能力、QP类型等），向用户返回QP的指针。（SRQ=shared receive queue）
@@ -297,12 +276,10 @@ RDMA有三种协议IB/iWARP/RoCE，设计Verbs API通过统一接口，让同一
   * _errno_ **ibv_modiy_qp**(_qp, attr, attr_mask_)
 
 
-
 修改QP。用户传入QP的指针，以及表示要修改的属性的掩码和要修改值。修改的内容可以是QP状态、对端QPN(QP的序号)、QP能力、端口号和重传次数等等。如果失败，该函数会返回错误码。  
 Modify QP最重要的作用是让QP在不同的状态间迁移，完成RST-->INIT-->RTR-->RTS的状态机转移后才具备下发Send WR的能力。也可用来将QP切换到ERROR状态。
 
   * _errno_ **ibv_destroy_qp**(_qp_)
-
 
 
 销毁QP。即销毁QP相关的软件资源。其他的资源也都有类似的销毁接口。
@@ -312,7 +289,6 @@ Modify QP最重要的作用是让QP在不同的状态间迁移，完成RST-->INI
   * _event_info, errno_ **ibv_get_async_event**(_device_context_)
 
 
-
 从事件队列中获取一个异步事件，返回异步事件的信息（事件来源，事件类型等）以及错误码。
 
 **连接管理**
@@ -320,11 +296,9 @@ Modify QP最重要的作用是让QP在不同的状态间迁移，完成RST-->INI
   * rdma_xxx()
 
 
-
 用于CM建链，不在本文展开讲。
 
   * ...
-
 
 
 **2）数据面：**
@@ -332,7 +306,6 @@ Modify QP最重要的作用是让QP在不同的状态间迁移，完成RST-->INI
 **下发WR**
 
   * _bad_wr, errno_ **ibv_post_send**(_qp, wr_)
-
 
 
 向一个QP下发一个Send WR，参数 _wr_ 是一个结构体，包含了WR的所有信息。包括wr_id、sge数量、操作码（SEND/WRITE/READ等以及更细分的类型）。
@@ -346,7 +319,6 @@ WR经由驱动进一步处理后，会转化成WQE下发给硬件。
   * _bad_wr, errno_**ibv_post_recv**(_qp, wr_)
 
 
-
 同ibv_post_send，只不过是专门用来下发RECV操作WR的接口。
 
 **获取WC**
@@ -354,16 +326,12 @@ WR经由驱动进一步处理后，会转化成WQE下发给硬件。
   * _num, wc_**ibv_poll_cq**(_cq, max_num_)
 
 
-
 从完成队列CQ中轮询CQE，用户需要提前准备好内存来存放WC，并传入可以接收多少个WC。该接口会返回一组WC结构体（其内容包括wr_id，状态，操作码，QPN等信息）以及WC的数量。
 
 # 使用Verbs API编写RDMA应用程序
 
-(RDMA通信流程;[RDMA简要介绍_baidu_14946515的博客-CSDN博客](https://blog.csdn.net/baidu_14946515/article/details/84201240 "RDMA简要介绍_baidu_14946515的博客-CSDN博客"))
 
   * ### **查看接口定义**
-
-
 
 
 **内核态**
@@ -374,7 +342,7 @@ WR经由驱动进一步处理后，会转化成WQE下发给硬件。
 
 比如ib_post_send()接口：
 
-![bcd542df2b9ba4968da751fa7e71fa47.png](/images/rdma/\bcd542df2b9ba4968da751fa7e71fa47.png)
+![bcd542df2b9ba4968da751fa7e71fa47.png](/images/rdma/bcd542df2b9ba4968da751fa7e71fa47.png)
 
 函数注释中有明确介绍该函数的作用，输入、输出参数以及返回值。
 
@@ -383,7 +351,6 @@ WR经由驱动进一步处理后，会转化成WQE下发给硬件。
 有多种方法查阅用户态的Verbs API：
 
   * **在线查阅最新man page**
-
 
 
 用户态的Verbs API手册跟代码在一个仓库维护，手册地址：
@@ -403,17 +370,13 @@ https://linux.die.net/man/3/ibv_post_send
   * **查阅系统man page**
 
 
-
-
 如果你使用的商用OS安装了rdma-core或者libibverbs库，那么可以直接用man命令查询接口：
-[code] 
+```
     man ibv_post_send
-[/code]
-
-![e0d2fb93b12caf6996274de5b19dd75b.png](/images/rdma/\e0d2fb93b12caf6996274de5b19dd75b.png)
+```
+![e0d2fb93b12caf6996274de5b19dd75b.png](/images/rdma/e0d2fb93b12caf6996274de5b19dd75b.png)
 
   * **查询Mellanox的编程手册**
-
 
 
 《RDMA Aware Networks Programming User Manual Rev 1.7》，最新版是2015年更新的。该手册写的比较详尽，并且附有示例程序，但是可能与最新的接口有一些差异。
@@ -421,14 +384,13 @@ https://linux.die.net/man/3/ibv_post_send
 ### **包含头文件**
 
 按需包含以下头文件：
-[code] 
+```
     #include <infiniband/verbs.h> // IB_VERBS 基础头文件
     
     #include <rdma/rdma_cma.h> // RDMA_CM CMA 头文件 用于CM建链
     
     #include <rdma/rdma_verbs.h> // RDMA_CM VERBS 头文件 用于使用基于CM的Verbs接口
-[/code]
-
+```
 ### 编写应用
 
 下面附上一个简单的RDMA程序的大致接口调用流程，Client端的程序会发送一个SEND请求给Server端的程序，图中的接口上文中都有简单介绍。
@@ -439,7 +401,7 @@ https://linux.die.net/man/3/ibv_post_send
 
 （假设A节点的某个QP要跟B节点的某个QP交换信息，除了要知道B节点的**QP序号——QPN** 之外，还需要GID--（相当于TCP中的IP），在传统TCP-IP协议栈中，使用了家喻户晓的IP地址来标识网络层的每个节点。而IB协议中的这个标识被称为**GID（Global Identifier，全局ID）**[8\. RDMA之Address Handle - 知乎](https://zhuanlan.zhihu.com/p/163552044 "8. RDMA之Address Handle - 知乎")）
 
-![3bba5d9bae953ee8ca3519516cbfdec5.png](/images/rdma/\3bba5d9bae953ee8ca3519516cbfdec5.png)
+![3bba5d9bae953ee8ca3519516cbfdec5.png](/images/rdma/3bba5d9bae953ee8ca3519516cbfdec5.png)
 
 ### 编译 & 执行
 
@@ -463,13 +425,11 @@ rdma-core的源码目录下，为libibverbs和librdmacm都提供了简单的示�
   * xsrq_pingpong.c 基于XRC服务类型双端数据收发示例
 
 
-
 ### librdmacm
 
 位于rdma-core/librdmacm/examples/目录下：
 
   * rdma_client/server.c 基础示例，通过CM建链并使用CM VERBS进行数据收发。
-
 
 
 该目录剩下的程序就没有研究了。
@@ -489,8 +449,7 @@ rdma-core的源码目录下，为libibverbs和librdmacm都提供了简单的示�
 RoCE可以在以太网上运行RDMA协议，时延比普通以太网可以提升30%以上，也可以支持双协议栈，同时用TCP和RDMA，编程过程类似IB。
 
 有两张建链方式，一种是通过RDMA_CM建链，一种是先通过TCP建链，通过tcp通道交换双方的设备信息，QP信息，简历RDMA链路，然后关闭tcp链路，第二种更常用。  
-  
-原文：https://blog.csdn.net/fellow0305/article/details/52900749
+
 
 **RDMA编程流程**
 
@@ -557,7 +516,7 @@ ibv_poll_cq（）用于查询cq队列是否有事件产生，如果有调用recv
 5.清空CQ
 
 注意，可能会触发额外事件，而无需在CQ中具有相应的完成条目。如果将完成条目添加到步骤4和步骤5之间的CQ，然后在步骤5中清空（轮询）CQ，则会发生这种情况。
-[code] 
+```
     cq = ibv_create_cq(ctx, 1, ev_ctx, channel, 0);
     if (!cq)
     {
@@ -654,14 +613,11 @@ ibv_poll_cq（）用于查询cq队列是否有事件产生，如果有调用recv
     }
     /* Ack the event */
     ibv_ack_cq_events(ev_cq, 1);
-[/code]
-
+```
 ### **ibv_poll_cq()**
-[code] 
+```
     intibv_poll_cq(structibv_cq *cq,intnum_entries,structibv_wc *wc);
-    
-[/code]
-
+```
 用于从 Completion Queue 中查询已完成的 Work Request。
 
 所有的 Receive Request、signaled Send Request 和出错的 Send Request 在完成之后都会产生一个 Work Completion，Work Completion 就被放入完成队列（Completion Queue）中。
@@ -669,7 +625,7 @@ ibv_poll_cq（）用于查询cq队列是否有事件产生，如果有调用recv
 完成队列是 FIFO 的，ibv_poll_cq() 检查是否有 Work Completion 在完成队列中，如果是那么就将队首弹出，并返回那个 Work Completion 到 *wc 中。
 
 ibv_wc 的结构如下，描述了一个 Work Completion 的情况。
-[code] 
+```
     structibv_wc {
     uint64_twr_id;
     enumibv_wc_status status;
@@ -685,9 +641,7 @@ ibv_wc 的结构如下，描述了一个 Work Completion 的情况。
     uint8_tsl;
     uint8_tdlid_path_bits;
     };
-    
-[/code]
-
+```
   * wr_id 由产生 Work Completion 的 Request 决定
 
   * status 是操作的状态，通常为 IBV_WC_SUCCESS 表示 Work Completion 成功完成，其他还有一些错误信息
@@ -695,8 +649,6 @@ ibv_wc 的结构如下，描述了一个 Work Completion 的情况。
   * opcode 表示当前的 Work Competition 是怎么产生的
 
   * bute_len 表示传输的字节数
-
-
 
 
 参数说明：
@@ -710,11 +662,9 @@ num_entries| in| 表示最大从完成队列中读取多少个 Work Completion
 函数的返回值：成功则返回读取到的 Work Completion 数量，为 0 表示未读取到 Work Completion，可认为是完成队列为空，为负值则表示读取出错。
 
 ### ibv_req_notify_cq()
-[code] 
+```
     intibv_req_notify_cq(structibv_cq *cq,intsolicited_only);
-    
-[/code]
-
+```
 用于在完成队列中请求一个完成通知。
 
 调用 ibv_req_notify_cq() 之后，下一个被加到 CQ 中的请求（发送请求或者接收请求）会被加上通知标记，当请求完成产生一个 Work Completion 之后就会产生通知，完成通知将被 ibv_get_cq_event() 函数读取出来。
@@ -724,14 +674,11 @@ num_entries| in| 表示最大从完成队列中读取多少个 Work Completion
   * solicited_only 为 0 时表示无论下一个加入 CQ 的请求是哪种类型的都会产生通知，否则只有 Solicited 或者出错的 Work Completion 才会产生通知
 
 
-
 ### ibv_get_cq_event()
-[code] 
+```
     intibv_get_cq_event(structibv_comp_channel *channel,
     structibv_cq **cq,void**cq_context);
-    
-[/code]
-
+```
 用于等待某一 channel 中的下一个通知产生。
 
 ibv_get_cq_event() 默认是一个阻塞函数，调用之后会将当前程序阻塞在这里，直到下一个通知事件产生。
@@ -743,13 +690,11 @@ ibv_get_cq_event() 默认是一个阻塞函数，调用之后会将当前程序�
   * Stage I：准备阶段
 
 
-
 创建一个 CQ，并且将它与一个 Completion Event Channel 相关联；
 
 用 ibv_req_notify_cq() 对一个 Completion Work 调用通知请求；
 
   * Stage II：运行中
-
 
 
 等待事件产生；

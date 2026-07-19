@@ -487,5 +487,5 @@ CM建链通过事件驱动模型简化了连接管理，支持IB、RoCE和iWARP�
 1. IB Specification Vol 1, Chapter 12: Communication Management
 2. librdmacm API文档: man rdma_cm (7)
 3. RDMA Aware Networks Programming User Manual Rev 1.7
-4. [【RDMA】rdma_cm和verbs的区别](https://blog.csdn.net/bandaoyu/article/details/115668933)
+
 5. perftest工具: https://github.com/linux-rdma/perftest

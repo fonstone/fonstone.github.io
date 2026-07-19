@@ -7,10 +7,6 @@ tags: ["RDMA", "Memory Region", "内存注册", "MR"]
 ---
 # RDMA 之 Memory Region
 
-
----
-
-
 ### Memory Region
 
 摘自： [RDMA性能优化经验浅谈（一）https://zhuanlan.zhihu.com/p/522332998](https://zhuanlan.zhihu.com/p/522332998 "RDMA性能优化经验浅谈（一）https://zhuanlan.zhihu.com/p/522332998")
@@ -25,7 +21,6 @@ MTT和MPT被存储在内存中，但是RNIC的SRAM中会进行缓存。当RNIC�
 
 Memory Region的注册是一个耗时的操作，但大部分情况下，我们都只需要在最开始的时候做一次或者多次。现在也有不需要注册MR基于on-demand paging的方式来访问的，比如AWS的EFA协议。但今天先不展开这块的内容，因为这块更多是Unified Memory这个话题下的，之后我可能会把这个和GPU的UVM放在一起介绍下，因为他们的核心原理其实是一样的。
 
-原文：[6\. RDMA之Memory Region--https://zhuanlan.zhihu.com/p/156975042](https://zhuanlan.zhihu.com/p/156975042 "6. RDMA之Memory Region--https://zhuanlan.zhihu.com/p/156975042")
 
 我们假设一种场景，同时也顺便温习一下RDMA WRITE操作的流程：
 
@@ -63,7 +58,6 @@ MR全称为Memory Region，指的是由RDMA软件层在内存中规划出的一�
   * 本端HCA查询VA->PA映射表，得知待发数据的物理地址，然后从内存中拿到数据，组装数据包并发送出去。
   * 对端HCA收到了数据包，从中解析出了目的VA。
   * 对端HCA通过存储在本地内存中的VA->PA映射表，查到真实的物理地址，核对权限无误后，将数据存放到内存中。
-
 
 
 再次强调一下，对于右侧节点来说，**无论是地址转换还是写入内存，完全不用其CPU的参与** 。

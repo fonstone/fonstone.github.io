@@ -8,22 +8,17 @@ tags: ["RDMA", "编程基础", "QP", "CQ", "MR"]
 # RDMA 基本元素和编程基础
 
 
----
-
-
-# 概述
 
 Infiniband 网络接口卡称为**a (host) channel adapters (HCAs)** （ _HCA：在Infiniband/RoCE规范中，将RDMA网卡称为HCA，全称为Host Channel Adapter（主机）通道适配器 (HCA_)）。
 
 HCA 使用 工作队列 相互通信。队列的三种类型是：(1)发送队列(SQ)，(2)接收队列(RQ)，和(3)完成队列(CQ)。 SQ 和 RQ 始终作为队列对 (QP) 进行分组和管理。
 
-![qp](/images/rdma/\ed91ac1a892807ed67caa2d23df4b498.png)
+![qp](/images/rdma/ed91ac1a892807ed67caa2d23df4b498.png)
 
 [Introduction to Programming Infiniband RDMA | Better Tomorrow with Computer Science](https://insujang.github.io/2020-02-09/introduction-to-programming-infiniband/ "Introduction to Programming Infiniband RDMA | Better Tomorrow with Computer Science")
 
 #  详解
 
-原文：[Savir - https://www.zhihu.com/people/saviour-li/posts](https://www.zhihu.com/people/saviour-li/posts "Savir - https://www.zhihu.com/people/saviour-li/posts")
 
 RDMA技术中经常使用缩略语，很容易让刚接触的人一头雾水，本篇的目的是讲解RDMA中最基本的元素及其含义。
 
@@ -98,7 +93,6 @@ Completion Queue简称CQ，意为完成队列。跟WQ一样，我们先介绍CQ�
   7. 接收端APP取得任务完成信息。
   8. 发送端网卡收到ACK后，生成CQE，放置到CQ中。
   9. 接收端APP取得任务完成信息。
-
 
 
 至此，通过WQ和CQ这两种媒介，两端软硬件共同完成了一次收发过程。

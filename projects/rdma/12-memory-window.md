@@ -7,17 +7,11 @@ tags: ["RDMA", "Memory Window", "MW", "远程访问"]
 ---
 # RDMA 之 Memory Window
 
-
----
-
-
-原文：[14\. RDMA之Memory Window - 知乎](https://zhuanlan.zhihu.com/p/353590347 "14. RDMA之Memory Window - 知乎")
-
 **本文是[“RDMA杂谈”](https://www.zhihu.com/column/c_1231181516811390976 "“RDMA杂谈”")专栏文章的第14篇，欢迎转载，转载请注明出处。**
 
 我们在[Memory Region](https://zhuanlan.zhihu.com/p/156975042 "Memory Region")一文中介绍过Memory Region，它是一片由用户注册的特殊的内存区域：一方面其中的内容不会被换页到硬盘中，另一方面RDMA网卡中记录了它的地址转换关系，使得硬件拿到用户指定在WR中的虚拟地址之后找到对应的物理地址。
 
-本文我们来讲解Memory Window的概念，它是一种基于Memory Region的、更灵活的内存管理单元。除了MW的概念之外，本文也会更详细的介绍一些RDMA领域的内存相关概念，比如L_Key/R_Key等。本文配合[Memory Region](https://zhuanlan.zhihu.com/p/156975042 "Memory Region")阅读效果更佳，建议先读者温习一下。
+本文我们来讲解Memory Window的概念，它是一种基于Memory Region的、更灵活的内存管理单元。除了MW的概念之外，本文也会更详细的介绍一些RDMA领域的内存相关概念，比如L_Key/R_Key等。> 建议先阅读 Memory Region 再继续。
 
 ### **Memory Window是什么**
 
@@ -143,13 +137,11 @@ Bind有两种方式，一种是调用Post Send接口下发Bind MW WR，一种是
   * Post Send Bind MW WR
 
 
-
 前文我们讲过，相比于MR，MW最大的优势就是可以从数据路径快速的配置权限。Post Send Bind MW WR操作，指的就是用户通过post send接口（比如ibv_post_send()）下发一个WR到SQ中，这个WR的操作类型（比如SEND/RDMA WRITE/RDMA READ）被指定为BIND MW，此外WR中还携带有权限和要绑定到的MR的范围信息。与其他WR不同，下发Bind MW的WR之后，硬件并不会发送任何数据包，而是将MW绑定到了指定MR上。
 
 这种方式仅适用于后文介绍的Type 2的MW。
 
   * Bind MW
-
 
 
 虽然这是一个独立的接口，但是实际是在Post Send Bind MW WR外面又封装了一层。用户传入MW绑定的相关信息，包括权限及要绑定的MR的信息，驱动程序负责组装和下发WR到硬件中。该接口成功后，会将新生成的R_Key返回给用户。
@@ -175,7 +167,6 @@ Invalidate操作只能用于下文介绍的Type 2的MW。
   * Local Invalidate
 
 
-
 本地无效操作。上层用户如果想在不回收MW资源的情况下，收回某个远端的用户的R_Key的权限。那么就可以下发一个Local Invalidate操作到SQ中，硬件收到之后会对相应的MR的配置进行修改。成功执行之后，如果持有这个R_Key的远端用户想要对MW进行RDMA操作，将会被本地的硬件拒绝并返回错误。
 
 因为是本地操作，所以硬件收到这个WR之后也不会发送消息到链路上。
@@ -185,7 +176,6 @@ Invalidate操作只能用于下文介绍的Type 2的MW。
 Local Invalidate操作的软硬件交互
 
   * Remote Invalidate
-
 
 
 远端无效操作。当一个远端用户不再使用一个R_Key之后，可以主动发送消息，让本端回收这个R_Key。远端用户下发一个带有此操作码的WR到SQ中，其硬件收到后，将会组装一个报文并发送到本端。本端硬件收到远端的Remote Invalidate操作之后，将会把对应的R_Key置为不可用状态。同Local Invalidate一样，此后对端将无法使用这个R_Key对对应的MW进行RDMA操作。

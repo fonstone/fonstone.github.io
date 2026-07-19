@@ -7,12 +7,6 @@ tags: ["RDMA", "RoCE", "Soft-RoCE", "无损网络", "PFC"]
 ---
 # RDMA 之 RoCE & Soft-RoCE
 
-
----
-
-
-原文：[15\. RDMA之RoCE & Soft-RoCE - 知乎](https://zhuanlan.zhihu.com/p/361740115 "15. RDMA之RoCE  & Soft-RoCE - 知乎")
-
 **本文欢迎转载，转载请注明出处**
 
 阅读本文前建议温习“[RDMA概述](https://zhuanlan.zhihu.com/p/138874738 "RDMA概述")”一文，了解下RDMA领域的基本概念。
@@ -82,17 +76,14 @@ RoCE本身确实可以由软件实现，也就是本节即将介绍的Soft-RoCE�
   * 降低RoCE部署成本
 
 
-
 Soft-RoCE可以使不具备RoCE能力的硬件和支持RoCE的硬件间进行基于IB语义的交流，这样可以免于替换网络中的一些非关键节点的旧型号网卡。
 
   * 相比TCP提升性能
 
 
-
 虽然软件实现IB传输层带来了一定的开销，但是相比基于Socket-TCP/IP的传统通信方式，Soft-RoCE因为减少了系统调用（只在软件通知硬件下发了新SQ WQE时才会使用系统调用），发送端的零拷贝以及接收端的只需要单次拷贝等原因，仍然带来了性能上的提升。
 
   * 便于开发和测试RDMA程序
-
 
 
 有了Soft-RoCE，我们基于Verbs API编写的程序，就可以不依赖于硬件执行起来，也可以很方便的跑在虚拟机里。
@@ -150,11 +141,10 @@ VMware Workstation 15 Pro 15.5.7
 ![](/images/rdma/e270c2c1fd1aa21d820ea36185825982.jpeg)
 
 2）建议安装VMware Tools，这样在虚拟机和宿主机之间复制粘贴文字/文件会比较方便。我的Ubuntu版本建议通过以下方式安装：
-[code] 
+```
     sudo apt-get install open-vm-tools
     sudo apt-get install open-vm-tools-desktop
-[/code]
-
+```
 出现重新安装VMware Tools的选项就说明已经装好了，安装完了之后可以试试复制粘贴功能是否正常。
 
 ![](/images/rdma/0f18b6f1c0d11f4e8396455fdf68bb19.jpeg)
@@ -166,22 +156,20 @@ VMware Workstation 15 Pro 15.5.7
 如果读者使用的虚拟机操作系统与我不同，那么请按照如下步骤确认：
 
 #### 确认当前内核是否支持RXE
-[code] 
+```
     cat /boot/config-$(uname -r) | grep RXE
-[/code]
-
+```
 如果CONFIG_RDMA_RXE的值为y或者m，表示当前的操作系统可以使用RXE。
 
 ![](/images/rdma/2efa485962fcb8faa6d80f7b8e924e85.png)
 
 如果该选项值为n或者搜索不到RXE，那么很遗憾你可能需要重新编译内核。编译内核时需要使能以下几个选项：
-[code] 
+```
     CONFIG_INET
     CONFIG_PCI
     CONFIG_INFINIBAND
     CONFIG_INFINIBAND_VIRT_DMA
-[/code]
-
+```
 至于具体的重新编译内核的方法，读者可以先自行查找，以后我也会在另外的文章详细的讲解。
 
 #### 安装用户态动态链接库
@@ -189,10 +177,9 @@ VMware Workstation 15 Pro 15.5.7
 我们在“[RDMA概述](https://zhuanlan.zhihu.com/p/138874738 "RDMA概述")”一文中提到过，用户态库指的就是rdma-core。但是在Ubuntu等操作系统中它可能不是一个而是多个软件包组成的。我使用的Ubuntu 20.04 LTS版本使用默认的安装参数的情况下，已经装有这几个软件包。
 
 如果版本跟我不一致的话，那么可以尝试安装一下以下几个软件包：
-[code] 
+```
     sudo apt-get install libibverbs1 ibverbs-utils librdmacm1 libibumad3 ibverbs-providers rdma-core
-[/code]
-
+```
 这几个软件包的作用如下：
 
 软件包名| 主要功能  
@@ -205,10 +192,9 @@ ibverbs-providers| ibverbs各厂商用户态驱动（包括RXE）
 rdma-core| 文档及用户态配置文件  
   
 如果读者想看一下软件包里都包括哪些内容，那么可以使用dpkg命令查看包内容，比如：
-[code] 
+```
     dpkg -L libibverbs1
-[/code]
-
+```
 可以看到版本是28.0（截至3月28日，rdma-core的最新版本是v34.0）：
 
 ![](/images/rdma/fa860906b2cbdee432ba0df9a612f642.jpeg)
@@ -226,17 +212,15 @@ rdma-core| 文档及用户态配置文件
 #### iproute2
 
 iproute2是用来替代net-tools软件包的，是一组开源的网络工具集合，比如用更强大ip命令替换了以前常用的ifconfig。我们需要其中的rdma工具来对RXE进行配置。一般的操作系统都已经包含了，安装也很简单：
-[code] 
+```
     sudo apt-get install iproute2
-[/code]
-
+```
 #### perftest
 
 perftest是一个基于Verbs接口开发的开源RDMA性能测试工具，可以对支持RDMA技术的节点进行带宽和时延测试。相比于rdma-core自带的示例程序 ，功能更加强大，当然也更复杂。使用如下命令安装：
-[code] 
+```
     sudo apt-get install perftest
-[/code]
-
+```
 #### 克隆虚拟机
 
 因为我们要两个节点，一个节点已经准备完毕了，下面我们利用VMware WorkStation的虚拟机克隆功能直接复制一个相同的虚拟机出来：
@@ -262,10 +246,9 @@ perftest是一个基于Verbs接口开发的开源RDMA性能测试工具，可以
 ![](/images/rdma/9bfe0d21fdd8acadb1dc534523fe8fa9.jpeg)
 
 然后查看Windows宿主机的虚拟网卡的IP地址：
-[code] 
+```
     ipconfig /all
-[/code]
-
+```
 ![](/images/rdma/88c40fb4c6433c94d7435562e5414ff5.jpeg)
 
 可见这三个网卡都处于192.168.217.x网段。
@@ -279,22 +262,19 @@ perftest是一个基于Verbs接口开发的开源RDMA性能测试工具，可以
 #### 配置RXE网卡
 
 首先我们需要加载内核驱动，modprobe会自动加载依赖的其他驱动。
-[code] 
+```
     modprobe rdma_rxe
-[/code]
-
+```
 然后进行用户态配置：
-[code] 
+```
     sudo rdma link add rxe_0 type rxe netdev ens33
-[/code]
-
+```
 其中rxe_0是你希望的RDMA的设备名，可任意取名。ens33为Soft-RoCE设备所绑定的网络设备名，也就是我们刚才ifconfig看到的网卡名，每个虚拟机可能都不一样。
 
 接着我们用rdma工具查看是否添加成功：
-[code] 
+```
     rdma link
-[/code]
-
+```
 效果如下：
 
 ![](/images/rdma/361b86516c3a195d923b271fc2e02bc8.png)
@@ -314,15 +294,13 @@ perftest是一个基于Verbs接口开发的开源RDMA性能测试工具，可以
 #### 执行perftest测试
 
 我们在两端分别执行：
-[code] 
+```
     ib_send_bw -d rxe_0
-[/code]
-
+```
 以及：
-[code] 
+```
     ib_send_bw -d rxe_0 <server_ip>
-[/code]
-
+```
 ib_send_bw是用来测试SEND操作的带宽的程序（infiniband_send _bandwidth），其中_ <server_ip>表示对端的IP，对于我的环境来说，本端是192.168.217.130，那么对端就是192.168.217.128。
 
 两端的结果如下，Server端：

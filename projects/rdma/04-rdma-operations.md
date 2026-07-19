@@ -7,9 +7,6 @@ tags: ["RDMA", "WRITE", "READ", "SEND", "操作类型"]
 ---
 # RDMA 操作类型——WRITE / READ
 
-
----
-
 **目录**
 
 SEND & RECV
@@ -25,8 +22,6 @@ READ
 * * *
 
 
-原文：[Savir - 知乎](https://www.zhihu.com/people/saviour-li/posts "Savir - 知乎")
-
 前面几篇涉及RDMA的通信流程时一直在讲SEND-RECV，然而它其实称不上是“**RDMA** ”，只是一种加入了0拷贝和协议栈卸载的传统收发模型的“升级版”，这种操作类型没有完全发挥RDMA技术全部实力，常用于两端交换控制信息等场景。当涉及大量数据的收发时，更多使用的是两种RDMA独有的操作：WRITE和READ。
 
 我们先来复习下双端操作——SEND和RECV，然后再对比介绍单端操作——WRITE和READ。
@@ -38,7 +33,6 @@ SEND和RECV是两种不同的操作类型，但是因为如果一端进行SEND�
 为什么称之为“双端操作”？因为**完成一次通信过程需要两端CPU的参与** ，并且收端需要提前显式的下发WQE。下图是一次SEND-RECV操作的过程示意图。原图来自于[1]，我做了一些修改。
 
 ![](/images/rdma/a3a0607c108e765b250e349cffcef696.png)
-
 
 
 ![](/images/rdma/010e22a6f38eb98015064108a3a74820.png)
@@ -71,7 +65,6 @@ WRITE/READ操作中的目的地址和钥匙是如何获取的呢？通常可以�
   8. 请求端APP取得任务完成信息。
 
 
-
 ## READ
 
 顾名思义，READ跟WRITE是相反的过程，是本端主动读取远端内存的行为。同WRITE一样，远端CPU不需要参与，也不感知数据在内存中被读取的过程。
@@ -90,7 +83,6 @@ WRITE/READ操作中的目的地址和钥匙是如何获取的呢？通常可以�
   6. 请求端硬件收到数据包，解析提取出数据后放到READ WQE指定的内存区域中。
   7. 请求端网卡生成CQE，放置到CQ中。
   8. 请求端APP取得任务完成信息。
-
 
 
 ## 总结
@@ -118,7 +110,7 @@ RDMA标准定义上述几种操作的时候使用的单词是非常贴切的，�
 一些代码可能有指导意义：
 
 /* PEER 1 */
-[code] 
+```
     /* PEER 1 */
      
     const size_t SIZE = 1024;
@@ -138,11 +130,9 @@ RDMA标准定义上述几种操作的时候使用的单词是非常贴切的，�
     my_addr = (uint64_t)mr->addr;
      
     /* exchange my_key and my_addr with peer 2 */
-    
-[/code]
-
+```
 /* PEER 2 */ 
-[code] 
+```
     /* PEER 2 */
      
     const size_t SIZE = 1024;
@@ -178,8 +168,7 @@ RDMA标准定义上述几种操作的时候使用的单词是非常贴切的，�
     wr.wr.rdma.rkey = peer_key;
      
     ibv_post_send(qp, &wr, &bad_wr);
-[/code]
-
+```
 PEER 1 的 ibv_reg_mr() 的最后一个参数 IBV_ACCESS_REMOTE_WRITE 指定我们希望对PEER 2 具有对位于缓冲区的内存块的写访问权限。
 
 在实践中使用它更复杂。本文附带的示例代码连接两台主机，交换内存区域密钥keys、读取或写入远程内存，然后断开连接。顺序如下： 
@@ -189,7 +178,6 @@ PEER 1 的 ibv_reg_mr() 的最后一个参数 IBV_ACCESS_REMOTE_WRITE 指定我�
   3. 使用之前帖子中描述的发送/接收模型在对等点之间交换内存区域密钥keys。
   4. 后读/写操作。
   5. 断开。
-
 
 
 连接的每一端都有两个线程：处理连接事件的主线程和轮询完成队列（CQ）的线程。为了避免死锁和竞争条件，我们安排了我们的操作，以便一次只有一个线程发布工作请求。为了详细说明上面的顺序，在建立连接后，
@@ -204,7 +192,6 @@ PEER 1 的 ibv_reg_mr() 的最后一个参数 IBV_ACCESS_REMOTE_WRITE 指定我�
   6. 断开。
 
 
-
 第一步发生在 RDMA 连接事件处理程序线程的上下文中，但第二步到第六步发生在verbs CQ 轮询线程的上下文中。（verbs =verbs api =verbs 库）
 
 服务端的操作顺序类似：
@@ -217,7 +204,6 @@ PEER 1 的 ibv_reg_mr() 的最后一个参数 IBV_ACCESS_REMOTE_WRITE 指定我�
   6. 断开。
 
 
-
 这里所有六个步骤都发生在verbs CQ 轮询线程的上下文中。等待 MSG_DONE 是必要的，否则我们可能会在对等方（peer）的 RDMA 操作完成之前关闭连接。在(服务端）发送 MSG_DONE 之前，我们不必等待 RDMA 操作 完成——InfiniBand 规范要求 requests 将按照它们发布的顺序~~启动~~ 处理。这意味着在 RDMA 操作完成之前，对等方（peer）不会收到 MSG_DONE。
 
 为简洁起见（并说明它们几乎相同），此示例的代码合并了上一组帖子中的许多客户端和服务器代码（common.c中），客户端 (rdma-client) 和服务器 (rdma-server) 继续运行不同的 RDMA 连接管理器循环处理事件（RDMA connection manager event loops），但它们相同的verbs 代码部分——轮询 CQ、发送消息、发布 RDMA 操作等共用一份代码。
@@ -226,7 +212,7 @@ PEER 1 的 ibv_reg_mr() 的最后一个参数 IBV_ACCESS_REMOTE_WRITE 指定我�
 
   
 让我们从 rdma-common.c 的顶部开始，它包含客户端和服务器通用的verbs 代码。我们首先定义我们的消息结构体。我们将使用它来在节点之间传递 RDMA 内存区域 (MR) 密钥并发出我们已完成的信号。
-[code] 
+```
     struct message 
     {
       enum {
@@ -238,10 +224,9 @@ PEER 1 的 ibv_reg_mr() 的最后一个参数 IBV_ACCESS_REMOTE_WRITE 指定我�
         struct ibv_mr mr;
       } data;
     };
-[/code]
-
+```
 我们的连接结构体已扩展,包括用于 RDMA 操作的内存区域以及对等方（peer）的 MR 结构和两个状态变量：
-[code] 
+```
     struct connection 
     {
       struct rdma_cm_id *id;
@@ -275,12 +260,11 @@ PEER 1 的 ibv_reg_mr() 的最后一个参数 IBV_ACCESS_REMOTE_WRITE 指定我�
         RS_DONE_RECV
       } recv_state;
     };
-[/code]
-
+```
 完成处理程序(completion handler)使用 send_state 和 recv_state 这两个状态枚举变量来确保对等点(peer）之间的消息和 RDMA 操作的正确顺序。
 
 该结构体由 build_connection() 初始化：
-[code] 
+```
     void build_connection(struct rdma_cm_id *id)
     {
       struct connection *conn;
@@ -304,10 +288,9 @@ PEER 1 的 ibv_reg_mr() 的最后一个参数 IBV_ACCESS_REMOTE_WRITE 指定我�
       register_memory(conn);
       post_receives(conn);
     }
-[/code]
-
+```
 由于我们使用 RDMA read操作，我们必须在 struct rdma_conn_param 中设置`initiator_depth` 和`responder_resources`。这些控制并行的 RDMA read请求的数量（These [control](http://linux.die.net/man/3/rdma_accept "control") the number of simultaneous outstanding RDMA read requests）：
-[code] 
+```
     void build_params(struct rdma_conn_param *params)
     {
       memset(params, 0, sizeof(*params));
@@ -315,12 +298,11 @@ PEER 1 的 ibv_reg_mr() 的最后一个参数 IBV_ACCESS_REMOTE_WRITE 指定我�
       params->initiator_depth = params->responder_resources = 1;
       params->rnr_retry_count = 7; /* infinite retry */
     }
-[/code]
-
+```
 将 rnr_retry_count 设置为 7 表示我们希望网卡在对端回复 receiver-not-ready (RNR) 错误时无限期地重新发送。当在对端发布相应的接收请求（ receive request）之前发布发送请求（send request ）时，会发生 RNR。
 
 使用 send_message() 函数post 发送：
-[code] 
+```
     void send_message(struct connection *conn)
     {
       struct ibv_send_wr wr, *bad_wr = NULL;
@@ -342,10 +324,9 @@ PEER 1 的 ibv_reg_mr() 的最后一个参数 IBV_ACCESS_REMOTE_WRITE 指定我�
      
       TEST_NZ(ibv_post_send(conn->qp, &wr, &bad_wr));
     }
-[/code]
-
+```
 send_mr() 封装了这个函数，并被 rdma-client 用来将它的 MR 发送到服务器，提示服务器发送它的 MR 作为响应，从而启动 RDMA 操作：
-[code] 
+```
     void send_mr(void *context)
     {
       struct connection *conn = (struct connection *)context;
@@ -355,10 +336,9 @@ send_mr() 封装了这个函数，并被 rdma-client 用来将它的 MR 发送�
      
       send_message(conn);
     }
-[/code]
-
+```
 完成处理程序（ completion handler）完成大部分工作。它维护 send_state 和 recv_state，根据需要回复消息和发布 RDMA 操作：
-[code] 
+```
     void on_completion(struct ibv_wc *wc)
     {
       struct connection *conn = (struct connection *)(uintptr_t)wc->wr_id;
@@ -431,15 +411,14 @@ send_mr() 封装了这个函数，并被 rdma-client 用来将它的 MR 发送�
     } else {
       conn->send_state++;
       printf("send completed successfully.\n");
-[/code]
-
+```
 如果完成的操作是接收操作（即，如果 wc->opcode 设置了 IBV_WC_RECV），则 recv_state 递增。
 
 如果收到的消息是 MSG_MR，我们将收到的 MR 复制到我们的连接结构的 peer_mr 成员中，并重新准备接收槽。这对于确保我们在对端的 RDMA 操作完成后收到 MSG_DONE 消息是必要的。如果我们收到了对方的 MR 但还没有发送我们的（服务器就是这种情况），我们就调用 send_mr() 将我们的 MR 发给对方。更新 send_state 并不复杂。
 
   
 接下来我们检查 send_state 和 recv_state 的两个特定组合：
-[code] 
+```
     if (conn->send_state == SS_MR_SENT && conn->recv_state == RS_MR_RECV)
      {
       struct ibv_send_wr wr, *bad_wr = NULL;
@@ -475,23 +454,20 @@ send_mr() 封装了这个函数，并被 rdma-client 用来将它的 MR 发送�
       printf("remote buffer: %s\n", get_peer_message_region(conn));
       rdma_disconnect(conn->id);
     }
-[/code]
-
+```
 这些组合中的第一个是当我们既发送了我们的 MR 又收到了对方的 MR 时。这表明我们已准备好发布 RDMA 操作并发布 MSG_DONE。发布 RDMA 操作意味着构建 RDMA 工作请求（RDMA work request）。这类似于发送工作请求（ work request），除了我们指定 RDMA 操作码并传递对等方的 RDMA 地址/密钥：
-[code] 
+```
     wr.opcode = (s_mode == M_WRITE) ? IBV_WR_RDMA_WRITE : IBV_WR_RDMA_READ;
      
     wr.wr.rdma.remote_addr = (uintptr_t)conn->peer_mr.addr;
     wr.wr.rdma.rkey = conn->peer_mr.rkey;
-[/code]
-
+```
 请注意，我们不需要为 remote_addr 使用 conn->peer_mr.addr _（即remote_addr不一定非得等于 conn- >peer_mr.addr？）_— 如果我们愿意，我们可以使用落入 ibv_reg_mr() 注册的内存区域范围内的任何地址 _（如conn- >peer_mr.addr+x，conn->peer_mr.addr+x在注册的内存区域范围内？）_。  
 第二个状态组合是 SS_DONE_SENT 和 RS_DONE_RECV，表明我们已经发送 MSG_DONE 并从对等方接收 MSG_DONE。这意味着打印消息缓冲区并断开连接是安全的：
-[code] 
+```
     printf("remote buffer: %s\n", get_peer_message_region(conn));
     rdma_disconnect(conn->id);
-[/code]
-
+```
 就是这样。如果一切正常，您应该在使用 RDMA 写入时看到以下内容：
 
 `$ ./rdma-server write` `listening on port 47881.` `received connection request.` `send completed successfully.` `received MSG_MR. writing message to remote memory...` `send completed successfully.` `send completed successfully.` `remote buffer: message from active/client side with pid 20692` `peer disconnected.`  
@@ -518,8 +494,8 @@ _**Updated, Oct. 4:** Sample code is now at <https://github.com/tarickb/the-geek
 
 <https://www.researchgate.net/figure/RDMA-Write_fig2_4245345>
 
-![operation diagram: rdma read](/images/rdma/\d6e8ac758eeb0f437dfb0bc778d9c720.png)
+![operation diagram: rdma read](/images/rdma/d6e8ac758eeb0f437dfb0bc778d9c720.png)
 
-![operation diagram: rdma write](/images/rdma/\d96579a2241cde7034c0be5669081eb0.png)
+![operation diagram: rdma write](/images/rdma/d96579a2241cde7034c0be5669081eb0.png)
 
 [Introduction to Programming Infiniband RDMA | Better Tomorrow with Computer Science](https://insujang.github.io/2020-02-09/introduction-to-programming-infiniband/ "Introduction to Programming Infiniband RDMA | Better Tomorrow with Computer Science")

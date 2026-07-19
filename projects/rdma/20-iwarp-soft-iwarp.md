@@ -8,10 +8,6 @@ tags: ["RDMA", "iWARP", "Soft-iWARP", "协议"]
 # RDMA 之 iWARP & Soft-iWARP
 
 
----
-
-
-# 笔记
 
 iWARP协议是RDMA Consortium组织推动实现的，它由Broadcom、HP、IBM、Intel和Microsoft等公司在2002年5月成立
 
@@ -152,7 +148,7 @@ RFC 7306| Remote Direct Memory Access (RDMA) Protocol Extensions| 扩展iWARP的
 对于具体的市场情况我不了解，但是我们可以通过开源生态的发展来侧面了解三大RDMA技术的现状，毕竟如果不会带来价值，这些商业公司是不可能投入人力和金钱去做软件生态的。
 
 我们来看一下Linux内核的drivers/infiniband/hw目录，这个目录下是各个硬件厂商（VMware除外）的RDMA网卡驱动：
-[code] 
+```
     .
     ├── Makefile
     ├── bnxt_re
@@ -169,8 +165,7 @@ RFC 7306| Remote Direct Memory Access (RDMA) Protocol Extensions| 扩展iWARP的
     ├── qib
     ├── usnic
     └── vmw_pvrdma
-[/code]
-
+```
 这些驱动程序所属的厂家（括号外的公司被括号内的公司收购或者为其子公司）如下：
 
 驱动名| 厂商| Infiniband| RoCE v2| iWARP| 备注  
@@ -225,11 +220,9 @@ RoCE v2和iWARP的设计初衷都是为了在传统的以太网上技术上实�
   * Mellanox对于RoCE v2和iWARP的竞争力分析：
 
 
-
 [https://www.mellanox.com/related-docs/whitepapers/WP_RoCE_vs_iWARP.pdf](https://link.zhihu.com/?target=https%3A//www.mellanox.com/related-docs/whitepapers/WP_RoCE_vs_iWARP.pdfhttps%3A//www.mellanox.com/related-docs/whitepapers/WP_RoCE_vs_iWARP.pdf "https://www.mellanox.com/related-docs/whitepapers/WP_RoCE_vs_iWARP.pdf")
 
   * Chelsio关于如何从RoCE v2和iWARP之间做选择的分析：
-
 
 
 [https://www.chelsio.com/wp-content/uploads/resources/iwarp-or-roce-rdma.pdf](https://link.zhihu.com/?target=https%3A//www.chelsio.com/wp-content/uploads/resources/iwarp-or-roce-rdma.pdf "https://www.chelsio.com/wp-content/uploads/resources/iwarp-or-roce-rdma.pdf")
@@ -338,31 +331,27 @@ iWARP实现原理[9]
 准备工作请参考《[RoCE & Soft-RoCE](https://zhuanlan.zhihu.com/p/361740115 "RoCE & Soft-RoCE")》一文章节“如何做实验”章节从“准备做实验”到“配置虚拟机网卡“之间的流程。
 
 为了避免Soft-RoCE可能造成的干扰，建议先删除RXE设备并且卸载其驱动：
-[code] 
+```
     sudo rdma link del rxe_0
     sudo rmmod rdma_rxe
-[/code]
-
+```
 ### 配置siw网卡
 
 Soft-iWARP在内核中的驱动名为siw，我们首先加载其驱动程序：
-[code] 
+```
     sudo modprobe siw
-[/code]
-
+```
 然后通过rdmatool添加Soft-iWARP设备：
-[code] 
+```
     sudo rdma link add siw_0 type siw netdev ens33
-[/code]
-
+```
 其中siw_0为我们想给设备起的名字，siw为设备类型，ens33为其基于的网卡的设备名。
 
 接下来我们可以通过ibv_devices或者rdmatool工具确认设备已经添加成功：
-[code] 
+```
     ibv_devices
     rdma link
-[/code]
-
+```
 两种命令都可以看到新添加的设备siw_0：
 
 ![](/images/rdma/fb73759657090aa5ba4156b10202485c.png)
@@ -370,10 +359,9 @@ Soft-iWARP在内核中的驱动名为siw，我们首先加载其驱动程序：
 RDMA设备查询结果
 
 通过ibv_devinfo查看设备信息，我们可以看到transport类型为iWARP：
-[code] 
+```
     ibv_devinfo -d siw_0
-[/code]
-
+```
 ![](/images/rdma/c29fc7a01d1a6ba86981b5a8bf70bc0c.png)
 
 ibv_devinfo查询设备信息结果
@@ -385,15 +373,13 @@ ibv_devinfo查询设备信息结果
 另外前文我们说过，因为iWARP基于TCP，所以是不支持UD服务类型的，因此我们的perftest只能进行基于CM建链的RC服务类型的测试。CM建链对应perftest中的参数是“-R”。
 
 下面开始进行Write操作的实验，Server端（RDMA Write响应端）执行：
-[code] 
+```
     ib_write_bw -d siw_0
-[/code]
-
+```
 Client端（RDMA Write发起端）执行：
-[code] 
+```
     ib_write_bw -d siw_0 192.168.217.128 -R
-[/code]
-
+```
 Server端结果：
 
 ![](/images/rdma/dd081fdd4121f8b9c544ae3dce705d89.png)

@@ -7,13 +7,8 @@ tags: ["RDMA", "Shared Receive Queue", "SRQ", "内存优化"]
 ---
 # RDMA 之 Shared Receive Queue
 
-
----
-
-
 2022.06
 
-原文：[11\. RDMA之Shared Receive Queue - 知乎](https://zhuanlan.zhihu.com/p/279904125 "11. RDMA之Shared Receive Queue - 知乎")
 
 我们曾在【[3\. 基本元素](https://zhuanlan.zhihu.com/p/141267386 "3. 基本元素")】中简单介绍了SRQ的概念，本文将带大家了解更多关于SRQ的细节。
 
@@ -55,7 +50,6 @@ SEND/WRITE/READ都需要通信发起方向SQ中下发一个WR，而只有和SEND
 
   * 如果不使用SRQ的话，用户一共需要下发N * M个RQ WQE。
   * 如果使用SRQ的话，用户只需要下发K * M个RQ WQE，而K远小于N。
-
 
 
 这个K是可以由用户根据业务来配置的，如果存在大量的并发接收的情况，那么就把K设置大一点，否则K设置成个位数就足够应付一般的情况了。
@@ -107,11 +101,9 @@ SRQ可以设置一个水线/阈值，当队列中剩余的WQE数量小于水线�
   * 创建——Create SRQ
 
 
-
 创建SRQ的时候，跟QP一样会申请所有SRQ相关的软硬件资源，比如驱动程序会申请SRQN，申请SRQC的空间并向其中填写配置。创建SRQ时还必须指定每个SRQ的深度（能存放多少WQE）以及每个WQE的最大sge数量。
 
   * 销毁——Destroy SRQ
-
 
 
 销毁SRQ的所有相关软硬件资源。
@@ -119,11 +111,9 @@ SRQ可以设置一个水线/阈值，当队列中剩余的WQE数量小于水线�
   * 修改——Modify SRQ
 
 
-
 除了SRQ深度等属性外，SRQ Limit的值也是通过这个接口设置的。因为每次产生SRQ Limit Reached事件之后，水线的值都会被清零，所以每次都需要用户调用Modify SRQ重新设置水线。
 
   * 查询——Query SRQ
-
 
 
 通常是用来查询水线的配置的。

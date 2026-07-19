@@ -7,10 +7,6 @@ tags: ["RDMA", "iWARP", "DDP", "Direct Data Placement"]
 ---
 # RDMA 之 DDP（Direct Data Placement）
 
-
----
-
-
 ### 概述
 
 传统TCP/IP协议栈中，网卡先将数据DMA拷贝到内核空间的缓冲区，再由CPU将经过协议栈处理的数据拷贝到用户空间。
@@ -23,7 +19,6 @@ iWARP是在现有TCP/IP协议栈基础上实现RDMA技术，TCP/IP协议早已�
 
 ## 正文
 
-原文：[16\. RDMA之DDP(Direct Data Placement) - 知乎](https://zhuanlan.zhihu.com/p/408817872 "16. RDMA之DDP\(Direct Data Placement\) - 知乎")
 
 **本文欢迎转载，转载请注明出处。**
 
@@ -174,7 +169,6 @@ ULP并不知道从Tagged Buffer的哪个位置开始取数据，即上图中Mess
   * 通过额外的方式告知：即发送Tagged DDP Message之后，紧接着发送一个Untagged DDP Message（下文介绍）来告知对端Initial TO。
 
 
-
 #### Untagged Buffer Model
 
 DDP中的Untagged Buffer Model，类似于IB规范中的Send-Recv操作中的接收方式。它并不会用STag来指定对端的特定缓冲区，这也是它被称为“Untagged”的原因。
@@ -230,7 +224,6 @@ Untagged Buffer Model同样面临着分段后重组的问题，所以也需要�
 DDP版本。为以后的扩展性考虑，目前只有一个DDP版本，所以恒为1。
 
 
-
 #### Tagged Buffer Model
 
 Tagged Buffer Model的Header总长度为14个字节。
@@ -245,7 +238,6 @@ ULP保留域段。这个域段是由ULP定义的，DDP不关心其含义，只�
 上文也已经介绍过，用来表示Payload在Tagged Buffer中从Buffer的起始地址到最终数据的存放地址的偏移。
 
 
-
 #### Untagged Buffer Model
 
 总长度为18字节。
@@ -254,7 +246,6 @@ ULP保留域段。这个域段是由ULP定义的，DDP不关心其含义，只�
 
   * RsvdULP - Reserved for use by the ULP: 40 bits  
 虽然跟Tagged Buffer Model中的作用相同，但是这里扩展到了5个字节，并且RFC 5041中补充了一段：
-
 
 
 > Data Sink端的DDP实现不需要确认一个DDP Message的每个Segment的此域段是否都相同，并且可以选择任何一个Segment的Rsvd ULP传递给ULP。 
@@ -267,7 +258,6 @@ ULP保留域段。这个域段是由ULP定义的，DDP不关心其含义，只�
 DDP Message的序列号。必须从1开始，每次递增1。当到达0xFFFFFFFF之后，重新变为0。每个Message都只能对应一个Untagged Buffer，所以MSN+QN能够唯一确定一个Untagged Buffer。
   * MO - Message Offset: 32 bits  
 上文中介绍过，表示从QN和MSN确认的Untagged Buffer的起始位置到消息目的地址的偏移。不难想到，第一个Segment的MO一定为0。
-
 
 
 ### DDP Payload
@@ -283,20 +273,17 @@ DDP Header后面紧跟的就是Payload，没有什么需要特别注意的。
 环境配置请参考《[RoCE & Soft-RoCE](https://zhuanlan.zhihu.com/p/361740115 "RoCE & Soft-RoCE")》这篇文章的“如何做实验”这一章节。差异点仅在于rxe需要改为siw（Soft-iWARP）。
 
 为了避免干扰，如果读者的环境中已经配置了RXE，那么请使用下述命令删除Soft-RoCE设备：
-[code] 
+```
     sudo rdma link delete rxe_0
-[/code]
-
+```
 然后加载siw驱动：
-[code] 
+```
     sudo modprobe siw
-[/code]
-
+```
 添加siw设备：
-[code] 
+```
     sudo rdma link add siw_0 type siw netdev ens33
-[/code]
-
+```
 此时我们用ibv_devices就能看到新添加的siw设备了：
 
 ![](/images/rdma/74224c2a53c6c6feabf9b34465ffcd23.png)
@@ -304,11 +291,10 @@ DDP Header后面紧跟的就是Payload，没有什么需要特别注意的。
 虚拟机两端都配置好了之后，就可以跑perftest测试了。执行之前请先在宿主机打开wireshark，并选择对应的虚拟网卡。
 
 因为RDMA Read的交互相对更复杂，所以我们在两个虚拟机执行的是ibv_read_bw（ibv_send_bw执行会报错，原因还未搞清楚）：
-[code] 
+```
     ib_write_bw -d siw_0 -R -n 5 -s 1500
     ib_write_bw -d siw_0 -R -n 5 -s 1500 192.168.217.128
-[/code]
-
+```
 其中，-R表示使用CM建链（Socket建链不通，原因未知）；-n 5表示跑5轮测试，毕竟是个测试性能的工具，循环次数越多，结果越可信。因为我们只关心报文，所以取了perftest迭代次数的最小值5；-s是消息长度，也就是用户数据的长度，取1500我是为了能够演示把payload切成多个DDP的数据包，其他值亦可。
 
 所以我们这次跑的测试的内容是：使用CM建链，client端从server端使用RDMA Read操作读回长度为1500的数据，循环5次。
@@ -331,7 +317,6 @@ DDP Header后面紧跟的就是Payload，没有什么需要特别注意的。
   * 接收队列的QN是0
   * 消息序列号是8，说明之前0号队列已经接受了7个消息了
   * 消息偏移是0，说明数据会放到Buffer的头部（也说明这个Message只有1个Segment）
-
 
 
 RDMAP和MPA的内容我们会在以后的文章中讲解，目前不用关心。

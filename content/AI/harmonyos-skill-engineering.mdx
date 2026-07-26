@@ -1,23 +1,54 @@
 ---
-title: "HarmonyOS Skill 工程化：AI Coding 时代的实战经验沉淀范式"
-description: "深度解析一套从真实鸿蒙原生 App 开发实战（12 周从 0 到 1 上架，472 个测试用例真机全绿）沉淀出来的 AI 友好型 Skill 工程体系。涵盖六段式模板设计原理、Frontmatter 语义触发机制、部署工程实践与可复用的知识管理方法论。"
+title: "AI Coding 工程化双范式：Skill 知识库 + Spec 流程规范深度解析"
+description: "综合解析 AI Coding 时代两大工程化范式——Skill 知识库（HarmonyOS-Skill：实战经验结构化为 AI 可消费的知识包）与 Spec 流程规范（spec-for-ai：五阶段白盒工作流管控 AI 输出）。对比设计原理、部署实践与融合方案。"
 date: "2026-07-26"
-tags: ["HarmonyOS", "AI Coding", "Skill", "知识管理", "工程实践", "鸿蒙", "ArkUI", "经验沉淀"]
+tags: ["AI Coding", "HarmonyOS", "Spec-Driven", "Skill", "知识管理", "工程实践", "工作流", "规范驱动"]
 ---
 
-# HarmonyOS Skill 工程化：AI Coding 时代的实战经验沉淀范式
+# AI Coding 工程化双范式：Skill 知识库 + Spec 流程规范深度解析
 
-## 一、工程概览
+## 一、AI Coding 工程化的两个核心问题
 
-### 1.1 项目定位
+AI 辅助编码正在从"聊天式问答"走向"工程化协作"。但在实际落地中，两个致命问题始终无法回避：
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph P1["问题一：知识断层"]
+        A1["AI 训练库<br/>截止于某个时间点"] --> A2["新 API / 新框架<br/>AI 不知道"]
+        A2 --> A3["生成过时代码<br/>编译失败 / 行为错误"]
+    end
+
+    subgraph P2["问题二：流程失控"]
+        B1["自然语言需求"] --> B2["AI 直接生成代码"]
+        B2 --> B3["跳过需求澄清<br/>跳过方案设计"]
+        B3 --> B4["返工率高<br/>无法追溯"]
+    end
+
+    style P1 fill:#fff3e0,stroke:#e65100
+    style P2 fill:#ffebee,stroke:#c62828
+`} />
+
+针对这两个问题，开源社区出现了两类互补的解决方案：
+
+| 范式 | 代表项目 | 核心思路 | 解决什么问题 |
+|------|---------|----------|------------|
+| **Skill 知识库** | harmony-os-skill | 实战经验结构化为 AI 可消费的知识包 | 知识断层：AI 不知道最新 API 和踩坑经验 |
+| **Spec 流程规范** | spec-for-ai | 五阶段白盒工作流管控 AI 输出 | 流程失控：AI 跳过规划直接写代码 |
+
+本文综合解析两种范式的设计原理、实现机制与工程实践，并展示如何融合使用。
+
+---
+
+## 二、范式一：Skill 知识库（以 harmony-os-skill 为例）
+
+### 2.1 项目定位
 
 HarmonyOS-Skill 是一套从 **三个真实鸿蒙原生 App 开发实战**（潮玩展柜 + 熬夜修仙 + 鲸播 OrcaPlayer，全部已上架应用市场）沉淀出来的 **HarmonyOS NEXT 开发 Skill 集合**，覆盖 ArkUI 状态管理 / 桌面服务卡片 / 视频播放与媒体 / NAS 串流 / IAP / 元服务 / 测试 / 真机打包 / 应用市场上架等核心场景。
 
-截至 2026 年 7 月，仓库已积累 **44 个 skill**（从 3 个实战 App 的 60+ bug 修复记录和 472 个真机测试用例中提炼），每个 skill 都是"问题场景 + 反模式 + 正确代码模板 + 验证方法"的完整知识包。
+截至 2026 年 7 月，仓库已积累 **44 个 skill**，每个 skill 都是"问题场景 + 反模式 + 正确代码模板 + 验证方法"的完整知识包。
 
-核心卖点是 **"AI Coding 友好"**——把踩过的坑、查过的官方文档、试过的方案沉淀成 AI 助手可直接消费的 skill 知识包，让下一个鸿蒙项目少走弯路。
+核心卖点是 **"AI Coding 友好"**——把踩过的坑、查过的官方文档、试过的方案沉淀成 AI 助手可直接消费的 skill 知识包。
 
-### 1.2 目录结构
+### 2.2 目录与存储结构
 
 <MermaidDiagram chart={`flowchart TD
     Root["harmony-os-skill/"] --> License["LICENSE"]
@@ -27,146 +58,19 @@ HarmonyOS-Skill 是一套从 **三个真实鸿蒙原生 App 开发实战**（潮
     Skills --> S2["arkui-builder-param-trap/"]
     Skills --> S3["harmonyos-form-transparent/"]
     Skills --> S4["harmonyos-iap-integration/"]
-    Skills --> S5["arkts-strict-mode-rules/"]
-    Skills --> S6["... (共 24 个)"]
-
+    Skills --> S5["... (共 44 个)"]
     S1 --> S1MD["SKILL.md"]
     S2 --> S2MD["SKILL.md"]
     S3 --> S3MD["SKILL.md"]
-
     style Root fill:#e1f5fe,stroke:#0288d1
     style Skills fill:#fff3e0,stroke:#e65100
 `} />
 
-每个 skill 是一个独立目录，内含一个 `SKILL.md`，结构完全一致，便于 AI 批量检索与人肉查阅。
+每个 skill 是一个独立目录，内含一个 `SKILL.md`，结构完全一致，便于 AI 批量检索。
 
-### 1.3 Skill 分类矩阵
+### 2.3 核心设计原理：Frontmatter 语义触发
 
-截至 2026 年 7 月，仓库已从 3 个实战 App 中沉淀 **44 个 skill**，覆盖 10 个分类：
-
-| 分类 | 数量 | 代表 skill |
-|------|------|-----------|
-| ArkUI 状态管理 | 4 | @Observed/@ObjectLink 全链路、@Builder 参数断链、ForEach key、Toggle isOn |
-| ArkUI UI 模式 | 5 | bindSheet 多内容、沉浸式状态栏、长按菜单预览、SVG 镂空图标、Scroll 短内容 |
-| ArkUI 设计令牌 | 2 | 字体令牌库、CTA 配色令牌 + AGC 对比度 |
-| 桌面服务卡片 | 5 | 透明背板 5 件套、跨进程图片传递、刷新策略、动画限制、UI 布局坑 |
-| 元服务 | 4 | API 网关、图标快照、沙箱调试、跨进程同步 |
-| 系统能力 + 商业化 | 5 | IAP、Motion Kit 握姿、Core Vision 抠图、ShareKit、zlib |
-| 视频播放 / 媒体 | 7 | 双内核播放、字幕轨、libass 编译、seek 续播、后台播放、XComponent 坑、缩略图 |
-| 网络 / 数据 / 文件 | 5 | NAS 串流、HTTP 坑集、HUKS 加密、文件持久授权、数据库 |
-| 工程实践 | 3 | ArkTS 严格模式、真机打包 SOP、hypium 测试 |
-| 应用上架 | 4 | 提审清单、多轮拒审根治、隐私政策模板、备案 vs ICP |
-
-### 1.4 实战案例：三个真实 App 的 Skill 沉淀
-
-该仓库的 skill 来自三个已上架的鸿蒙原生 App，每个 App 覆盖不同的技术维度：
-
-#### 1.4.1 潮玩展柜 — ArkUI 状态管理 + 桌面卡片 + IAP
-
-首个实践项目（已上架华为应用市场）：用户拍照 → AI 端侧抠图 → 数字展柜展示 → 桌面服务卡片。
-
-**沉淀的 skill 重点**：
-- **@Observed/@ObjectLink 全链路**：对象数组嵌套时 UI 不更新的根因
-- **透明背板 5 件套**：桌面卡片背景透明的完整配置链
-- **IAP 集成**：应用内购买的双协议签署 + Profile 重生成
-- **Core Vision Kit 端侧 AI 抠图**：完全离线零成本的 AI 能力
-
-#### 1.4.2 熬夜修仙 — 元服务 + 跨进程同步
-
-第二个实践项目（HarmonyOS 元服务，AGC 审核通过）：以修仙等级反讽包装的熬夜记录元服务。
-
-**沉淀的 skill 重点**：
-- **元服务 API 网关**：`@atomicservice` 标记 / 编译 11706010 / 平台硬边界
-- **卡片刷新配额与 AGC 合规**：刷新方式选择与审核通过策略
-- **跨进程 preferences 同步**：卡片 ↔ 主 App 双进程数据一致性
-- **AGC 多轮拒审根治**：改时钟测时长 / 正文对比度 / 卡片快照错误码 13
-
-#### 1.4.3 鲸播 OrcaPlayer — 视频播放 + NAS 串流 + 复杂上架
-
-第三个实践项目（已上架应用市场）：发烧友级本地全能视频播放器，双内核全格式播放 + NAS 串流。
-
-**沉淀的 skill 重点**：
-- **双内核播放架构**：AVPlayer 硬解 + ijkplayer 软解兜底
-- **字幕全链路**：内封/外挂字幕轨、libass 交叉编译、GBK/Big5 编码探测
-- **NAS 串流**：WebDAV 硬解出画 + SMB 桥接 + 4MB 预读
-- **HUKS 凭据加密**：AES-256-GCM 三段式会话
-- **普通 App 三轮拒审根治**：审核实验室网络 / "开通中"判功能未完成 / IAP 预检门控
-
-### 1.5 快速上手教程
-
-#### 步骤 1：将 Skill 库接入项目
-
-```bash
-cd your-harmonyos-project
-git submodule add https://gitee.com/chen_jeff/harmony-os-skill.git .skills
-```
-
-这会在你的项目中创建 `.skills/` 目录，包含全部 44 个 SKILL.md。
-
-#### 步骤 2：让 AI 助手消费 Skill
-
-在开发时告诉 AI：
-
-> 我在写鸿蒙桌面服务卡片，刷新失败但 build() 跑了，参考 `.skills/skills/` 找找有没有相关 skill。
-
-AI 会自动按 `description` 字段做语义匹配，加载 `harmonyos-form-transparent` 等相关 skill。
-
-#### 步骤 3：人肉查阅
-
-遇到具体问题时直接搜索对应主题。每个 skill 结构一致：
-
-1. 何时使用此 skill → 2. 核心结论 → 3. 反例 ❌ → 4. 正确做法 ✅ → 5. 验证方法 → 6. 相关 skill → 7. 参考资料
-
-#### 步骤 4：沉淀新经验
-
-修复 Bug 后，按模板写成新 skill 并提交 PR，将个人经验转化为团队资产：
-
-```bash
-# 创建新 skill 目录
-mkdir -p .skills/skills/<category>-<problem-slug>
-# 编写 SKILL.md（参照 4.2 节模板）
-# 提交到仓库
-git add .skills/
-git commit -m "feat(skill): 新增 <问题> 的解决经验"
-git push
-```
-
-## 二、Skill 系统的架构设计原理
-
-### 2.1 核心架构：AI 可消费的知识封装层
-
-<MermaidDiagram chart={`flowchart LR
-    subgraph Source["实战经验源"]
-        P1["真实 App 开发<br/>12 周从 0 到 1"]
-        P2["472 测试用例<br/>真机全绿"]
-        P3["60+ Bug<br/>修复记录"]
-    end
-
-    subgraph Skill["Skill 封装层"]
-        FM["Frontmatter<br/>语义描述"]
-        TEM["六段式模板<br/>反例 + 正解 + 验证"]
-        REF["交叉引用<br/>知识网络"]
-    end
-
-    subgraph Consumer["AI 消费端"]
-        AI["AI 助手<br/>Claude Code"]
-        DEV["开发者<br/>人肉查阅"]
-    end
-
-    Source --> Skill
-    Skill -->|"description 语义匹配"| AI
-    Skill -->|"结构化阅读"| DEV
-
-    style Source fill:#fff3e0,stroke:#e65100
-    style Skill fill:#e1f5fe,stroke:#0288d1
-    style Consumer fill:#e8f5e9,stroke:#388e3c
-`} />
-
-**设计原理**：传统的知识库（Notion、Wiki）是人写的、人看的，AI 无法高效消费。HarmonyOS-Skill 的设计核心是将"人脑经验"转化为"AI 可检索、可推理、可执行"的结构化知识包。
-
-### 2.2 Frontmatter：语义触发引擎
-
-每个 `SKILL.md` 顶部用 YAML frontmatter 标记元数据：
+每个 `SKILL.md` 顶部用 YAML frontmatter 标记元数据，AI 助手靠 `description` 字段做语义匹配判断何时触发：
 
 ```yaml
 ---
@@ -176,15 +80,12 @@ description: 在编写 ArkUI 鸿蒙代码遇到「修改对象数组里某个元
 ---
 ```
 
-**关键设计原则**：
+**设计原理**：
 - `description` 不写"这是什么"，而是写"**在什么场景下使用、解决什么问题**"
 - 埋入 **症状关键词**（"UI 不更新""白底""权限错"），让 AI 做语义检索时命中率最高
 - 埋入 **场景关键词**（"首次集成""从 X 迁移""卡在 Y"）
-- 控制在 100-200 字，信息密度高
 
-### 2.3 六段式模板：认知闭环
-
-所有 skill 严格遵守同一骨架：
+### 2.4 六段式模板：认知闭环
 
 <MermaidDiagram chart={`flowchart TD
     A["1️⃣ 何时使用此 skill<br/>触发条件 / 症状 / 场景"] --> B["2️⃣ 核心结论<br/>一句话正确答案"]
@@ -192,7 +93,6 @@ description: 在编写 ArkUI 鸿蒙代码遇到「修改对象数组里某个元
     C --> D["4️⃣ 正确做法 ✅<br/>可复制代码模板"]
     D --> E["5️⃣ 验证方法<br/>可观测证据"]
     E --> F["6️⃣ 相关 skill + 参考资料<br/>知识网络"]
-
     style A fill:#fff3e0,stroke:#e65100
     style B fill:#e1f5fe,stroke:#0288d1
     style C fill:#ffebee,stroke:#c62828
@@ -209,19 +109,7 @@ description: 在编写 ArkUI 鸿蒙代码遇到「修改对象数组里某个元
 5. **验证闭环**：强调可观测证据（"杀 App 重进正常 vs 运行时变更异常"），杜绝假性修复
 6. **知识联网**：交叉引用把同源根因串联
 
-### 2.4 验证方法设计
-
-作者特别强调 **验证证据**，反对"build() 跑了就算修好"。典型验证范式：
-
-| 验证场景 | 正确验证方法 | 错误验证方法 |
-|----------|-------------|-------------|
-| UI 刷新修复 | Image 加 .onAppear 打日志 → 路径变更才算真修复 | "build() 跑了" |
-| IAP 集成 | iap.queryProducts 不报权限错才算 Profile 通过 | "编译通过" |
-| 状态追踪修复 | "杀 App 重进正常 vs 运行时变更异常"差异大 | 只测一次 |
-
-## 三、部署工程实践
-
-### 3.1 消费方式：零配置接入
+### 2.5 部署实践
 
 **AI 自动消费**：
 
@@ -230,97 +118,280 @@ cd your-harmonyos-project
 git submodule add https://gitee.com/chen_jeff/harmony-os-skill.git .skills
 ```
 
-然后告诉 AI：「参考 `.skills/skills/` 找相关 skill」。AI 会按 description 语义匹配自动加载对应 SKILL.md。
-
-**人肉查阅**：每个 skill 是独立 markdown，结构一致，遇到问题直接搜主题。
+告诉 AI：「参考 `.skills/skills/` 找相关 skill」。AI 会自动按 description 语义匹配加载对应 SKILL.md。
 
 <MermaidDiagram chart={`flowchart LR
     subgraph Repo["harmony-os-skill 仓库"]
         Skills["44 个 SKILL.md"]
     end
-
     subgraph Proj["你的鸿蒙项目"]
         Sub["git submodule<br/>.skills/"]
         AI_Assistant["AI 助手<br/>语义匹配触发"]
     end
-
     Repo -->|"git submodule add"| Sub
     Sub -->|"description 字段"| AI_Assistant
     AI_Assistant -->|"加载 SKILL.md"| Context["AI 上下文<br/>注入正确方案"]
-
     style Repo fill:#e1f5fe,stroke:#0288d1
     style Proj fill:#fff3e0,stroke:#e65100
 `} />
 
-### 3.2 部署架构：Submodule 解耦
-
-采用 `git submodule` 而非复制粘贴，核心优势：
-
-1. **版本追踪**：skill 库独立版本，项目锁版本不随 skill 更新意外变动
-2. **集中更新**：skill 库更新后，项目 `git submodule update` 即可获得全部最新知识
-3. **解耦治理**：skill 库与业务代码互不依赖，不同项目可共享同一 skill 库
-4. **PR 协作**：团队可向 skill 库贡献新 skill，沉淀集体经验
-
-### 3.3 消息过覆盖率
-
-项目通过 **472 个测试用例真机全绿** 来验证 skill 的正确性。每个 skill 的验证方法中明确规定了如何确认修复有效。测试覆盖确保：
-- 知识不存疑：每个 skill 的结论至少经过一次真机验证
-- 修改可追溯：60+ bug 记录原始材料，每个 fix 有迹可循
-- 质量有基线：上架 App 验证过的方法论，非纸上谈兵
-
-### 3.4 持续沉淀机制
+### 2.6 持续沉淀机制
 
 <MermaidDiagram chart={`flowchart TD
     subgraph Daily["日常开发"]
         Bug["遇到 Bug / 踩坑"]
         Fix["定位根因 + 修复"]
     end
-
     subgraph Skill["Skill 沉淀"]
         Check["判断是否值得沉淀<br/>踩 ≥ 2 次? 文档藏深处?"]
         Write["按模板写 SKILL.md<br/>反例 + 正解 + 验证"]
         PR["PR 提交到 skill 仓库"]
     end
-
     subgraph Evolve["持续进化"]
         Review["团队 Review"]
         Merge["合并到主线"]
         Release["大版本经验回灌"]
     end
-
     Bug --> Fix --> Check
     Check -->|"是"| Write --> PR --> Review --> Merge
     Check -->|"否"| Bug
-
     style Daily fill:#fff3e0,stroke:#e65100
     style Skill fill:#e1f5fe,stroke:#0288d1
     style Evolve fill:#e8f5e9,stroke:#388e3c
 `} />
 
-**核心规则**：每次踩坑修完后，立即把"症状 + 根因 + 正解 + 验证"沉淀成新 skill。上线后大版本迭代的经验持续回灌。
+---
 
-## 四、经验总结与可复用方法论
+## 三、范式二：Spec 流程规范（以 spec-for-ai 为例）
 
-### 4.1 核心方法公式
+### 3.1 项目定位
+
+**Spec-Driven AI Coding（规范驱动 AI 开发）标准化工具集**，核心目标解决传统 AI 编码三大致命问题：
+
+1. **上下文丢失**：对话会话重置、历史需求仅存聊天记录，AI 无法长期记忆项目约束
+2. **输出不可控**：同需求多次生成代码差异巨大，无统一项目规范约束 AI
+3. **无追溯无协作**：团队无法复盘 AI 生成逻辑、变更动机，代码评审缺失"为什么这么写"依据
+
+核心思想：**把需求、行为契约、技术约束、任务清单固化为可版本管理的结构化 Spec 文档，作为 AI 唯一可信输入源，实现"先规范、后编码、可校验、可归档"的白盒 AI 开发流程**。
+
+### 3.2 四层架构
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph L1["上层交互层"]
+        CLI["CLI / IDE 插件<br/>命令路由 + 终端 UI"]
+    end
+    subgraph L2["核心流程调度层"]
+        Engine["Spec 工作流引擎"]
+        Guard["阶段守卫 Guard<br/>五阶段管控 + 越界拦截"]
+    end
+    subgraph L3["底层能力支撑层"]
+        SpecEngine["Spec 文档引擎<br/>Delta 增量 / 模板 / 校验"]
+        LLM["LLM 模型抽象层<br/>多 API 统一封装 + 提示词工厂"]
+        AST["代码静态 AST 解析器<br/>提取项目上下文"]
+        Git["Git 隔离版本层<br/>spec 独立版本管理"]
+        Tools["任务执行工具链<br/>文件读写 / 代码生成 / 校验"]
+    end
+    subgraph L4["持久化存储层"]
+        Store["目录结构 + 元数据 + 变更归档"]
+    end
+    CLI --> Engine
+    Engine --> Guard
+    Guard --> L3
+    L3 --> L4
+    style L1 fill:#e1f5fe,stroke:#0288d1
+    style L2 fill:#fff3e0,stroke:#e65100
+    style L3 fill:#e8f5e9,stroke:#388e3c
+    style L4 fill:#f3e5f5,stroke:#7b1fa2
+`} />
+
+### 3.3 隔离存储结构
+
+项目初始化 `spec init` 自动生成两套隔离目录，**完全分离业务代码与 AI 规范文档**：
 
 ```
-1 个 skill = 1 个反复出现的具体坑
+项目根目录
+├── specs/        # 全局基准规范（Single Source of Truth）
+│   ├── api/
+│   ├── db/
+│   └── frontend/
+├── changes/      # 增量变更提案（每个需求一个文件夹）
+│   └── add-user-login/
+│       ├── proposal.md  # 需求动机、范围（Why）
+│       ├── spec/        # Delta 增量行为契约（What）
+│       ├── design.md    # 技术方案（How）
+│       └── tasks.md     # 任务清单（Step）
+├── archive/      # 已完成变更归档
+├── .spec-config.yaml    # 全局配置
+└── .specignore          # 忽略文件
 ```
 
-**判断是否值得沉淀**：
+**关键存储机制：Delta Spec（增量规范）**
+- 不重写全量系统规范，仅记录本次变更**新增/修改/删除**行为
+- 变更完成归档时，引擎自动执行 Diff 合并，增量更新全局 `specs/` 基准库
+- 存量老项目友好，无需一次性梳理全部系统行为，支持小迭代逐步完善规范
+
+### 3.4 五阶段白盒工作流（核心创新）
+
+<MermaidDiagram chart={`flowchart TD
+    P1["① Proposal 需求澄清<br/>界定范围 / 约束 / 风险"] -->|"人工确认"| P2
+    P2["② Spec 行为契约<br/>GIVEN / WHEN / THEN 场景"] -->|"人工确认"| P3
+    P3["③ Design 架构设计<br/>技术选型 / 接口 / 文件清单"] -->|"人工确认"| P4
+    P4["④ Task 任务拆解<br/>最小可验证子任务"] -->|"逐条执行"| P5
+    P5["⑤ Implement & Verify<br/>代码生成 + Spec 校验 + 归档"]
+    P5 -->|"Delta 合并"| Archive["archive/ 归档<br/>更新全局 specs 基准"]
+
+    Guard["阶段守卫 GuardRails<br/>状态锁 + 提示词硬拦截 + 后置校验"]
+    P1 -.-> Guard
+    P2 -.-> Guard
+    P3 -.-> Guard
+    P4 -.-> Guard
+
+    style P1 fill:#fff3e0,stroke:#e65100
+    style P2 fill:#e1f5fe,stroke:#0288d1
+    style P3 fill:#e8f5e9,stroke:#388e3c
+    style P4 fill:#f3e5f5,stroke:#7b1fa2
+    style P5 fill:#e0f2f1,stroke:#00695c
+    style Guard fill:#ffebee,stroke:#c62828
+`} />
+
+**五阶段详解**：
+
+1. **Proposal 阶段（需求澄清）**：仅允许讨论需求范围，禁止 AI 输出任何代码。守卫规则在此阶段识别越界行为并拦截。
+
+2. **Spec 行为契约阶段**：生成 Delta Spec，用标准化 GIVEN/WHEN/THEN 描述所有业务场景、边界用例、异常行为。这是后续代码生成和校验的唯一依据。
+
+3. **Design 架构设计阶段**：输出技术选型、组件分层、数据库变更、接口定义、待修改文件清单。核心价值是提前锁定技术方案，避免 AI 自由发挥。
+
+4. **Task 拆解阶段**：把大需求拆分为最小可验证子任务，AI 按任务逐条执行，单任务出错可单独回滚。
+
+5. **Implement & Verify 阶段**：按 Task 清单生成代码，内置 Spec 校验器比对行为是否匹配契约，最后人工确认后归档合并。
+
+### 3.5 边界守卫 GuardRails 实现原理
+
+传统 LLM 天然有"拿到需求直接写代码"的倾向，本项目通过三层硬约束拦截：
+
+1. **阶段状态锁**：每个变更文件夹写入元数据 `.spec-meta.yaml` 标记当前阶段
+2. **提示词硬拦截**：内置分层系统提示词，每个阶段绑定专属约束 Prompt
+3. **后置规则校验**：AI 输出后引擎正则/语义检测，若检测到代码块直接驳回
+
+### 3.6 底层能力模块
+
+| 模块 | 功能 | 实现要点 |
+|------|------|----------|
+| Spec 文档引擎 | 模板渲染 + 语法校验 + Delta 合并 | 自定义 Markdown 模板、GIVEN/WHEN/THEN 解析器 |
+| LLM 模型抽象层 | 多模型统一封装 + 分层提示词工厂 | 屏蔽 OpenAI/Claude/通义千问 API 差异 |
+| AST 解析器 | 提取项目上下文 | 多语言 AST 解析（TS/JS/Python/Java/Go） |
+| 代码生成工具链 | 安全文件操作 + Spec 校验 + 回滚 | 自动识别逻辑缺失、接口参数不一致 |
+
+### 3.7 完整执行流程演示
+
+需求示例：新增用户邮箱登录功能
+
+1. `spec propose "新增邮箱密码登录，支持验证码找回密码，不支持第三方登录"`
+2. 引擎调用 AST 解析器读取项目现有用户表、登录接口
+3. LLM 在 Proposal 阶段守卫约束下生成 `proposal.md`，界定范围
+4. 人工确认后进入 Spec 阶段，生成 GIVEN/WHEN/THEN 全场景契约
+5. 确认后生成 `design.md`：定义 UserLogin 接口、验证码表、加密工具复用
+6. 自动拆分 `tasks.md` 清单（创建接口、数据库迁移、前端登录页、异常拦截）
+7. `spec apply` 逐条完成 Task 代码生成
+8. `spec verify` 自动校验代码行为是否匹配 Spec，识别遗漏验证码过期逻辑
+9. 修复后 `spec archive`——Delta 引擎自动合并登录相关 Spec 到全局基准
+
+---
+
+## 四、两种范式的对比与融合
+
+### 4.1 核心差异
+
+| 维度 | Skill 知识库（harmony-os-skill） | Spec 流程规范（spec-for-ai） |
+|------|-------------------------------|---------------------------|
+| **核心问题** | AI 知识断层：不知道最新 API 和踩坑经验 | AI 流程失控：跳过规划直接写代码 |
+| **解决思路** | 提供高质量参考知识，让 AI 直接消费 | 定义结构化工作流，管控 AI 输出过程 |
+| **交付物** | 44 个独立的 SKILL.md 知识包 | 五阶段 Spec 文档 + 校验规则引擎 |
+| **AI 交互方式** | 语义匹配 → 加载 SKILL.md → AI 自行参考 | 阶段守卫 → LLM 调用 → 输出后校验 |
+| **护城河** | 知识数量与质量（实战验证过） | 流程严谨性（不可跳过的阶段管控） |
+| **适用场景** | 特定技术栈的常见坑（鸿蒙、新框架） | 长期迭代项目需要追溯和协作 |
+| **使用成本** | 低（git submodule 一行接入） | 中（需要人工确认每个阶段） |
+
+### 4.2 互补关系
+
+两者不是替代关系，而是解决不同层面的问题：
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph Fusion["融合方案"]
+        subgraph Spec["Spec 流程层"]
+            S1["Proposal 需求澄清"]
+            S2["Spec 行为契约"]
+            S3["Design 架构设计"]
+            S4["Task 任务拆解"]
+            S5["Implement & Verify"]
+        end
+        subgraph Skill["Skill 知识层"]
+            K1["Frontmatter 语义匹配"]
+            K2["反例 + 正解模板"]
+            K3["验证方法"]
+        end
+    end
+
+    Spec -->|"AI 生成代码时参考"| Skill
+    Skill -->|"提供上下文约束"| Spec
+
+    style Spec fill:#e1f5fe,stroke:#0288d1
+    style Skill fill:#fff3e0,stroke:#e65100
+`} />
+
+**融合方式**：在一个项目中同时使用两者——
+- `spec-for-ai` 管控开发流程（确保 AI 先规划再编码）
+- `harmony-os-skill` 在 AI 编码时提供领域知识参考（确保 AI 知道鸿蒙最新 API 和常见坑）
+
+例如，在 spec-for-ai 的 Implement 阶段，AI 生成鸿蒙代码时会自动去 `.skills/skills/` 中检索是否有相关 skill 可以借鉴，从而同时获得流程规范和领域知识。
+
+### 4.3 共同的设计原则
+
+尽管解决的问题不同，两者在工程化设计上有惊人的相似性：
+
+| 设计原则 | Skill 实现 | Spec 实现 |
+|----------|-----------|-----------|
+| **结构化存储** | 每个 skill 独立目录 + YAML frontmatter | specs/ + changes/ 隔离目录 + Delta Spec |
+| **增量演进** | 小迭代逐步新增 skill，不要求一次性完整 | Delta Spec 记录增量变更，逐步完善系统规范 |
+| **版本追踪** | git submodule 管理 skill 版本 | 内置 spec add/commit/log/diff 独立版本命令 |
+| **验证闭环** | 每个 skill 包含验证方法（可观测证据） | spec verify 自动校验代码是否匹配 Spec |
+| **低接入成本** | git submodule 一行接入 | spec init 一键初始化 |
+
+### 4.4 选择建议
+
+| 团队类型 | 推荐方案 | 理由 |
+|----------|----------|------|
+| 新框架/新 SDK 开发者 | Skill 知识库 | 知识断层是最大瓶颈，快速积累踩坑经验 |
+| 长期迭代商业项目 | Spec 流程规范 | 需要追溯、协作、质量管控 |
+| 两者兼有 | 融合使用 | Spec 管控流程，Skill 提供领域知识 |
+| 小型一次性 Demo | 都不需要 | 规范编写成本超过收益 |
+
+---
+
+## 五、可复用的工程化方法论
+
+### 5.1 核心公式
+
+```
+AI Coding 工程化 = 流程规范（Spec）× 领域知识（Skill）
+```
+
+两者相乘而非相加——缺少任一个，另一个的效果都会大打折扣。
+
+### 5.2 Skill 编写判断标准
+
 - 同一个坑你或 AI 踩过 ≥ 2 次
 - 官方文档把关键约束藏在不起眼处
 - AI 默认生成的代码是错的（训练库过时）
 
-### 4.2 通用 SKILL.md 模板
+### 5.3 通用模板
 
 ```markdown
 ---
 name: <tech>-<module>-<problem-slug>
 description: <技术栈> <模块> <问题> — 在遇到<症状关键词>/<报错码>时使用。
 ---
-
-# <标题：问题 + 正确方案>
 
 ## 何时使用此 skill
 <列出触发条件>
@@ -337,12 +408,6 @@ description: <技术栈> <模块> <问题> — 在遇到<症状关键词>/<报�
 ## 验证方法（必做）
 <可观测证据>
 
-## 排错清单（可选）
-<按优先级排序的检查项>
-
-## 常见误区（可选）
-<误区 vs 真相 表格>
-
 ## 相关 skill
 <交叉引用>
 
@@ -350,76 +415,41 @@ description: <技术栈> <模块> <问题> — 在遇到<症状关键词>/<报�
 <官方文档链接>
 ```
 
-### 4.3 六条核心原则
+### 5.4 六条核心原则
 
-1. **粒度精准**：一个 skill 解一个坑，不写大而全。粒度小 → AI 检索命中后上下文短、token 省；粒度小 → 易维护、易增量沉淀
+1. **粒度精准**：一个 skill 解一个坑，不写大而全
+2. **结构固定**：六段式模板保证质量下限与 AI 消费一致性
+3. **反例驱动**：用"AI 会犯的错"反向定义正确方案，传递判断力
+4. **验证闭环**：强调可观测证据，杜绝假性修复
+5. **语义触发**：Frontmatter description 用"场景 + 症状"语言，让 AI 零配置自动检索
+6. **增量演进**：不要求一次完整，小步迭代逐步完善
 
-2. **结构固定**：六段式模板保证质量下限与 AI 消费一致性。无论谁写、哪个模块，读者（人或 AI）一看就懂
+---
 
-3. **反例驱动**：用"AI 会犯的错"反向定义正确方案。不是罗列 API，而是传递判断力——让 AI 知道"为什么会错"比"正确答案是什么"更重要
-
-4. **验证闭环**：强调可观测证据，杜绝假性修复。验证方法不是可选项，是必选项
-
-5. **语义触发**：Frontmatter description 用"场景 + 症状"语言，让 AI 零配置自动检索。不写"这是什么"，写"什么情况下用"
-
-6. **实战沉淀**：来自真实上架 App，非纸上谈兵。每个 skill 背后都有一个真机验证过的 Bug 修复记录
-
-### 4.4 填补三类信息断层
-
-| 断层类型 | 例子 | Skill 解法 |
-|---------|------|-----------|
-| 训练库截止前的旧 API | `consumeOwnedPurchase` 已改名 `finishPurchase` | 记录最新 API + 兼容方案 |
-| 官方文档藏关键约束 | "必须手动签名"藏在透明卡片最末 | 以 checklist 形式列出所有前置条件 |
-| 社区资料质量参差 | CSDN 旧贴 / 商业推广混杂 | 提供实测验证过的一手结论 |
-
-### 4.5 迁移到其他技术栈
-
-本仓库的方法论不限于鸿蒙，可迁移到任何"AI 训练库滞后 / 官方文档分散 / 社区资料参差"的技术栈：
-
-**仓库组织**：
-```
-your-tech-skill/
-├── README.md           # 总索引 + 分类 + 使用说明
-└── skills/
-    ├── <category>-<problem>/
-    │   └── SKILL.md
-    └── ...
-```
-
-**命名规范**：目录名 = skill slug，用 `技术-模块-问题` 三段式命名。
-
-**接入方式**：git submodule 让项目引用，解耦 skill 库与业务代码。
-
-## 五、总结
-
-HarmonyOS-Skill 仓库的价值不在于"教你怎么写鸿蒙代码"，而在于示范了一种 **把实战踩坑经验工程化、AI 可消费化** 的知识管理范式。
+## 六、总结
 
 <MermaidDiagram chart={`flowchart TD
-    subgraph Paradigm["AI Coding 时代知识管理范式"]
-        P1["粒度精准<br/>一个 skill 一个坑"]
-        P2["结构固定<br/>六段式模板"]
-        P3["反例驱动<br/>传递判断力"]
-        P4["验证闭环<br/>可观测证据"]
-        P5["语义触发<br/>零配置检索"]
-        P6["交叉引用<br/>知识网络"]
-        P7["实战沉淀<br/>真机验证"]
+    subgraph Paradigm["AI Coding 工程化双范式"]
+        Skill["Skill 知识库<br/>解决知识断层<br/>让 AI 知道正确的做法"]
+        Spec["Spec 流程规范<br/>解决流程失控<br/>让 AI 按规范工作"]
     end
-
-    P1 <--> P2
-    P2 <--> P3
-    P3 <--> P4
-    P4 <--> P5
-    P5 <--> P6
-    P6 <--> P7
-
-    style Paradigm fill:#e1f5fe,stroke:#0288d1
+    Skill <--> Spec
+    Paradigm --> Result["可追溯 / 可复现 / 可协作<br/>的工业化 AI 开发流程"]
+    style Skill fill:#fff3e0,stroke:#e65100
+    style Spec fill:#e1f5fe,stroke:#0288d1
+    style Result fill:#e8f5e9,stroke:#388e3c
 `} />
 
-这套方法可直接迁移到任何"AI 训练库滞后"的技术栈，是 **AI Coding 时代经验沉淀的可复制范式**。
+AI Coding 正在从"聊天式问答"走向"工程化协作"。这个转变需要两样东西：**知识**（AI 不知道的，我们告诉它）和 **流程**（AI 容易跳过的，我们约束它）。
+
+- **harmony-os-skill** 示范了如何把实战经验结构化为 AI 可消费的知识包
+- **spec-for-ai** 示范了如何用五阶段工作流和阶段守卫管控 AI 输出过程
+
+两者不是竞争关系，而是 AI Coding 工程化的两个必要支柱。当一个项目同时拥有结构化的领域知识和规范化的开发流程时，AI 辅助编码才能真正从"玩具"走向"生产力工具"。
 
 ## 参考资料
 
-- 源仓库：https://gitee.com/chen_jeff/harmony-os-skill
+- **harmony-os-skill**：https://gitee.com/chen_jeff/harmony-os-skill
+- **spec-for-ai**：https://gitcode.com/oshunter/spec-for-ai
 - 许可证：MulanPSL-2.0
-- 分析日期：2026-06-25
 - 华为 HarmonyOS 开发者文档：https://developer.harmonyos.com/

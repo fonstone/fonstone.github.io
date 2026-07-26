@@ -207,10 +207,6 @@ Sim-to-Real 不是单一算法，而是一整套方法论的组合。
 
 核心思想：训练时随机扰动物理、视觉、环境参数，迫使策略适应参数不确定性，从而在真实世界泛化。
 
-![域随机化概念：在仿真中随机化视觉与物理参数以提升迁移鲁棒性](/images/autonomous-driving-survey/domain-rand.png)
-
-*域随机化示意图：通过在仿真中随机化光照、纹理、物体位置、物理参数等，训练出的策略在真实世界中具有较强的泛化能力。图片来源：OpenAI*
-
 **随机化参数维度**：
 
 | 维度 | 关键参数 | 典型范围 |
@@ -286,10 +282,6 @@ Sim-to-Real 不是单一算法，而是一整套方法论的组合。
 - **渐进式迁移**：从低保真仿真 → 高保真仿真 → 物理系统的课程学习
 - **混合现实训练**：在真实环境中叠加虚拟元素，保留真实物理交互同时实现场景灵活控制
 - **Real-to-Sim-to-Real（RialTo）**：先用真机扫描场景构建仿真，再在仿真中训练后迁回真机
-
-![RialTo Real-to-Sim-to-Real 流程](/images/autonomous-driving-survey/rialto-framework.png)
-
-*RialTo 的核心思想：使用真机扫描（RGB-D 相机或 NeRF）快速重建仿真场景，在重建的数字孪生环境中用 RL 训练策略，再将训练好的策略零样本迁移回真机。图片来源：RialTo Project*
 
 RialTo 的流程本质上是将"Sim-to-Real"中最大的难点——仿真场景构建——自动化。传统方法需要人工搭建与真实环境一致的仿真场景，工作量巨大且难以规模化。RialTo 通过以下三步实现自动化：
 
@@ -373,10 +365,6 @@ RialTo 的关键贡献在于证明了"只要仿真重建得足够像真实，零
 ## 六、端到端 Sim-to-Real 工程流水线
 
 ### 6.1 五阶段部署流水线
-
-![NVIDIA Sim-to-Real 工程流水线](/images/autonomous-driving-survey/sim2real-pipeline.png)
-
-*NVIDIA Isaac Sim 推荐的 Sim-to-Real 工程流：从仿真训练到真机部署的完整闭环流程。图片来源：NVIDIA Developer*
 
 <MermaidDiagram chart={`flowchart TD
     subgraph P1["Phase 1: 高保真仿真适配"]

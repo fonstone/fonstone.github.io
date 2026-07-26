@@ -184,10 +184,6 @@ tags: ["自动驾驶", "具身智能", "数据闭环", "数据飞轮", "自动�
 - **预训练 Occupancy 网络** 生成体素占用真值
 
 
-![SAM 预训练大模型用于自动标注](/images/autonomous-driving-survey/sam-autolabel.png)
-
-*SAM（Segment Anything Model）架构：通过 prompt encoder 支持点、框、掩码等灵活的交互式分割，可用于自动标注流水线中的实例分割步骤。图片来源：Meta AI*
-
 SAM 的核心能力在于**零样本迁移**——它从未见过特定场景的训练数据，但能够通过 prompt engineering 快速适应该场景的分割需求。在自动标注流水线中，SAM 通常被用作：
 
 1. **初始分割**：对图像运行 SAM 自动模式，生成所有可能的物体分割掩码
@@ -205,10 +201,6 @@ SAM 的核心能力在于**零样本迁移**——它从未见过特定场景的
 - **NeRF/3DGS 重建辅助**：用多帧图像重建场景 3D 结构，自动生成多视角一致的标注
 
 ### 4.3 自动标注流水线的工程设计
-
-![数据闭环与自动标注流水线](/images/autonomous-driving-survey/dataloop-concept.png)
-
-*工业级数据闭环与自动标注流水线：从原始数据到真值标注的自动化处理流程。图片来源：NVIDIA Developer*
 
 工业级自动标注流水线是多级漏斗：
 
@@ -269,10 +261,6 @@ SAM 的核心能力在于**零样本迁移**——它从未见过特定场景的
 | MC Dropout | 多次前向传播，方差衡量不确定性 | 实现简单，但计算量大 |
 | Deep Ensemble | 多模型分歧衡量不确定性 | 精度高，但训练成本高 |
 | Evidential Deep Learning | 预测概率分布参数 | 单次前向传播，但理论复杂 |
-
-![模型不确定性估计方法对比](/images/autonomous-driving-survey/uncertainty-est.png)
-
-*不确定性估计的三种范式：MC Dropout 通过随机丢弃神经元产生多次预测分布，Deep Ensemble 通过多个独立模型的预测方差来衡量不确定性。图片来源：Lilian Weng*
 
 **MC Dropout 的原理**：在推理阶段不关闭 dropout，进行 N 次前向传播（通常 N=10-50）。对每个预测结果，计算 N 次输出的均值作为最终预测，方差作为不确定性估计。方差越大，说明模型对该样本越不确定，该样本越可能是难例。
 

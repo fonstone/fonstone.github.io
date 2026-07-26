@@ -223,14 +223,6 @@ RSSM 的推理过程如下：
 
 这种"确定+随机"的双重设计让 RSSM 能够同时建模可预测的确定性演化（如车辆沿车道前行）和不可预测的随机事件（如行人突然横穿）。
 
-![DreamerV3 架构](/images/autonomous-driving-survey/dreamer-arch.png)
-
-*DreamerV3 世界模型架构：通过 RSSM 在隐空间中建模状态演化，支持 model-based RL 的闭环训练。图片来源：Danijar Hafner*
-
-![RSSM 状态空间模型](/images/autonomous-driving-survey/rssm-arch.png)
-
-*RSSM 的确定性与随机状态双重设计：确定性状态（GRU）负责时序记忆，随机状态（Latent Distribution）负责不确定性建模。两者结合使世界模型既能预测确定性演化又能表达随机事件。图片来源：Danijar Hafner*
-
 DreamerV3 的关键创新还在于引入了无偏的 KL 平衡机制和自由信息量（Free Bits）约束，使得世界模型在大规模视觉场景中训练更稳定。通过在 latent space 中进行 model-based RL，Dreamer 系列在 Atari 游戏和 DM Control 等任务上取得了超越 model-free RL 方法的样本效率。
 
 局限：RSSM 用 RNN 建模时序，长程依赖能力有限，且生成的视频帧分辨率较低，难以直接用于真实的自动驾驶场景。
@@ -240,10 +232,6 @@ DreamerV3 的关键创新还在于引入了无偏的 KL 平衡机制和自由信
 2023年是自动驾驶世界模型的爆发之年：
 
 **GAIA-1** (Wayve, 2023)：
-
-![GAIA-1 架构](/images/autonomous-driving-survey/gaia1-arch.png)
-
-*GAIA-1 世界模型架构：用 VQ-VAE 将视频压缩为离散 token，GPT-style Transformer 自回归生成，支持动作与文本条件控制。图片来源：Wayve*
 
 GAIA-1 是世界模型领域里程碑式的工作，它首次展示了大规模生成式世界模型在自动驾驶中的可行性。其架构由三个核心组件构成：
 
@@ -407,10 +395,6 @@ DriveLM 的核心贡献是提出了 **Graph Visual Question Answering（GVQA）*
 这个推理链的设计使得驾驶决策过程完全可解释——每个决策都可以追溯到具体的感知证据和推理步骤。DriveLM 基于 BLIP-2 和 Vicuna 架构，训练数据来自 nuScenes 的人工标注指令-响应对以及通过规则自动生成的结构化 QA 数据。
 
 **LMDrive** (CVPR 2024)：
-
-![LMDrive 架构](/images/autonomous-driving-survey/lmdrive-arch.png)
-
-*LMDrive 闭环端到端 VLA 系统架构：视觉编码器 + LLM + 控制模块，支持自然语言指令驱动的驾驶。图片来源：LMDrive*
 
 - 闭环端到端VLA系统
 - 用LLaVA风格的架构，将图像编码为visual tokens，与文本tokens拼接后输入LLM

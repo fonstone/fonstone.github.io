@@ -11,7 +11,9 @@ tags: ["HarmonyOS", "AI Coding", "Skill", "知识管理", "工程实践", "鸿�
 
 ### 1.1 项目定位
 
-HarmonyOS-Skill 是一套从 **真实鸿蒙原生 App 开发实战**（12 周从 0 到 1 上架，472 个测试用例真机全绿，60+ bug 记录原始材料）沉淀出来的 **HarmonyOS NEXT 开发 Skill 集合**，覆盖 ArkUI 状态管理 / 桌面服务卡片 / IAP / 端侧 AI / 测试 / 真机打包 / 应用市场上架等核心场景。
+HarmonyOS-Skill 是一套从 **三个真实鸿蒙原生 App 开发实战**（潮玩展柜 + 熬夜修仙 + 鲸播 OrcaPlayer，全部已上架应用市场）沉淀出来的 **HarmonyOS NEXT 开发 Skill 集合**，覆盖 ArkUI 状态管理 / 桌面服务卡片 / 视频播放与媒体 / NAS 串流 / IAP / 元服务 / 测试 / 真机打包 / 应用市场上架等核心场景。
+
+截至 2026 年 7 月，仓库已积累 **44 个 skill**（从 3 个实战 App 的 60+ bug 修复记录和 472 个真机测试用例中提炼），每个 skill 都是"问题场景 + 反模式 + 正确代码模板 + 验证方法"的完整知识包。
 
 核心卖点是 **"AI Coding 友好"**——把踩过的坑、查过的官方文档、试过的方案沉淀成 AI 助手可直接消费的 skill 知识包，让下一个鸿蒙项目少走弯路。
 
@@ -40,15 +42,94 @@ HarmonyOS-Skill 是一套从 **真实鸿蒙原生 App 开发实战**（12 周从
 
 ### 1.3 Skill 分类矩阵
 
+截至 2026 年 7 月，仓库已从 3 个实战 App 中沉淀 **44 个 skill**，覆盖 10 个分类：
+
 | 分类 | 数量 | 代表 skill |
 |------|------|-----------|
 | ArkUI 状态管理 | 4 | @Observed/@ObjectLink 全链路、@Builder 参数断链、ForEach key、Toggle isOn |
 | ArkUI UI 模式 | 5 | bindSheet 多内容、沉浸式状态栏、长按菜单预览、SVG 镂空图标、Scroll 短内容 |
 | ArkUI 设计令牌 | 2 | 字体令牌库、CTA 配色令牌 + AGC 对比度 |
-| 桌面服务卡片 | 3 | 透明背板 5 件套、跨进程图片传递、刷新策略 |
-| 系统能力 + 商业化 | 5 | IAP、Motion Kit 握姿、Core Vision 抠图、ShareKit、zlib 压缩 |
-| 工程实践 | 3 | ArkTS 严格模式红线、真机打包 SOP、hypium 测试 |
-| 应用上架 | 2 | 华为应用市场提审清单、APP 备案 vs ICP |
+| 桌面服务卡片 | 5 | 透明背板 5 件套、跨进程图片传递、刷新策略、动画限制、UI 布局坑 |
+| 元服务 | 4 | API 网关、图标快照、沙箱调试、跨进程同步 |
+| 系统能力 + 商业化 | 5 | IAP、Motion Kit 握姿、Core Vision 抠图、ShareKit、zlib |
+| 视频播放 / 媒体 | 7 | 双内核播放、字幕轨、libass 编译、seek 续播、后台播放、XComponent 坑、缩略图 |
+| 网络 / 数据 / 文件 | 5 | NAS 串流、HTTP 坑集、HUKS 加密、文件持久授权、数据库 |
+| 工程实践 | 3 | ArkTS 严格模式、真机打包 SOP、hypium 测试 |
+| 应用上架 | 4 | 提审清单、多轮拒审根治、隐私政策模板、备案 vs ICP |
+
+### 1.4 实战案例：三个真实 App 的 Skill 沉淀
+
+该仓库的 skill 来自三个已上架的鸿蒙原生 App，每个 App 覆盖不同的技术维度：
+
+#### 1.4.1 潮玩展柜 — ArkUI 状态管理 + 桌面卡片 + IAP
+
+首个实践项目（已上架华为应用市场）：用户拍照 → AI 端侧抠图 → 数字展柜展示 → 桌面服务卡片。
+
+**沉淀的 skill 重点**：
+- **@Observed/@ObjectLink 全链路**：对象数组嵌套时 UI 不更新的根因
+- **透明背板 5 件套**：桌面卡片背景透明的完整配置链
+- **IAP 集成**：应用内购买的双协议签署 + Profile 重生成
+- **Core Vision Kit 端侧 AI 抠图**：完全离线零成本的 AI 能力
+
+#### 1.4.2 熬夜修仙 — 元服务 + 跨进程同步
+
+第二个实践项目（HarmonyOS 元服务，AGC 审核通过）：以修仙等级反讽包装的熬夜记录元服务。
+
+**沉淀的 skill 重点**：
+- **元服务 API 网关**：`@atomicservice` 标记 / 编译 11706010 / 平台硬边界
+- **卡片刷新配额与 AGC 合规**：刷新方式选择与审核通过策略
+- **跨进程 preferences 同步**：卡片 ↔ 主 App 双进程数据一致性
+- **AGC 多轮拒审根治**：改时钟测时长 / 正文对比度 / 卡片快照错误码 13
+
+#### 1.4.3 鲸播 OrcaPlayer — 视频播放 + NAS 串流 + 复杂上架
+
+第三个实践项目（已上架应用市场）：发烧友级本地全能视频播放器，双内核全格式播放 + NAS 串流。
+
+**沉淀的 skill 重点**：
+- **双内核播放架构**：AVPlayer 硬解 + ijkplayer 软解兜底
+- **字幕全链路**：内封/外挂字幕轨、libass 交叉编译、GBK/Big5 编码探测
+- **NAS 串流**：WebDAV 硬解出画 + SMB 桥接 + 4MB 预读
+- **HUKS 凭据加密**：AES-256-GCM 三段式会话
+- **普通 App 三轮拒审根治**：审核实验室网络 / "开通中"判功能未完成 / IAP 预检门控
+
+### 1.5 快速上手教程
+
+#### 步骤 1：将 Skill 库接入项目
+
+```bash
+cd your-harmonyos-project
+git submodule add https://gitee.com/chen_jeff/harmony-os-skill.git .skills
+```
+
+这会在你的项目中创建 `.skills/` 目录，包含全部 44 个 SKILL.md。
+
+#### 步骤 2：让 AI 助手消费 Skill
+
+在开发时告诉 AI：
+
+> 我在写鸿蒙桌面服务卡片，刷新失败但 build() 跑了，参考 `.skills/skills/` 找找有没有相关 skill。
+
+AI 会自动按 `description` 字段做语义匹配，加载 `harmonyos-form-transparent` 等相关 skill。
+
+#### 步骤 3：人肉查阅
+
+遇到具体问题时直接搜索对应主题。每个 skill 结构一致：
+
+1. 何时使用此 skill → 2. 核心结论 → 3. 反例 ❌ → 4. 正确做法 ✅ → 5. 验证方法 → 6. 相关 skill → 7. 参考资料
+
+#### 步骤 4：沉淀新经验
+
+修复 Bug 后，按模板写成新 skill 并提交 PR，将个人经验转化为团队资产：
+
+```bash
+# 创建新 skill 目录
+mkdir -p .skills/skills/<category>-<problem-slug>
+# 编写 SKILL.md（参照 4.2 节模板）
+# 提交到仓库
+git add .skills/
+git commit -m "feat(skill): 新增 <问题> 的解决经验"
+git push
+```
 
 ## 二、Skill 系统的架构设计原理
 
@@ -155,7 +236,7 @@ git submodule add https://gitee.com/chen_jeff/harmony-os-skill.git .skills
 
 <MermaidDiagram chart={`flowchart LR
     subgraph Repo["harmony-os-skill 仓库"]
-        Skills["24 个 SKILL.md"]
+        Skills["44 个 SKILL.md"]
     end
 
     subgraph Proj["你的鸿蒙项目"]

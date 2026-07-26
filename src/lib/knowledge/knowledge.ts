@@ -37,7 +37,7 @@ export type KnowledgeCategory = {
 const CONTENT_ROOT = path.join(process.cwd(), "content");
 
 const CATEGORY_SLUG_MAP: Record<string, string> = {
-  "自动驾驶": "autonomous-driving",
+  "自动驾驶 & 具身智能": "autonomous-driving",
   "管理": "management",
   "AI": "ai",
   "OS": "os",
@@ -100,7 +100,7 @@ export async function getKnowledgeCategories(): Promise<KnowledgeCategory[]> {
     .sort((a, b) => a.localeCompare(b));
 
   const customOrder = ["管理"];
-  const insertBefore = ["自动驾驶"];
+  const insertBefore = ["自动驾驶 & 具身智能"];
   for (const cat of customOrder) {
     const idx = categoriesList.indexOf(cat);
     if (idx !== -1) {

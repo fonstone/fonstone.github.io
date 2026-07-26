@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import matter from "gray-matter";
+import GithubSlugger from "github-slugger";
 
 export type KnowledgePostFrontmatter = {
   title?: string;
@@ -273,13 +274,13 @@ export function extractHeadings(mdxContent: string): KnowledgeHeading[] {
   const stripped = stripCodeBlocks(mdxContent);
   const headingRegex = /^(#{1,3})\s+(.+)$/gm;
   const headings: KnowledgeHeading[] = [];
-  const slugCounter = new Map<string, number>();
+  const slugger = new GithubSlugger();
   let match;
 
   while ((match = headingRegex.exec(stripped)) !== null) {
     const level = match[1].length;
     const text = match[2].trim();
-    const id = generateSlug(text, slugCounter);
+    const id = slugger.slug(text);
     headings.push({ id, text, level });
   }
 
@@ -317,25 +318,6 @@ function stripCodeBlocks(content: string): string {
   }
 
   return result.join("\n");
-}
-
-function generateSlug(text: string, slugCounter: Map<string, number>): string {
-  let slug = text
-    .toLowerCase()
-    .replace(/[^\w-]/g, " ")
-    .replace(/[\s]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  if (slugCounter.has(slug)) {
-    const count = slugCounter.get(slug)! + 1;
-    slugCounter.set(slug, count);
-    slug = `${slug}-${count}`;
-  } else {
-    slugCounter.set(slug, 0);
-  }
-
-  return slug;
 }
 
 export async function getKnowledgeStaticParams(): Promise<

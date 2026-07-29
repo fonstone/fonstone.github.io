@@ -1,4 +1,4 @@
----
+﻿---
 title: "智能体通信协议"
 description: "MCP、A2A、ANP 三种智能体通信协议深度解析。"
 date: "2026-07-12"

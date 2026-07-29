@@ -684,3 +684,449 @@ Action: Finish[今天北京的天气是晴朗的，气温26摄氏度，非常适
 
 ---
 
+
+## 1.6 现代 Agent = LLM + 上下文 + 工具
+
+如果要用一个公式来概括现代大语言模型驱动的智能体，最简洁有力的表达莫过于：
+
+```
+Agent = LLM + Context + Tools
+```
+
+这个公式看似简单，却蕴含着三层递进的理解。
+
+### 1.6.1 三层理解
+
+**第一层：实现层——LLM + 上下文 + 工具**
+
+这是最直接的工程视角。LLM 是智能体的"大脑"，负责推理和决策；上下文（Context）是智能体的"短期记忆"，包括了系统提示词、历史对话、观察结果等所有当前轮次可用的信息；工具（Tools）是智能体与环境交互的接口，包括代码执行、API 调用、搜索引擎等。
+
+```python
+# 一个最简的 Agent 实现，完美诠释了这个公式
+class SimpleAgent:
+    def __init__(self, llm, tools):
+        self.llm = llm       # LLM：推理引擎
+        self.tools = tools   # Tools：工具集合
+        self.context = []    # Context：上下文历史
+    
+    def run(self, user_input):
+        self.context.append({"role": "user", "content": user_input})
+        # LLM 基于上下文推理
+        response = self.llm.generate(self.context)
+        # 解析并执行工具调用
+        action = self._parse_action(response)
+        if action.type == "tool_call":
+            result = self.tools[action.name](**action.args)
+            self.context.append({"role": "observation", "content": result})
+            return self.run("继续")  # 继续循环
+        return response
+```
+
+**第二层：直觉层——大脑 + 眼睛 + 手**
+
+用一个更直观的类比来理解：LLM 如同人类的大脑，负责思考、规划和判断；上下文如同眼睛和耳朵，为大脑提供感知信息；工具如同手和脚，让大脑能够对世界施加影响。三者缺一不可——没有 LLM，系统没有智能；没有上下文，LLM 无从感知；没有工具，LLM 无法行动。
+
+**第三层：学术层——策略 + 观察空间 + 动作空间**
+
+在强化学习和智能体理论中，这个问题被形式化为：策略（Policy）——智能体从观察到动作的映射函数，对应 LLM 的推理能力；观察空间（Observation Space）——智能体能感知到的所有可能状态的集合，对应上下文的组织形式；动作空间（Action Space）——智能体能采取的所有可能动作的集合，对应工具的定义域。
+
+<p>表 S.1 三层视角对比</p>
+
+| 视角 | 智能体 | 感知/记忆 | 行动能力 |
+|------|--------|-----------|----------|
+| **实现层** | LLM（大语言模型） | Context（上下文） | Tools（工具） |
+| **直觉层** | 大脑（Brain） | 眼睛/耳朵（Eyes/Ears） | 手（Hands） |
+| **学术层** | Policy（策略） | Observation Space（观察空间） | Action Space（动作空间） |
+
+### 1.6.2 观察空间与动作空间的扩展
+
+Agent 的能力边界，直接取决于其观察空间和动作空间的丰富程度。一个只能"看"不能"听"的智能体，和一个能同时调用数十种工具、处理多种模态输入的智能体，能力天差地别。
+
+以 **Manus** 为例，它的观察空间不仅包括文本输入，还包括文件系统、浏览器截图、代码执行输出、命令行日志等；它的动作空间涵盖了文件读写、代码执行、浏览器操作、数据可视化、第三方 API 调用等数十种工具。这种丰富的空间定义，让它能够完成从数据分析到网页开发的复杂任务。
+
+同样，**OpenClaw** 作为一个面向研究者的智能体框架，将观察空间从单一文本对话扩展为多层次的反馈循环，包括代码执行结果、测试输出、代码审查意见、用户确认等；其动作空间则支持文件编辑、Shell 命令执行、代码搜索、上下文管理系统操作等深度编程工具。
+
+**扩展观察空间和动作空间，是提升 Agent 能力最直接的工程手段。** 每新增一个观察通道，Agent 就多了一双感知世界的"眼睛"；每新增一个工具，Agent 就多了一只改造世界的"手"。
+
+## 1.7 Agent 的学习机制——从上下文适应到持久更新
+
+Agent 的能力并非一成不变。一个成熟的 Agent 系统，需要在不同时间尺度上持续学习和进化。我们可以将其学习机制划分为三个层次。
+
+### 1.7.1 三个层面的能力更新
+
+**第一层：上下文内适应（In-Context Adaptation）**
+
+这是最细粒度的学习，发生在单次任务的执行过程中。Agent 通过将每一步的反馈（Observation）追加到上下文中，实现即时的自我修正。例如，当智能旅行助手发现用户对推荐的酒店不满意时，它会在下一轮推理中使用这个反馈作为新的约束条件。
+
+```
+用户: 推荐一家北京的经济型酒店
+Agent: 如家酒店，价格 350 元/晚
+用户: 太贵了，有没有更便宜的?   ← 这是反馈，被追加到上下文
+Agent: 抱歉，那推荐 7 天酒店，价格 250 元/晚  ← Agent 根据反馈调整
+```
+
+这种学习的局限在于：它**随着任务结束而消失**。下一次任务，Agent 不会记得这个用户偏好"经济型"。
+
+**第二层：外部制品更新（External Artifact Update）**
+
+这是跨任务的学习机制。Agent 通过更新系统外部的持久化制品来实现长期记忆。这些制品包括：
+
+- **知识文档**：如 README、API 文档、Wiki，Agent 在推理时通过 RAG 检索
+- **提示词/Skills**：预设的指令模板，可复用和迭代
+- **程序/脚本**：将经验固化为可重用的代码模块
+
+例如，Claude Code 的 CLAUDE.md 文件就是一种典型的外部制品。用户可以在其中记录项目约定、架构决策、常用命令等。Agent 在执行每个任务前都会读取这份文件，从而"记住"项目的长期上下文。
+
+**第三层：参数更新（Parameter Update）**
+
+这是最深层的学习，通过训练来修改模型本身的参数。这涉及完整的训练周期：数据收集 -> 有监督微调（SFT）-> 强化学习（RLHF/DPO） -> 评估 -> 部署。当发现 Agent 在某个任务类别上持续表现不佳时，最彻底的解决方案是收集该任务的优质示例数据，通过微调来"刻入"模型的权重中。
+
+![](/images/courses/ai-agent/fig1-1.svg)
+
+*图 S.1 Agent 三个层次的学习机制：上下文内适应（秒级）、外部制品更新（分钟级）、参数更新（天级）*
+
+三个层次的对比：
+
+| 层次 | 时间尺度 | 影响范围 | 代价 | 持久性 |
+|------|----------|----------|------|--------|
+| 上下文适应 | 秒级 | 单次任务 | 几乎为零 | 任务结束后消失 |
+| 外部制品更新 | 分钟级 | 跨任务 | 低（写文件） | 持久化存储 |
+| 参数更新 | 天级 | 全局 | 高（GPU 训练） | 永久写入模型 |
+
+在实践中，**绝大多数 Agent 系统应该优先利用第一层和第二层**。参数更新成本高昂、周期漫长，只有当某个能力缺陷具有广泛的普遍性，且前两层都无法解决时，才值得考虑。
+
+## 1.8 Harness 工程——模型之外的竞争力
+
+如果把 Agent 比作一辆赛车，LLM 是发动机，那么 Harness（缰绳/控制架构）就是方向盘、刹车、悬挂和底盘系统的总和。发动机决定了速度的上限，但缰绳工程决定了你能在多复杂的赛道上跑多稳。
+
+### 1.8.1 扩展的 Agent 公式
+
+让我们把最初的 Agent 公式展开：
+
+```
+Agent = Model + Harness
+      = LLM + [Context + Tools + Constrain + Verify + Correct]
+```
+
+其中，**Constrain（约束）**、**Verify（验证）** 和 **Correct（纠正）** 是 Harness 工程新引入的核心组件：
+
+- **Constrain**：为 Agent 的行为划定边界，包括输出格式约束、权限范围、允许调用的工具列表、步数限制等
+- **Verify**：对 Agent 的输出和行动结果进行校验，确保其满足质量标准和安全要求
+- **Correct**：当验证失败时，自动触发纠正措施，如重试、回退或请求人类帮助
+
+```python
+class AgentWithHarness:
+    def __init__(self, llm, tools):
+        self.llm = llm
+        self.tools = tools
+        self.harness = Harness(
+            constrain=ConstraintEngine(max_steps=10, allowed_tools=["search", "code", "read"]),
+            verify=Validator(check_format=True, check_safety=True),
+            correct=Corrector(max_retries=3, fallback="ask_user")
+        )
+    
+    def run_step(self, context):
+        # Constrain: 在调用 LLM 之前注入约束
+        constrained_prompt = self.harness.constrain.apply(context)
+        response = self.llm.generate(constrained_prompt)
+        # Verify: 校验 LLM 输出
+        issues = self.harness.verify.check(response)
+        if issues:
+            # Correct: 自动纠正
+            response = self.harness.correct.fix(response, issues, context)
+        return response
+```
+
+### 1.8.2 Harness 工程的核心竞争力
+
+当多个 Agent 使用相同的底层模型（如 GPT-4、Claude-4）时，为什么有些系统表现得远好于其他系统？**答案就在 Harness 工程中。**
+
+以 **Claude Code** 为例，其代码库中绝大部分代码并非用于管理上下文或定义工具，而是用于**约束、验证和纠正**：
+
+- **约束层**：限制 Agent 在哪些目录下可以读写文件，控制可以执行的命令类型，管理 API 调用频率，防止无限循环
+- **验证层**：检查生成的代码是否符合项目风格规范，验证命令执行是否成功，检测是否产生副作用的文件修改
+- **纠正层**：当代码 lint 失败时自动修复格式，当测试失败时自动分析日志并重试，当 Agent 陷入循环时自动打断并给出提示
+
+这种对 Constrain-Verify-Correct 的深度投资，是 Claude Code 能在复杂项目上稳定工作的关键。
+
+### 1.8.3 从 Prompt Engineering 到 Loop Engineering
+
+Harness 工程的演进路径，反映了我们对 Agent 理解的深化：
+
+1. **Prompt Engineering（提示工程）**：早期探索，核心是在系统提示词中写好规则和示例。能力完全依赖 LLM 的指令跟随能力。
+2. **Context Engineering（上下文工程）**：开始系统性地组织 RAG、历史记录、工具描述，让 LLM 获得更丰富的感知信息。
+3. **Harness Engineering（缰绳工程）**：意识到仅靠上下文不足以保证可靠输出，引入约束、验证和纠正的闭环。
+4. **Loop Engineering（循环工程）**：最新的范式，关注 Agent 循环本身的架构设计——如何决策循环是否继续、何时需要重试、何时升级到人工、如何并行多个子 Agent。
+
+```
+# Prompt Engineering 的核心
+system_prompt = "请遵守以下规则：..."
+
+# Context Engineering 的核心
+context = build_context(query, retrieved_docs, history)
+
+# Harness Engineering 的核心
+response = llm.generate(context)
+validated = validate(response)
+if not validated:
+    response = correct(response, validation_errors)
+
+# Loop Engineering 的核心
+while not task_complete:
+    response = agent.step()
+    if response.needs_review:
+        break_for_human_approval()
+```
+
+## 1.9 从工作流到自主 Agent——编排模式
+
+在第一章中我们讨论了 Workflow 和 Agent 的差异，但实际的系统设计往往不是简单的二选一。从确定性的工作流到完全自主的 Agent，存在一个渐变的频谱。理解这个频谱上的不同编排模式，是 Agent 系统架构设计的核心。
+
+### 1.9.1 五种工作流模式
+
+在《AI Agents in Depth》中，Anthropic 系统性地提出了几种常见的工作流编排模式。下面我们逐一介绍。
+
+**（1）链式模式（Chaining）**
+
+链式模式是最直接的工作流形态。它将任务分解为一系列有序的步骤，每个步骤的输出作为下一个步骤的输入。这种模式适用于步骤顺序明确、每个步骤依赖前一步结果的场景。
+
+![](/images/courses/ai-agent/fig1-wf-chaining.svg)
+
+*图 S.2 链式模式：步骤顺序执行，前一步输出是后一步的输入*
+
+经典应用场景：文档处理流水线。第一步提取文本内容，第二步识别文档类型，第三步根据类型进行摘要，第四步格式化输出。每个步骤由一次独立的 LLM 调用完成，前一步的结果直接影响后一步的处理。
+
+```python
+# 链式模式示例：文档处理流水线
+def document_pipeline(raw_doc: str) -> str:
+    # 步骤 1: 提取文本
+    text = llm_call(f"从以下文档中提取纯文本内容:\n{raw_doc}")
+    # 步骤 2: 识别类型
+    doc_type = llm_call(f"判断以下文本属于什么类型(合同/报告/邮件):\n{text}")
+    # 步骤 3: 摘要
+    summary = llm_call(f"对以下{doc_type}进行摘要:\n{text}")
+    # 步骤 4: 格式化输出
+    result = llm_call(f"将以下摘要格式化为标准报告格式:\n{summary}")
+    return result
+```
+
+**（2）路由模式（Routing）**
+
+路由模式根据输入的特征，将请求分发给不同的处理分支。每个分支可以是不同的提示词、不同的模型或不同的处理逻辑。
+
+![](/images/courses/ai-agent/fig1-wf-routing.svg)
+
+*图 S.3 路由模式：根据输入特征分发到不同处理分支*
+
+经典应用场景：智能客服系统。根据用户的问题类型（技术问题、账单问题、投诉建议），路由到不同的处理流程。技术问题调用知识库查询，账单问题调用订单系统，投诉建议升级到人工客服。
+
+```python
+# 路由模式示例：智能客服路由
+def customer_service_router(query: str) -> str:
+    # 路由决策：判断问题类型
+    category = llm_call(f"将用户问题分类(技术/账单/投诉): {query}")
+    
+    if category == "技术":
+        return technical_support(query)
+    elif category == "账单":
+        return billing_assistant(query)
+    elif category == "投诉":
+        return escalate_to_human(query)
+```
+
+**（3）并行模式（Parallelization）**
+
+并行模式同时发起多个独立的 LLM 调用或处理路径，然后将结果进行聚合。这适用于可以同时从多个角度处理的任务。
+
+![](/images/courses/ai-agent/fig1-wf-parallel.svg)
+
+*图 S.4 并行模式：多路同时处理，最后聚合结果*
+
+经典应用场景：内容审核系统。同时从内容合规性、事实准确性、语言风格、敏感信息四个维度对一段文本进行评估，最后聚合四个维度的结果，生成综合审核报告。
+
+```python
+# 并行模式示例：内容审核
+def content_review(content: str) -> dict:
+    # 并行发起多个审核维度的评估
+    futures = [
+        llm_call(f"检查以下内容是否合规:\n{content}"),
+        llm_call(f"检查以下内容的事实准确性:\n{content}"),
+        llm_call(f"评估以下内容的语言风格:\n{content}"),
+        llm_call(f"检测以下内容是否包含敏感信息:\n{content}"),
+    ]
+    # 聚合结果
+    results = gather(futures)
+    return aggregate_review(results)
+```
+
+**（4）编排模式（Orchestrator）**
+
+编排模式引入一个"主 Agent"（Orchestrator），负责动态规划任务、分派给多个"子 Agent"（Worker）执行，并综合子 Agent 的输出。
+
+![](/images/courses/ai-agent/fig1-wf-orchestrator.svg)
+
+*图 S.5 编排模式：主 Agent 动态规划并协调子 Agent 执行*
+
+经典应用场景：大型代码重构任务。编排 Agent 分析代码库结构，拆解出需要重构的模块，为每个模块分配一个子 Agent 去执行具体的重构工作，最后编排 Agent 综合检查所有变更是否协调一致。
+
+```python
+# 编排模式示例：代码重构
+def code_refactor(repo_path: str) -> str:
+    orchestrator = Agent(system_prompt="你是一个代码重构协调者")
+    
+    # Orchestrator 分析任务并制定计划
+    plan = orchestrator.plan(f"分析 {repo_path} 并将其中的 API 调用迁移到新版本")
+    
+    results = []
+    for task in plan.subtasks:
+        # 为每个子任务创建一个 Worker
+        worker = Agent(system_prompt=f"请执行以下重构任务: {task.description}")
+        result = worker.execute(task.files)
+        results.append(result)
+    
+    # Orchestrator 综合检查
+    summary = orchestrator.synthesize(results)
+    return summary
+```
+
+**（5）评估-优化模式（Evaluator-Optimizer）**
+
+这种模式包含两个角色：一个生成器（Generator）负责产生输出，一个评估器（Evaluator）负责评估输出质量，并将反馈提供给生成器进行迭代优化。
+
+![](/images/courses/ai-agent/fig1-wf-evaluator.svg)
+
+*图 S.6 评估-优化模式：生成器与评估器循环迭代，持续优化输出质量*
+
+经典应用场景：高质量翻译系统。生成器负责翻译，评估器检查翻译的准确性、流畅性和风格一致性，将具体问题反馈给生成器进行修正，循环迭代直到评估器满意。
+
+```python
+# 评估-优化模式示例：高质量翻译
+def high_quality_translate(text: str, target_lang: str, max_iterations=3) -> str:
+    generator = Agent(system_prompt="你是一个专业翻译")
+    evaluator = Agent(system_prompt="你是一个翻译质量评审专家")
+    
+    translation = generator.generate(f"将以下内容翻译为{target_lang}:\n{text}")
+    
+    for i in range(max_iterations):
+        feedback = evaluator.evaluate(f"评估以下翻译的质量，指出具体问题:\n原文:{text}\n译文:{translation}")
+        if feedback.is_satisfactory:
+            break
+        translation = generator.improve(f"根据以下反馈改进翻译:\n{feedback}\n当前译文:{translation}")
+    
+    return translation
+```
+
+### 1.9.2 何时使用何种模式
+
+这些编排模式从最确定性的链式模式（每一步都预先确定）到最灵活的评估-优化模式（动态迭代），形成了一个从 Workflow 到 Agent 的渐变频谱。
+
+- **链式模式**：当任务有明确且固定的步骤顺序时。如流水线处理、多阶段审核。
+- **路由模式**：当输入的类型差异明显且需要不同处理逻辑时。如客服分流、文档分类处理。
+- **并行模式**：当任务可以拆分为多个独立维度时。如多维度审核、多源数据聚合。
+- **编排模式**：当子任务的数量和顺序不确定时。如代码重构、研究分析报告。
+- **评估-优化模式**：当输出质量有明确衡量标准且需要迭代精炼时。如翻译、写作、代码审查。
+
+一个成熟的 Agent 系统往往会混合使用多种模式。例如，一个智能客服系统可以先用路由模式分类问题，然后用链式模式处理标准流程，遇到复杂问题时升级到编排模式调度多个子 Agent 协作，最后用评估-优化模式确保回答质量。
+
+## 1.10 护栏与安全性
+
+当 Agent 从实验室走向生产环境时，安全性不再是可选项，而是必须内建在系统中的基础设施。Agent 的自主性越高，其可能造成的影响范围就越大，安全护栏的设计就越关键。
+
+### 1.10.1 三种类型的护栏
+
+**（1）输入验证（Input Validation）**
+
+在 Agent 接收用户输入时进行前置检查，防止提示注入攻击、越狱尝试和恶意指令。
+
+```python
+class InputGuardrail:
+    def validate(self, user_input: str) -> bool:
+        # 检测常见的提示注入模式
+        injection_patterns = ["忽略之前的指令", "忽略系统提示", 
+                             "你现在是...", "你不需要遵守..."]
+        for pattern in injection_patterns:
+            if pattern in user_input:
+                return False
+        # 检测敏感信息泄露风险
+        if self._contains_sensitive_data(user_input):
+            return False
+        return True
+```
+
+**（2）权限控制（Permission Control）**
+
+限制 Agent 的行动范围，确保它只能访问和操作被授权的资源。
+
+```python
+class PermissionGuardrail:
+    def __init__(self):
+        self.allowed_paths = ["/project/src", "/project/docs"]
+        self.allowed_commands = ["python", "npm run", "git status"]
+        self.blocked_commands = ["rm -rf", "sudo", "chmod"]
+    
+    def check_action(self, action: Action) -> bool:
+        if action.type == "read_file":
+            return any(action.path.startswith(p) for p in self.allowed_paths)
+        elif action.type == "run_command":
+            return any(action.command.startswith(c) for c in self.allowed_commands) \
+                   and not any(action.command.startswith(b) for b in self.blocked_commands)
+        return True
+```
+
+**（3）输出过滤（Output Filtering）**
+
+在 Agent 的输出返回给用户之前，进行安全检查，防止知识泄露、不当内容或幻觉信息流向用户。
+
+```python
+class OutputGuardrail:
+    def filter(self, response: str) -> str:
+        # 检测并移除 API Key、密码等敏感信息
+        response = self._redact_secrets(response)
+        # 检测不当内容
+        if self._contains_harmful_content(response):
+            return "抱歉，我无法提供该信息。"
+        # 添加不确定性声明
+        if self._might_be_speculative(response):
+            response += "\n\n⚠️ 以上信息可能存在不准确之处，请进一步核实。"
+        return response
+```
+
+### 1.10.2 Human-in-the-Loop 模式
+
+对于高风险操作，单纯的自动化护栏是不够的。**Human-in-the-Loop（HITL）** 模式将人类引入决策闭环，让 Agent 在执行关键操作前请求人类审批。
+
+常见的 HITL 模式包括：
+
+- **审批点（Checkpoint）**：Agent 执行到预设的关键步骤时暂停，等待人类确认
+- **异常升级（Escalation）**：当 Agent 的置信度低于阈值或遇到无法处理的情况时，自动升级到人工
+- **并行监控（Shadow Mode）**：Agent 全速执行的同时，人类在旁监控，随时可以介入干预
+
+```python
+class HumanInTheLoop:
+    def __init__(self, approval_levels):
+        # approval_levels: 定义哪些操作需要审批
+        self.approval_levels = approval_levels
+    
+    def execute_with_approval(self, action: Action) -> Result:
+        if action.type in self.approval_levels:
+            # 请求人工审批
+            approved = self.ask_human(f"是否批准执行以下操作?\n{action}")
+            if not approved:
+                return Result(status="rejected", message="操作已拒绝")
+        # 执行操作
+        return action.execute()
+```
+
+### 1.10.3 Sidecar 安全机制
+
+Sidecar 模式借鉴了微服务架构中的设计理念。在 Agent 架构中，安全组件以一个独立的进程或服务运行，与 Agent 主进程分离。Agent 的所有 I/O 操作都通过 Sidecar 代理，由 Sidecar 统一进行安全检查和审计日志记录。
+
+```
+用户输入 → [Sidecar: 输入验证] → [Agent 核心] → [Sidecar: 权限检查] → [工具执行]
+                                                    ↓
+                                              [Sidecar: 输出过滤] → 用户输出
+```
+
+这种架构的优点是安全逻辑与业务逻辑解耦，安全策略可以独立升级和测试，不影响 Agent 核心能力。同时，所有操作都在 Sidecar 中留有完整审计日志，便于事后追溯和安全分析。
+
+现代 Agent 框架（如 LangChain、AutoGen、Claude Code）都在不同程度上内置了这些护栏机制。设计一个生产级的 Agent 系统时，**安全护栏不是事后添加的补丁，而是需要从架构设计的第一天就融入系统的基础设施。**

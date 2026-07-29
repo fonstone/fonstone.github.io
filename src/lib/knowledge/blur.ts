@@ -1,4 +1,4 @@
-import fs from "node:fs/promises";
+﻿import fs from "node:fs/promises";
 import path from "node:path";
 import { cache } from "react";
 import { getPlaiceholder } from "plaiceholder";
@@ -25,6 +25,7 @@ export const getImageBlurData = cache(async (src: string): Promise<BlurResult> =
   const filePath = resolvePublicFile(src);
 
   try {
+    if (/\.svg$/i.test(filePath)) return {};
     const buf = await fs.readFile(filePath);
     const meta = await sharp(buf).metadata();
     const plaice = await getPlaiceholder(buf);

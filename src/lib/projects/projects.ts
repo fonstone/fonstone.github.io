@@ -267,8 +267,12 @@ function stripCodeBlocks(content: string): string {
         result.push(line);
       }
     } else {
-      if (line.startsWith(fenceMarker) && line.length >= fenceMarker.length) {
-        const after = line.substring(fenceMarker.length);
+      const trimmed = line.trimEnd();
+      if (
+        trimmed.startsWith(fenceMarker) &&
+        trimmed.length >= fenceMarker.length
+      ) {
+        const after = trimmed.substring(fenceMarker.length);
         if (!after || after[0] === " " || after === "") {
           fenceOpen = false;
           fenceMarker = "";

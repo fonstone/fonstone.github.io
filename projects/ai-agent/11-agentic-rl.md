@@ -6,7 +6,7 @@ order: 11
 tags: ["RL", "GRPO", "SFT", "推理", "训练"]
 est_time: "65 分钟"
 ---
-# 第十一章 Agentic-RL
+## 第十一章 Agentic-RL
 
 ## 11.1 从 LLM 训练到 Agentic RL
 

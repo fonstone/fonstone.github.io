@@ -1,0 +1,376 @@
+---
+title: "AI 时代异构操作系统：从通用管理到异构计算深度优化"
+description: "融合陈海波《面向 2030 的操作系统架构与演进思考》十大演进思考与 AI 工作负载工程实践，系统解析万物智联场景下操作系统的异构融合之路——从时空交互、端到端确定性调度、元 OS 架构到架构感知、泛存储范式与数字信任体系重构，并附关键原理剖析与 OSDI'24 / ATC'25 / SoCC'25 最新研究论文成果。"
+date: "2026-08-08"
+tags: ["操作系统", "AI", "异构计算", "2030", "架构演进", "OS Kit", "机密计算", "万物智联"]
+---
+
+## 1. 引言：当 AI 遇见操作系统
+
+AI 模型训练与推理需求的爆炸式增长，正在把传统通用操作系统"推着"向前演进。这不再是简单的"跑个程序"——操作系统需要深刻理解 AI 计算的特质，从被动提供资源的管理者，转变为主动协同、深度优化的计算伙伴。
+
+操作系统在计算机系统中发挥中枢作用，向上支撑应用与服务（提升用户体验、提高业务竞争力、提供生态入口），向下抽象并管理相关硬件。在 AI 时代，其核心挑战是如何统筹 CPU、GPU、NPU、DPU 等多样性算力资源。
+
+![操作系统三大关键能力：抽象协同芯片硬件、统筹资源供需、使能应用生态](/images/heterogeneous-os-2030/os-three-capabilities.png)
+
+操作系统主要提供三个关键能力：
+
+1. **抽象协同芯片硬件**，释放硬件能力
+2. **统筹管理资源供需**，提升全局能效
+3. **使能应用高效运行**，提供生态入口
+
+从统计规律来看，操作系统约每 20 年左右会进行一次换代。面向 2030，操作系统呈现出**万物智联新场景、新硬件和新供应**三大趋势，本篇文章将结合 AI 工作负载的真实需求与产业界的前沿思考，系统梳理异构操作系统的演进之路。
+
+![面向 2030 的三大趋势：万物智联新场景、新硬件、新供应](/images/heterogeneous-os-2030/2030-three-trends.png)
+
+## 2. AI 工作负载的四大"紧箍咒"
+
+要理解操作系统需要如何改变，必须先看清 AI 工作负载到底在"吃"什么资源、"怕"什么干扰。AI 工作负载对操作系统的要求可以归结为四个核心痛点，它们像四道"紧箍咒"紧紧约束着传统操作系统的行为。
+
+### 2.1 计算密集型与异构化
+
+AI 尤其是深度学习是"算力饕餮"，其核心是张量（Tensor）运算——大规模矩阵乘法和卷积，计算密度极高且天然适合并行，因此 GPU、NPU、TPU 等专用加速器成为标配。这带来第一个挑战：**异构计算资源管理**。
+
+传统操作系统对 CPU 的调度管理已非常成熟，但对加速器的管理往往停留在"设备文件"层面。在 AI 场景下，操作系统需要：
+
+- **感知加速器拓扑**：不仅知道系统里有几张卡，还要理解卡与卡之间（NVLink、PCIe Switch）、卡与 CPU 之间（NUMA 架构）的连接带宽与拓扑关系，以便将计算任务和数据"放置"在通信成本最低的位置
+- **细粒度资源划分与隔离**：一台服务器可能被多个租户共享，传统"整卡分配"会造成资源浪费。操作系统需要支持将一张物理 GPU 的计算核心（SM）、内存进行虚拟化或分时复用（如 NVIDIA MIG），并提供强隔离
+- **统一抽象的编程模型**：开发者不希望为 CPU、GPU、NPU 分别写一套代码，运行时库需要提供更高层次抽象（如 SYCL、oneAPI），由底层系统负责映射到最合适的硬件执行
+
+> **原理说明 · NUMA 与异构拓扑**：NUMA（非统一内存访问）下，每个 CPU 访问"本地内存"比访问"远端内存"快得多（延迟通常相差 1.5–2 倍），任务放错位置就会产生严重的局部性损失；GPU 之间的 NVLink 带宽（如 H100 达 900GB/s）远高于 PCIe Gen5 x16（约 64GB/s），跨拓扑搬运数据的通信成本可相差一个数量级——因此"拓扑感知放置"是异构 OS 调度器的第一课。NVIDIA MIG 则把一张 GPU 的 SM 与显存切片成多个强隔离实例，原理与 CPU 侧容器配额类似，但隔离粒度更细：计算核、显存带宽、缓存全部隔离。
+
+### 2.2 数据吞吐与 I/O 瓶颈
+
+"计算等数据"是 AI 训练中最常见的性能陷阱。模型参数与训练数据集需要被高速加载到内存或显存中，I/O 路径非常长：从分布式存储或本地 SSD，经过文件系统、页缓存、系统调用、PCIe 总线，最终到达 GPU 显存。任何一个环节的延迟或带宽不足，都会让昂贵的计算单元闲置。
+
+操作系统的第二个增强方向是**重塑 I/O 栈**：
+
+- **绕过内核（Bypass Kernel）**：NVIDIA GPUDirect Storage 允许 GPU 直接与 NVMe SSD 对话，数据流不经过 CPU 内存和内核页缓存，直接注入 GPU 显存，将 I/O 延迟降低一个数量级并释放 CPU 资源
+- **智能预取与缓存策略**：通用 Page Cache 对 AI 顺序、可预测的大块读取模式并非最优，操作系统需要与 AI 框架（如 PyTorch DataLoader）协同提供 Hint 机制
+- **异步与重叠**：将数据加载、预处理（解码、增强）与 GPU 计算充分重叠，需要高效的异步 I/O 机制（如 io_uring）
+
+> **原理说明 · 为什么需要绕过内核**：传统路径中，数据从 NVMe 到 GPU 显存要经过"内核页缓存 → CPU 内存 → 内核态 DMA 拷贝 → 显存"，每一次拷贝都消耗 CPU 周期与内存带宽，系统调用与锁还会引入微秒级抖动。GPUDirect Storage 的本质是**端到端 DMA**：由 GPU 的 DMA 引擎直接发起对 NVMe 的读取，把整条数据通路从 CPU 关键路径上移除——"数据通路可旁路、安全与记账仍由内核守护"，这正是 I/O 层的"Abstract, but don't hide power"。
+
+### 2.3 内存与存储层级优化
+
+AI 模型越来越大，参数从数亿到万亿级，催生了操作系统在内存管理上的创新：
+
+- **统一虚拟地址空间**：CUDA Unified Memory、AMD hUMA 等在 CPU 与 GPU 之间创建共享的统一虚拟内存空间，操作系统与驱动协同实现按需迁移
+- **容量扩展**：训练规模突破单机显存上限后，需要 CPU 内存、持久内存、NVMe 存储构成的层级化大容量内存体系
+
+> **原理说明 · 统一虚拟内存的按需迁移**：CUDA Unified Memory / AMD hUMA 在 CPU 与 GPU 之间建立统一地址空间，物理页可驻留任意一侧，发生硬件缺页时自动按需迁移。收益是程序员无需手动区分"数据在 CPU 侧还是 GPU 侧"；代价是缺页迁移延迟可达数百微秒且不可预测——所以 OS/运行时必须用预取与页钉住（pinning）与计算重叠，否则"统一"反而成为延迟陷阱。
+
+### 2.4 调度哲学转向：从通用普惠到场景特化
+
+通用操作系统"公平调度""分时复用"的哲学在 AI 场景遇到挑战：一个训练任务可能希望独占几十张 GPU 卡数周且期间不能有任何干扰；一个在线推理服务则要求 99.99% 的请求在 10ms 内完成，任何一次不必要的上下文切换或内存缺页都可能是灾难。操作系统的增强，本质上是其设计哲学从"通用普惠"向"场景特化"的一次重要倾斜——为 AI 这个"超级 VIP 客户"开辟一条专属的无障碍高速通道。
+
+## 3. 操作系统演进的三大驱动力
+
+操作系统架构演进受三个关键因素驱动：
+
+| 驱动力 | 内容 | 对 OS 的影响 |
+|--------|------|-------------|
+| **新的产业场景与生态** | 万物智联：交互从触摸式演进为时空自然交互，任务调度从单节点变为端到端确定性调度，算力从通用算力变为多样性融合算力 | 新的负载特征带来新的驱动力 |
+| **新的芯片与硬件架构** | Chiplet、3D 堆叠、Wafer Scale Computing；新非易失性存储、新互联、硅碳融合存储；5.5G/6G 大带宽低时延互联 | OS 需释放新硬件能力，推动演进 |
+| **软硬件供需** | 全球形势变化，先进要素供应呈多元化 | 影响 OS 底座的技术路线选择 |
+
+近年来尤其是疫情影响下，社会数字化转型至少加速五年。元宇宙、数字身份等新技术推动数字世界与物理世界的融合，操作系统从硬件的附属品到独立软件、再到生态入口，其重要性不断增加——在万物智联时代，操作系统将发挥更关键的作用。
+
+![展望 2030：操作系统将成为数字世界与物理世界融合的技术底座](/images/heterogeneous-os-2030/digital-physical-fusion.jpg)
+
+## 4. 演进思考 1：从触摸交互走向时空自然交互
+
+人类的交互体验从机械式交互（键盘、鼠标）到触摸式交互已得到大幅提升，未来将走向**时空自然交互**：
+
+- **自然空间交互**：基于语音、眼神、空间/姿态甚至注意力/脑电波的人机交互。当前已有雏形，包括脑机交互与眼球动作抓取。操作入口可能从传统桌面、应用入口变成场景式的智能时空入口
+- **系统级触达**：当前 APP 的使用方式未来可能演变为彼此可嵌套的系统级可触达方式，打破传统应用边界，实现以任务和用户为中心的推荐式、启发式交互
+
+![交互演进：从机械式、触摸式到自然空间交互与系统级触达](/images/heterogeneous-os-2030/natural-spatial-interaction.png)
+
+## 5. 演进思考 2：从单节点确定性走向端到端确定性
+
+过去我们关注单节点的确定性，而在数字世界与物理世界融合的未来，将出现更多时延敏感场景——远程医疗、5G/6G to B（智能制造、工业 4.0）、XR 实时交互等，对端到端时延带来新挑战。
+
+当网络时延下降到一定程度后，操作系统在端到端时延保障上就起到非常关键的作用。在全系统时延中，操作系统扮演着"乐队指挥"角色，需进行全链路管理，把云服务、承载网、端侧设备打造成一个**端到端的确定性低时延体系**。
+
+![从单节点确定性到端到端确定性：操作系统扮演全链路"乐队指挥"](/images/heterogeneous-os-2030/end-to-end-determinism.png)
+
+这与 AI 推理服务对"超低且可预测的延迟"的需求一脉相承——99.99% 的请求须在 10ms 内完成，这要求调度、中断、内存分配的每一环都具备可预测性。
+
+## 6. 演进思考 3：从垂域分治走向异构融合，支撑多样性计算
+
+过去常用一个软硬件垂域承载某一类计算（通用计算、概率计算、AI 计算、物理计算、图形计算等）。计算架构正从"通用+专用计算"向"**多样性算力融合**"演进，但也存在大量挑战。
+
+以"HPC+AI"融合为例，HPC 对浮点运算精度要求非常高，而 AI 常采用 Int8/Int16 近似计算。这就要求操作系统**从垂域分治走向异构融合**，将标量、向量等算力进行有效统筹：
+
+- 芯片架构从以 **CPU 为中心**演变为 **CPU+XPU 协同**，逐步形成**统一内存架构（UMA）**，减少数据搬迁，缓解内存墙与存储墙
+- **存算一体**与**近数计算**提升能效——数据在哪就在哪计算，例如在搭载较强算力单元的智能网卡、智能 SSD 上
+
+![从垂域分治到异构融合：标量、向量、矩阵算力的统一统筹](/images/heterogeneous-os-2030/heterogeneous-computing.png)
+
+## 7. 演进思考 4：从 OS 走向 OS Kit，元 OS 架构支撑场景千变万化
+
+原来的操作系统往往是场景专用的（服务器操作系统、手机操作系统等），能力与组件彼此孤立。随着 DSA（Domain Specific Architecture）发展，硬件和场景越来越多，可能会出现越来越多割裂的操作系统。
+
+这会带来"**昆虫纲悖论**"：场景越多、设备形态越多，虽然每类设备单独的市场空间不大，但加起来的总空间十分大；然而生态碎片化使设备难以形成规模产业，没有规模就没有利润，无法继续发展。
+
+"One OS for All"已被证明十分困难。我们提出**元 OS 架构**：将操作系统进行有效解耦/元化，把系统组件 kit 化，实现 **"One OS Kit for All"**——面向多场景需求时将 kit 有效组装，解决多场景能力共享、生态互通、极简互联、按需组合等问题。当然这也带来巨大挑战：如何对 OS 状态进行有效管理、如何在解耦后保障性能。
+
+> **说明 · 元 OS 的思想渊源**："把操作系统拆成可复用的零件库"并非新概念：20 世纪 90 年代 Utah 大学的 OSKit 就把微内核组件、设备驱动、文件系统做成可拼装模块；Exokernel 与 L4 微内核家族（seL4 的前身）也强调"最小内核 + 库操作系统"。元 OS 架构的差异在于：在万物智联的碎片化场景下，把"组件库 + 按需组装 + 生态互通"提升为产业级 OS 形态——鸿蒙（OpenHarmony）的"一次开发、多端部署"即其实践雏形，其生产微内核论文已在 OSDI 2024 发表（见 14.2 节）。
+
+![元 OS 架构：操作系统组件 kit 化，按需组装支撑多场景](/images/heterogeneous-os-2030/meta-os-kit.jpg)
+
+## 8. 演进思考 5：从统计与推测走向精算与智能
+
+操作系统资源统筹调度在数学抽象上，与运筹学中**作业车间调度问题（JSP）与背包问题（KP）** 这两个 NP 难问题相近，可规约成多对象、多目标优化的实时在线 JSP 问题。
+
+传统操作系统受限于运行时算力、语义鸿沟、调度时延（每隔 5-10ms 调度一次，开销须为微秒量级），只能基于统计与分而治之的方法用最小开销求尽可能优的解。两个因素正在改变局面：
+
+1. **系统复杂性剧增**：万物互联时代，简单近似算法的资源管理效果不断下降
+2. **多样性算力收益变大**：NPU 与加速器对特定负载有很强的算力提升，精确求解的收益变大；加上语义透传等技术，使实时精算的收益大于成本
+
+> **说明 · 精算的代价边界**：调度器每次被调用的开销预算在微秒量级（调度周期 5–10ms，开销占比通常要求小于 1%），而一个 NP 难问题的精确求解需要毫秒到秒级——二者相差三个数量级以上，这就是传统 OS 只能用启发式的原因。NPU/加速器带来的"算力富余"让"把调度问题算得更准"首次在经济上可行：当加速器能以接近线速处理小规模优化时，精确调度带来的更优放置、更少碎片开始大于其成本。
+
+![从统计推测走向精算与智能：精准统筹资源供需](/images/heterogeneous-os-2030/exact-scheduling.png)
+
+## 9. 演进思考 6：从算力抽象走向架构感知，协同芯片工程
+
+抽象是计算机学科的重要方法论，但**在工艺红利放缓的背景下，芯片工程成为提升算力密度的关键路径**。芯片除提供调频调压能力外，会出现更多异构组合甚至动态异构，这就需要**操作系统感知芯片架构甚至架构的实时变化**，协同芯片工程提升算力密度。
+
+在此过程中，操作系统需要攻克一系列挑战：更精准地进行**选核**（大、中、小甚至微型核）、任务的**瞬态迁移**、数据的**局部性保障**、新架构下的**并发与协同设计**。
+
+> 一个具体的例子：传统 spinlock 假设所有线程拿锁机会差不多，但在大小核或不同工艺的核同时竞争一把锁时，小核大概率一直拿不到——抢锁能力不及大核，造成资源分配不均衡。动态异构体系下，并发从相对对称变成非对称，给协同带来很大挑战。
+
+> **说明 · 从 DVFS 到架构感知**：现代 SoC 普遍采用大小核（big.LITTLE）+ DVFS 调频调压，Linux 的 EAS（Energy-Aware Scheduling）会根据任务负载特征把任务放到"最省电且满足性能"的核上。"架构感知"是这一思路的延伸：当核的类型不再只有大小两类、而是 CPU/GPU/NPU 混合甚至工艺异构时，选核从"二选一"变成高维优化——需要 OS 实时感知芯片的功率/频率/温度与任务的计算特征，才能做到"精准选核 + 瞬态迁移"。
+
+![从算力抽象到架构感知：感知大小核与动态异构，协同芯片工程](/images/heterogeneous-os-2030/architecture-aware.png)
+
+## 10. 演进思考 7：从 CPU 为中心到新计算架构，计算范式重定义
+
+计算架构从以 CPU 为中心，逐步演进到 **DSA 对等架构**（CPU、GPU、NPU、DPU、QPU 等）。在技术延长线上，操作系统需要持续攻克 DSA 架构下 XPU 异构算力间的高效协同与资源共享。
+
+但 **DSA 的原生弊端正在逐步显现**：
+
+- 厂家需要看护多种多样的硬件架构，维护成本极高且存在功能重叠
+- DSA 多为特定运算设计，稍微改变运算形状（shape）就可能导致效率大幅下降
+- 软件栈难以共享，XPU 间协同调度效率低
+
+按照**牧村定律**（日立总工程师牧村次夫 1987 年提出：芯片架构总在分层解耦与垂直整合之间交替摆动，约十年波动一次），经历当下 DSA 的"分"之后，若大部分算力模型已定型，出于维护、成本与能力发挥的考量，业界可能自然想到将各种 XPU 融合、甚至融合到同一架构上。无论新计算架构最终如何，**操作系统的计算范式可能被重新定义，底层机制也将大幅重构**。
+
+![从 CPU 为中心到 DSA 对等架构，再到潜在的融合新计算架构](/images/heterogeneous-os-2030/new-computing-architecture.png)
+
+## 11. 演进思考 8：从多层走向一层融合存储，泛存储范式重定义
+
+新介质与新互联技术持续突破，操作系统存储可能向**泛存储范式**演进：传统以 CPU 为中心的三层存储架构（CPU + DRAM + 闪存/硬盘）是否会演进为以数据为中心的**单级存储（Single-Level Store）**？——热数据一层、冷数据一层，冷数据仍可用传统硬盘。
+
+进一步结合计算架构演进，存储范式是否会演进到以业务为中心的原位计算？传统做法是迁移任务到数据所在位置计算；如果数据搬移效率得到显著提升，则可考虑**原位计算**——不迁移任务，而是将数据搬移过来计算，从而显著降低时延（任务调度开销可能比数据搬移更大）。
+
+> **说明 · 数据搬移的成本结构**：传统"数据就地计算"模型下，把任务搬到数据所在节点需要序列化传输程序状态与上下文；而在大数据集场景中，"把数据搬到算力侧"的传输量常常远小于"把任务上下文搬过去"的开销。原位计算的直觉是：当互联带宽（NVLink、CXL、RDMA）的增速快于任务迁移开销的下降速度时，两种方向的性价比就会反转——这决定了单级存储体系下数据通路的设计方向。
+
+![从 CPU 为中心的多层存储到以数据为中心的单级存储与原位计算](/images/heterogeneous-os-2030/single-level-store.jpg)
+
+## 12. 演进思考 9：从信任设备走向信任应用，数字信任体系重构
+
+互联网的安全模型正从信任设备走向信任应用，这要求重构数字信任体系。**机密计算架构（CCA）** 是重构数字信用体系的重要软硬件架构：
+
+| 技术 | 发布方/年份 | 形态 |
+|------|------------|------|
+| TrustZone | ARM，2002 | 硬件隔离（手机、车、电信设备广泛使用） |
+| SGXv1 | Intel，2015 | 应用级机密计算 |
+| SEV | AMD，2016 | 虚拟机机密计算 |
+| Confidential VM | AWS，2019 | 云端机密虚拟机 |
+| KeyStone / Penglai | RISC-V 生态 | 开源机密计算架构 |
+
+![数字信任体系重构：从信任设备到信任应用](/images/heterogeneous-os-2030/digital-trust.png)
+
+以 ARM 2021 年发布的 V9 CCA 架构规范为例，Realm 架构更多从应用视角出发，提供安全的机密计算执行环境。操作系统的信任范式也很有可能被重新定义——从"信任设备、不信任应用"，演进到"信任自己的应用，但不必信任基础设施提供商"。
+
+> **原理说明 · CCA 与信任根**：ARM V9 CCA 的 Realm 是一个硬件隔离的机密执行环境：Realm 内的内存对宿主 OS 与 Hypervisor 不可读，数据加密密钥由"机密固件 + 硬件信任根"持有，仅对 Realm 内软件可见。它与 TrustZone 的关键差异在信任模型：TrustZone 仍是"信任设备厂商与设备上的安全世界"，CCA 则允许应用开发者"不信任基础设施提供商也能保护自己的数据"——即从"信任设备"走向"信任应用"。VeriSMo、Scylla 等最新研究（见 14.5 节）正在把这一模型推向"可证明"。
+
+![ARM 2021 年发布 V9 CCA 新架构](/images/heterogeneous-os-2030/arm-v9-cca.png)
+
+按照华为《智能世界 2030》预测，50% 的场景将采用隐私增强技术。
+
+## 13. 演进思考 10：从分层解耦走向垂直整合，底座技术重构
+
+分层抽象与解耦是计算机领域普遍适用的分而治之思想（图灵奖得主 Butler Lampson："计算机科学的任何问题都可以通过增加一个中间层来解决"，但他补充道："除了因此引起的层次厚重的问题"）。过去 IT 系统的发展主要是逐层抽象、分层解耦，但会产生：
+
+- **冗余抽象**：需要不断消除冗余、降低开销
+- **语义鸿沟**：过于抽象导致跨层供给不精准、跨层协同难
+
+计算机设计有一句重要原则：**"Abstract, but don't hide power"**——可以抽象，但不要隐藏能力。因此需要跨层的精准协同与精准供给；同时抽象并非普适，很多场景需要**短链条式创新**，例如操作系统的应用调用可分不同层级、调用到不同效率的接口。
+
+垂直整合是面向硬件与业务的重新分层与协同，并非走向"烟囱化"。在合理软硬分工协同上应结合硬件与业务特征提供"短链条创新"，同时坚持软件平台化、构筑友好生态，而不是自我封闭。
+
+![从分层解耦走向垂直整合：消除冗余抽象，精准跨层协同](/images/heterogeneous-os-2030/vertical-integration.png)
+
+## 14. 最新研究论文成果：异构 OS 的前沿探索
+
+产业界的十个演进思考正在学术界逐步得到验证与细化。以下论文均来自 2023–2025 年顶级系统会议（ASPLOS、OSDI、ATC、SoCC、COLM），所有结论均取自论文公开摘要，与前述演进思考一一对应。
+
+### 14.1 LLM 驱动的操作系统：OS 本身的智能化（对应思考 4、5）
+
+| 论文 | 出处 | 核心思路 | 关键结果 |
+|------|------|---------|---------|
+| **AIOS: LLM Agent Operating System** | COLM 2025（arXiv 2403.16971） | 把 OS 内核思想搬到 LLM Agent 管理：将调度、上下文管理、内存管理、存储管理、访问控制等服务从 Agent 应用隔离进"AIOS Kernel"，经 SDK 暴露统一 API | 管理约 2000 并发 Agent，执行加速最高 **2.1x** |
+| **Herding LLaMaS: Using LLMs as an OS Module** | ASPLOS 2023 Wild & Crazy Ideas（arXiv 2401.08908） | 新硬件接入时传统 OS 需人工改写驱动与调优；LLaMaS 让 LLM 从设备的**文本描述**提取特性并据此做内存分配、任务调度、数据放置等运行时决策 | 接入新设备只需写一段自然语言描述，初步实验（ChatGPT）验证了特征提取与决策的可行性 |
+
+AIOS 的实质是"进程 ↔ Agent"的类比：传统 OS 用进程隔离与调度管理并发程序，AIOS 用同样的机制管理并发 Agent 对 LLM/工具资源的访问。LLaMaS 则把"设备驱动"从命令式代码变成声明式描述——这正是思考 4"组件化、按需适配"在硬件管理侧的延伸。
+
+### 14.2 面向 AI 算力集群的操作系统重构（对应思考 3、6、7、10）
+
+| 论文 | 出处 | 核心思路 | 关键结果 |
+|------|------|---------|---------|
+| **Microkernel Goes General: Performance and Compatibility in the HongMeng Production Microkernel** | OSDI 2024 | 微内核历来"性能弱、兼容差"，难以通用化；鸿蒙生产微内核通过 IPC 与调度优化、用户态驱动框架等手段把微内核做成产业级通用底座 | 端侧"One OS for All"的重要实证，与元 OS 架构（思考 4）直接呼应 |
+| **Performance Interfaces for Hardware Accelerators** | OSDI 2024 | 为加速器定义**性能接口**：把硬件可调参数与性能状态以契约形式暴露给 OS/调度器，让上层无需理解硬件内部实现即可做性能敏感决策 | "Abstract, but don't hide power"的工程化（呼应思考 10） |
+| **XpuPod: Offloading Cloud-Native Infrastructure** | SoCC 2025（上海交大） | 把云原生基础设施（网络、存储、安全）卸载到 XPU/智能网卡，CPU 专注业务计算 | CPU+XPU 协同（思考 3）与"智能网卡承载算力"（思考 8）的落地 |
+| **FISSLOCK: Fast and Scalable In-network Lock Management Using Lock Fission** | OSDI 2024（陈海波团队） | 用可编程交换机承载锁授权决策，把锁管理解耦为"授权决策 + 参与者维护"两部分 | 支持百万级锁；锁授权延迟中位数降低 **79.1%**；TATP/TPC-C 吞吐提升 1.76x/2.28x |
+
+FISSLOCK 针对的正是思考 6 提到的"异构体系下协同难题"：当锁的争用路径从慢速 CPU 软件栈搬到线速网络硬件，分布式场景下的锁公平性与时延问题得到质的改善。
+
+### 14.3 大模型推理的确定性调度（对应思考 2、5）
+
+| 论文 | 出处 | 核心思路 | 关键结果 |
+|------|------|---------|---------|
+| **Llumnix: Dynamic Scheduling for LLM Serving** | OSDI 2024（阿里） | 类比现代 OS 的进程上下文切换，在多个模型实例间**实时迁移请求及其内存态**，实现负载均衡、碎片治理与优先级区分 | 尾延迟改善一个数量级，高优先级请求提速 1.5x，相同尾延迟下成本节省 36% |
+| **DistServe: Disaggregating Prefill and Decoding** | OSDI 2024 | 把 prefill（决定 TTFT）与 decode（决定 TPOT）分离到不同 GPU，消除两阶段相互干扰，各自定制并行度与资源 | 多服务 **7.4x** 请求，或满足 **12.6x** 更严的 SLO |
+| **Sarathi-Serve: Taming Throughput-Latency Tradeoff** | OSDI 2024 | chunked prefill（分块预填充）消除 decode 被长 prefill 阻塞的"停顿" | Mistral-7B 单 A100 容量 +2.6x、Yi-34B 双 A100 +3.7x、Falcon-180B 端到端 +5.6x |
+| **ServerlessLLM: Low-Latency Serverless Inference** | OSDI 2024 | 多层级 checkpoint 加载 + 推理在线迁移，让冷启动不再依赖远程下载 | 延迟降低 **10–200x** |
+| **DEEPSERVE: Serverless LLM Serving at Scale** | ATC 2025（华为云） | 在昇腾 NPU 生产集群上运行一年以上的 serverless LLM 平台：request-job-task 三级抽象、**微内核启发**的 FLOWSERVE 引擎（NPU 为中心、SPMD 并行）、PD 分离/共存混合调度、NPU-fork | 秒级扩到 64 实例，NPU 侧"微内核式"OS 化实践的样板 |
+| **GPreempt: GPU Preemptive Scheduling** | ATC 2025 | 把 CPU 调度器的抢占语义带到 GPU：时间片 yield + 上下文切换实现通用抢占，hint 预抢占重叠准备开销 | 非幂等负载下 **40μs** 内完成抢占 |
+
+这组工作说明"确定性"（思考 2）与"精算调度"（思考 5）在推理服务中已具体化为可量化的工程目标：SLO、尾延迟、抢占时延都成为调度器的第一公民。
+
+### 14.4 内存与存储层级（对应思考 8）
+
+| 论文 | 出处 | 核心思路 | 关键结果 |
+|------|------|---------|---------|
+| **Nomad: Non-Exclusive Memory Tiering via Transactional Page Migration** | OSDI 2024 | 质疑"独占式内存分层"（页要么在快层要么在慢层）是唯一最优：保留快层页的影子副本，事务性页迁移彻底异步化，缓解内存颠簸 | 内存压力下相比 Linux TPP 最高 **6x** |
+| **Managing Memory Tiers with CXL in Virtualized Environments** | OSDI 2024 | Intel Flat Memory Mode 硬件级 CXL 分层（cacheline 粒度自动放置）+ 软件性能隔离；Memstrata 页染色消除跨 VM 争用 | 82% 负载性能退化不超过 5%；异常负载退化从 30%+ 压到 6% 以下 |
+| **InfiniGen: Dynamic KV Cache Management** | OSDI 2024 | KV cache 放不进显存时，用"迷你预演"投机判断下一层注意力真正需要的 token，只预取必要条目 | offloading 系统整体加速最高 **3.0x** |
+
+"单级存储"（思考 8）在论文中的具体形态是**分层内存 + 智能迁移**：Nomad 证明"非独占分层"优于经典的独占式迁移，CXL 论文证明硬件分层需要软件隔离配套——存储范式的每一次演进都重新定义 OS 内存管理的边界。
+
+### 14.5 数字信任体系（对应思考 9）
+
+| 论文 | 出处 | 核心思路 | 关键结果 |
+|------|------|---------|---------|
+| **VeriSMo: A Verified Security Module for Confidential VMs** | OSDI 2024 | 为机密虚拟机构建**经形式化验证**的安全模块，把信任从"信任设备"推向"可证明的软件信任基" | 机密计算的可证明性迈出一步 |
+| **Confidential Analytics with Scylla** | SoCC 2025 | 面向云端分析的无信任机密计算框架，多方数据在互不信任前提下完成联合分析 | 机密计算从"单租户隔离"走向"多方协作" |
+
+### 14.6 内核安全与可证明性（对应思考 10 的底座重构）
+
+| 论文 | 出处 | 核心思路 | 关键结果 |
+|------|------|---------|---------|
+| **ASTERINAS: A Linux ABI-Compatible, Rust-Based Framekernel OS** | ATC 2025 | 用 Rust 所有权在编译期保证内存安全，内核内再分权（framekernel），把可信计算基缩到最小 | Linux ABI 兼容、支持 210+ 系统调用，内存安全 TCB 仅占代码量 **14%**，性能与 Linux 持平 |
+| **μEFI: A Microkernel-Style UEFI with Isolation and Transparency** | ATC 2025（陈海波团队） | 微内核思想的固件改造：把 UEFI 模块降权进用户态沙箱，trampoline 注入 + 协议分析实现透明迁移 | 引导阶段开销仅 **1.91%** |
+
+这两项工作分别从"语言安全"与"固件安全"两个方向佐证：垂直整合与底座重构（思考 10）的落点是**把信任基做小、做可证明**。
+
+### 14.7 论文与演进思考的对照总览
+
+| 演进思考 | 代表性论文 | 关键指标 |
+|---------|-----------|---------|
+| 思考 4（元 OS / OS Kit） | HongMeng 生产微内核（OSDI'24）、AIOS（COLM'25）、LLaMaS（ASPLOS'23） | 2.1x 吞吐；文本描述即驱动 |
+| 思考 2/5（确定性 / 精算调度） | Llumnix、DistServe、Sarathi-Serve、ServerlessLLM、DEEPSERVE、GPreempt | 尾延迟 -10x；容量 +2.6–7.4x；抢占 40μs |
+| 思考 3/6/7（异构融合 / 架构感知 / 新范式） | XpuPod（SoCC'25）、Performance Interfaces、FISSLOCK | 锁延迟 -79.1%；基础设施卸载 |
+| 思考 8（泛存储） | Nomad、CXL/Memstrata、InfiniGen | 分层内存最高 6x；KV 预取 3.0x |
+| 思考 9（数字信任） | VeriSMo（OSDI'24）、Scylla（SoCC'25） | 机密计算可证明化、多方协作 |
+| 思考 10（底座重构） | ASTERINAS、μEFI（ATC'25） | TCB 缩至 14%；固件开销 1.91% |
+
+**说明**：上述论文中未包含部分流传较广但无法在 arXiv/DBLP 等公开数据库中核实的工作（如 AmoebaOS、MegaServe、OSPerf 等），读者引用时请以官方发布版本为准；本文引用数据均来自论文官方摘要，原始链接见文末参考资料。
+
+## 15. 汇总：AI 时代异构操作系统的全景图
+
+面向 2030，结合 AI 工作负载的真实工程需求，我们可以将十个演进思考归为四条主线：
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph Scene["赋能万物智联新场景"]
+        S1["思考1 时空自然交互"]
+        S2["思考2 端到端确定性"]
+        S3["思考3 异构融合计算"]
+        S4["思考4 元 OS Kit 架构"]
+    end
+
+    subgraph Hardware["支撑新硬件"]
+        H1["思考6 架构感知选核"]
+        H2["思考7 新计算范式"]
+        H3["思考8 单级融合存储"]
+    end
+
+    subgraph Trust["重构信任体系"]
+        T1["思考9 机密计算 CCA"]
+    end
+
+    subgraph Base["重构技术底座"]
+        B1["思考5 精算与智能调度"]
+        B2["思考10 垂直整合"]
+    end
+
+    Scene -.-> AI["AI 工作负载四大需求<br/>算力异构 / I/O 重塑 / 内存层级 / 场景特化"]
+    Hardware -.-> AI
+    Trust -.-> AI
+    Base -.-> AI
+
+    style Scene fill:#e1f5fe
+    style Hardware fill:#c8e6c9
+    style Trust fill:#fff9c4
+    style Base fill:#fce4ec
+    style AI fill:#f3e5f5
+`}/>
+
+| 主线 | 演进思考 | 解决 AI 时代什么问题 |
+|------|---------|---------------------|
+| 新场景与新生态 | 时空交互、端到端确定性、异构融合、OS Kit | 交互体验、低时延保障、多样性算力统筹、场景碎片化 |
+| 新硬件支撑 | 架构感知、新计算范式、泛存储 | 动态异构芯片、XPU 协同、内存墙/存储墙 |
+| 信任体系 | 机密计算 | 数据安全、隐私增强、多云可信 |
+| 技术底座 | 精算调度、垂直整合 | 资源供需精准化、跨层协同、底座自主 |
+
+## 16. 总结
+
+面向 2030，操作系统正站在一次代际跃迁的门口：
+
+1. **AI 工作负载正在重塑操作系统设计哲学**——从"通用普惠"走向"场景特化"，从被动资源管理走向主动协同优化，异构资源管理、I/O 栈重塑、内存层级化成为新的核心课题
+2. **多样性算力融合是不可逆的趋势**——操作系统必须从垂域分治走向异构融合，从算力抽象走向架构感知，统筹 CPU/GPU/NPU/DPU 等一切算力
+3. **元 OS 架构是缓解生态碎片化的关键路径**——组件 kit 化、按需组装，实现 "One OS Kit for All"
+4. **数字信任体系将伴随重构**——从信任设备走向信任应用，机密计算成为底座能力
+
+![面向 2030 的操作系统演进思考总结](/images/heterogeneous-os-2030/2030-summary.png)
+
+操作系统演进的未来不是某个单一架构的胜出，而是**异构融合 + 场景特化 + 生态开放**三位一体的系统工程。理解 AI 工作负载的特质，在合适的层级用合适的机制协同，才是 AI 时代异构操作系统的正确打开方式。
+
+## 参考资料
+
+**源文章：**
+
+- [陈海波：面向2030的操作系统架构与演进思考 - 安全内参](https://www.secrss.com/articles/47178)（OpenHarmony TSC，2022-09）
+- [AI时代操作系统演进：从通用管理到异构计算深度优化 - CSDN 博客](https://blog.csdn.net/weixin_29611239/article/details/161331013)（镝不咸，2026-07）
+- [华为《智能世界 2030》报告 - GIV](https://www.huawei.com/cn/giv)
+- 陈海波 等：《现代操作系统：原理与实现》
+
+**最新研究论文（2023–2025）：**
+
+- AIOS: LLM Agent Operating System，COLM 2025 — [arXiv:2403.16971](https://arxiv.org/abs/2403.16971) / [github.com/agiresearch/AIOS](https://github.com/agiresearch/AIOS)
+- Herding LLaMaS: Using LLMs as an OS Module，ASPLOS 2023 WACI — [arXiv:2401.08908](https://arxiv.org/abs/2401.08908)
+- Microkernel Goes General: Performance and Compatibility in the HongMeng Production Microkernel，OSDI 2024 — [dblp](https://dblp.org/rec/conf/osdi/0001MJWLLLWHLYW24)
+- FISSLOCK: Fast and Scalable In-network Lock Management Using Lock Fission，OSDI 2024 — [dblp](https://dblp.org/rec/conf/osdi/ZhangC0024)
+- Performance Interfaces for Hardware Accelerators，OSDI 2024 — [dblp](https://dblp.org/rec/conf/osdi/0002IKEBC24)
+- Llumnix: Dynamic Scheduling for LLM Serving，OSDI 2024 — [dblp](https://dblp.org/rec/conf/osdi/SunHZXZL024)
+- DistServe: Disaggregating Prefill and Decoding，OSDI 2024 — [dblp](https://dblp.org/rec/conf/osdi/ZhongLCHZL0024)
+- Sarathi-Serve，OSDI 2024 — [dblp](https://dblp.org/rec/conf/osdi/AgrawalKPMKGTR24)
+- ServerlessLLM，OSDI 2024 — [dblp](https://dblp.org/rec/conf/osdi/FuXHBUPM24)
+- Nomad: Non-Exclusive Memory Tiering，OSDI 2024 — [dblp](https://dblp.org/rec/conf/osdi/XiangLD0RY024)
+- Managing Memory Tiers with CXL in Virtualized Environments，OSDI 2024 — [dblp](https://dblp.org/rec/conf/osdi/ZhongBWWAAHKHCC24)
+- InfiniGen: Dynamic KV Cache Management，OSDI 2024 — [dblp](https://dblp.org/rec/conf/osdi/LeeLSS24)
+- VeriSMo: A Verified Security Module for Confidential VMs，OSDI 2024 — [dblp](https://dblp.org/rec/conf/osdi/ZhouACGHC24)
+- DEEPSERVE: Serverless LLM Serving at Scale，ATC 2025 — [USENIX ATC '25](https://www.usenix.org/conference/atc25/technical-sessions)
+- GPreempt: GPU Preemptive Scheduling，ATC 2025 — [USENIX ATC '25](https://www.usenix.org/conference/atc25/technical-sessions)
+- ASTERINAS: Rust-Based Framekernel OS，ATC 2025 — [USENIX ATC '25](https://www.usenix.org/conference/atc25/technical-sessions)
+- μEFI: A Microkernel-Style UEFI，ATC 2025 — [USENIX ATC '25](https://www.usenix.org/conference/atc25/technical-sessions)
+- XpuPod: Offloading Cloud-Native Infrastructure，SoCC 2025 — [dblp](https://dblp.org/rec/conf/cloud/YangH0X025)
+- Confidential Analytics with Scylla，SoCC 2025 — [dblp](https://dblp.org/rec/conf/cloud/MangipudiCPE25)
+
+**全文检索：**
+
+- [OSDI 2024 论文集](https://www.usenix.org/conference/osdi24/technical-sessions)（USENIX，开放获取）
+- [USENIX ATC 2025 论文集](https://www.usenix.org/conference/atc25/technical-sessions)（USENIX，开放获取）

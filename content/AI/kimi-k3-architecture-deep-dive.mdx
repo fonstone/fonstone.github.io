@@ -1,0 +1,422 @@
+---
+title: "Kimi K3 架构深度解析：KDA、AttnRes 与 Stable LatentMoE 的三维创新"
+description: "首个 2.8T 参数开源旗舰模型的架构全解——从序列维（KDA 线性注意力）、深度维（AttnRes 残差注意力）、宽度维（Stable LatentMoE 896 专家）三个维度拆解 Kimi K3，覆盖 Gated MLA、MoonViT-V2 视觉融合、MXFP4 量化原理与部署生态。全部关键数字均对照《Kimi K3 技术报告》与官方权重 config.json 交叉核实。"
+date: "2026-08-08"
+tags: ["Kimi K3", "MoE", "线性注意力", "MLA", "大模型架构", "AI Infra", "量化", "视觉语言模型", "KDA", "AttnRes"]
+---
+
+## 1. 引言：首个 3T 级开源旗舰模型
+
+Kimi K3 是 Moonshot AI 发布的旗舰开源模型，也是**首个总参数达到 2.8T（约 3T 级）规模**的开源模型：总参数量 2.8T、每 token 激活 104B，原生多模态（MoonViT-V2），上下文窗口 1M tokens，面向长程编程、知识工作与推理等场景。相较上一代 Kimi K2，官方称在架构与数据配方的共同作用下，整体 scaling 效率约提升 **2.5 倍**。
+
+![Kimi K3 架构概览与关键模块解析](/images/kimi-k3/cover.jpg)
+
+模型始终开启 thinking，通过 `reasoning_effort`（`low` / `high` / `max`，默认 `max`）调节推理强度；多轮对话需要回传完整 `reasoning_content`（preserved thinking history）以保证推理链连续。权重与代码仓库以 Kimi K3 License 开源。
+
+> **说明 · 事实核查基准**：本文所有关键数字均经过三重来源交叉核对——① [《Kimi K3 技术报告》](https://github.com/MoonshotAI/Kimi-K3/blob/main/k3_tech_report.pdf)（官方 PDF，47 页）；② 官方权重 [config.json](https://huggingface.co/moonshotai/Kimi-K3)（实测参数：93 层、96 头、896 专家、q_lora_rank=1536、kv_lora_rank=512 等）；③ 微信文章与 InfraTech 仓库分析。三处不一致处以技术报告与 config.json 为准，并已在正文标注。
+
+## 2. 总体架构：三个维度的同时改结构
+
+从架构上看，K3 可以粗略理解为在三个维度上同时改结构：
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph Seq["序列维（长度）"]
+        S1["Kimi Delta Attention (KDA)<br/>线性注意力压缩历史状态"]
+        S2["Gated MLA<br/>全局层兜底长程依赖"]
+        S3["混合布局：69 KDA + 24 Gated MLA（约 3:1）"]
+    end
+
+    subgraph Depth["深度维（层间）"]
+        D1["Attention Residuals (AttnRes)<br/>残差连接变成沿深度的注意力"]
+        D2["深层按需回看更早层的表示"]
+    end
+
+    subgraph Width["宽度维（容量）"]
+        W1["Stable LatentMoE<br/>896 专家 / 激活 16 / 共享 2"]
+        W2["Quantile Balancing 稳定路由"]
+        W3["SiTU-GLU 激活 + Per-Head Muon"]
+    end
+
+    Seq -.->|"支撑 1M 长上下文"| Result["Kimi K3<br/>2.8T / 104B<br/>scaling 效率 +2.5x"]
+    Depth -.->|"支撑 93 层深度"| Result
+    Width -.->|"支撑 稀疏容量"| Result
+
+    style Seq fill:#e1f5fe
+    style Depth fill:#c8e6c9
+    style Width fill:#fff9c4
+    style Result fill:#f3e5f5
+`}/>
+
+- **序列维（长度）**：用 Kimi Delta Attention（KDA）配合 Gated MLA 做混合注意力（层构成 69 KDA + 24 Gated MLA，约 3:1），支撑更长上下文下的效率与表达能力
+- **深度维（层间）**：用 Attention Residuals（AttnRes）替代均匀累加的标准残差，让深层能按需回看更早层的表示
+- **宽度维（容量）**：用 Stable LatentMoE 把稀疏度推高到 896 个专家中激活 16 个（含 2 个共享专家），并配合 Quantile Balancing 等机制稳住路由
+
+![Kimi K3 整体架构图（来源：InfraTech 仓库）](/images/kimi-k3/architecture.jpg)
+
+![Kimi K3 架构概览（微信文章原图）](/images/kimi-k3/architecture-overview.png)
+
+**逐 block 的布局**（技术报告 Figure 2 说明）：K3 将 93 层划分为若干 block，**每个 block 内部是 3 层 KDA + 1 层 Gated MLA**（即 3:1 混合比例，每层注意力后都接一个 Stable LatentMoE FFN），并在 backbone 末尾**额外追加一层 Gated MLA**，保证最后一层始终是全局注意力。这一结构在官方 config.json 的 `full_attn_layers` 中完全吻合：Gated MLA 出现在第 4、8、12、…、92 层（共 23 层，每 4 层一个），加末尾追加层，合计正好 **24 层 MLA + 69 层 KDA = 93 层**。
+
+### 2.1 关键规格一览
+
+以下数字均与官方 config.json 及技术报告 Table 1 逐一比对一致：
+
+| 项目 | 公开信息 | 核实来源 |
+|------|---------|---------|
+| 总参数量 / 激活参数量 | 2.8T（2.78T）/ 104B（104.2B） | 技术报告 Table 1 |
+| 层数 / 稠密层 | 93 / 1（仅首层，`first_k_dense_replace=1`） | config.json |
+| 注意力层构成 | 69 KDA + 24 Gated MLA（23 周期层 + 1 末尾层） | config.json `full_attn_layers` |
+| 注意力隐藏维度 / 头数 | 7168 / 96 | config.json |
+| Latent MoE 维度 | 3584（0.5×，即隐藏维一半） | 技术报告 Table 1 |
+| 专家 FFN 隐层 / 专家数 / 每 token 激活 / 共享专家 | 3072 / 896 / 16 / 2 | config.json + 报告 |
+| 词表 / 上下文 | 160K（163840）/ 1M（1048576） | config.json |
+| 注意力 / 跨层连接 / MoE 框架 | KDA & Gated MLA / AttnRes / Stable LatentMoE | 技术报告 |
+| 激活函数 | SiTU-GLU（gate β=4，up β=25） | config.json |
+| 视觉编码器 | MoonViT-V2（401M，27 层，patch 14） | 报告 + config.json |
+| 量化 | MXFP4 weights + MXFP8 activations（自 SFT 起 QAT） | 技术报告 §4.1.4 |
+| 模态 | Text, Image | 模型卡片 |
+
+### 2.2 与 Kimi K2 的架构对照（技术报告 Table 1）
+
+| 配置项 | Kimi K2 | Kimi K3 | 变化 |
+|--------|---------|---------|------|
+| 层数 | 61 | 93 | +52% |
+| 总参数 | 1.04T | 2.78T | +167% |
+| 激活参数 | 32.6B | 104.2B | +220% |
+| 隐藏维度 | 7168 | 7168 | 不变 |
+| Latent MoE 维度 | 无 | 3584（0.5×） | 新增 |
+| 每专家 FFN 隐层 | 2048 | 3072 | +50% |
+| 路由专家 / 每 token 激活 | 384 / 8 | 896 / 16 | +133% / +100% |
+| 共享专家 | 1 | 2 | +100% |
+| 注意力头 | 64 | 96 | +50% |
+| 训练上下文长度 | 128K | 1M | 8× |
+| 注意力机制 | 全 MLA | Hybrid KDA–MLA | 替换 |
+| 激活函数 | SwiGLU | SiTU-GLU | 替换 |
+| MTP 层 | 1 层 | 1 层 | 不变 |
+
+> **说明 · 2.5x scaling 效率的来源**：技术报告 Figure 7 用 2.8T 与 1.04T 两代模型在**同预算 FLOPs 下的验证损失曲线**拟合 scaling law，得到 K3 相对 K2 约 2.5× 的效率增益。注意这是"架构 + 数据配方 + 训练策略"的**综合结果**（例如报告还提到默认采用余弦退火而非 WSD 学习率调度），不能简单归因于某一个模块。
+
+## 3. 深度维：Attention Residuals——让残差学会"回看"
+
+### 3.1 为什么要改残差：PreNorm 稀释问题
+
+标准 Transformer 的残差连接把各层输出按固定权重（通常为 1）一路累加下去。深度变大后会出现两个常见麻烦：
+
+1. **PreNorm dilution（归一化稀释）**：早期层的贡献被后面层的累加不断"冲淡"，深层的隐状态主要由最近的若干层决定，梯度难以有效回传到浅层
+2. **隐状态幅度失控**：随着层数增加，累加和的范数不断增大，模型需要持续"修正"而不只是"增量学习"
+
+### 3.2 核心想法：残差即沿深度的注意力
+
+AttnRes 的核心想法很直接：把固定相加换成**对历史层表示做一次随输入变化的注意力聚合**，让当前层按需挑选更有用的早期表示，而不是均匀叠加所有历史信息。
+
+技术报告给出了精确的机制定义：每层定义一个**可学习的伪查询（pseudo-query）q_l = w_l**，历史各层输出作为键值（k_i = v_i = f_i(h_i)，其中 h_1 是 token embedding），注意力权重为：
+
+```
+α(i→l) = exp(q_lᵀ · RMSNorm(k_i)) / Σ_j exp(q_lᵀ · RMSNorm(k_j))
+h_l = Σ_i α(i→l) · v_i
+```
+
+其中对 key 做 RMSNorm 的目的是**防止输出幅度大的层主导注意力权重**。也就是说，**残差连接本身变成了沿深度方向的 attention**——每个深度位置都能以数据相关的方式检索整个历史。
+
+> **补充 · 与 RNN 的类比**：技术报告把标准残差比作"RNN over time"——所有历史被压缩进单一状态 h_l，形成信息瓶颈；Transformer 用注意力解决了序列方向的信息瓶颈，AttnRes 则把同样的方法论应用到深度方向。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph History["历史层表示"]
+        H1["Layer 1 输出"]
+        H2["Layer 2 输出"]
+        HN["Layer n-1 输出"]
+    end
+
+    AGG["AttnRes 聚合<br/>α 权重 = softmax(w_l 与历史交互)"]
+    CUR["当前层输入<br/>按需选择早期表示"]
+    OUT["Layer n 输出"]
+
+    H1 --> AGG
+    H2 --> AGG
+    HN --> AGG
+    AGG --> CUR
+    CUR --> OUT
+    OUT -.->|"写入历史"| HN
+
+    style AGG fill:#fff9c4
+    style OUT fill:#c8e6c9
+`}/>
+
+### 3.3 Block AttnRes：工程化的折中
+
+Full AttnRes 要对前面**所有层**做聚合。技术报告给出了精确的复杂度核算：由于深度 L 小于 100，**算术开销 O(L²·d) 可承受**；真正的负担是**显存 O(L·d)**（以及在流水线并行下跨 stage 的通信开销）——需要把全部层输出保存到最后一层。因此实际更常用 Block AttnRes：
+
+- **step 1**：把 L 层网络按深度切成 N 个 block（每 block S = L/N 层），block 内部仍用普通残差累加，得到 block 级表示 b_n = Σ f_j(h_j)
+- **step 2**：只在 block 边界保存一份 block 级表示，跨 block 时对这些 block 表示（再加当前 block 内的 partial sum）做注意力；token embedding 始终作为第一个来源（b_0 = h_1）
+- **step 3**：block 数量到 8 量级时可收回 Full AttnRes 的大部分收益（报告实验 N ≈ 8）；显存与通信开销从 O(L·d) 降到 O(N·d)
+
+**K3 的实际配置**（技术报告 + config.json `attn_res_block_size=12`）：93 层划分为 **8 个 block × 12 层**，加上 embedding 层共 **9 个 block**（最后一个 block 是部分块）。block 级结构还带来推理收益：并行计算的跨 block 结果可通过 online softmax 与顺序的 block 内 partial sum 合并，显著降低推理开销。
+
+![Block AttnRes 示意图（微信文章原图）](/images/kimi-k3/attnres.png)
+
+K3 共 93 层，架构图中明确画出了 Block n−1 / n−2 / n−3 一类的跨层回看：**信息不仅沿序列流动，也沿深度被选择性检索**。AttnRes 在 Kimi Linear 等实验中，对多步推理、代码类任务帮助更明显，是 K3 深度方向上的骨架之一。
+
+> **原理说明 · 为什么要"回看"**：深度网络存在"表示遗忘"——长链推理中，第 80 层可能非常需要第 5 层提取的某个中间结论，但标准残差里第 5 层的信息早已被淹没在第 6 到 79 层的累加中。AttnRes 等价于给每层一个"检索历史的能力"，类似把 memory-augmented network 的显式记忆搬进了残差通道，其代价就是 O(L·d) 的历史保存，因此必须用 block 结构压缩历史粒度。
+
+## 4. 序列维：KDA——从标量衰减到对角衰减
+
+### 4.1 线性注意力的动机
+
+标准 attention 的 KV 缓存随序列长度二次膨胀（每个新 token 都要保存完整的 K/V），在 1M 长上下文下不可承受。**线性注意力**把历史压缩进有限大小的状态 S，靠递推更新（S(t) = f(S(t-1), k(t), v(t))），避免 KV 压力随序列增长——代价是状态容量有限，**gate/衰减怎么设计就变得很关键**：衰减太快记不住旧信息，衰减太慢状态被噪声污染。
+
+### 4.2 Gated DeltaNet 回顾与 KDA 的关键改动
+
+KDA 来自 Kimi Linear 这条线，是对 **Gated DeltaNet（GDN）** 的细化。技术报告给出 KDA 的递推定义（delta rule + 通道级遗忘门）：
+
+```
+S_t = (I − β_t · k_t · k_tᵀ) · Diag(α_t) · S_{t-1} + β_t · k_t · v_tᵀ
+o_t = S_tᵀ · q_t
+```
+
+其中 α_t ∈ (0,1)^dk 是**逐通道（per-key-channel）的一步保留因子**，β_t ∈ (0,1) 控制 delta-rule 的写入强度。关键点在于：
+
+- 传统 GDN 的衰减 g_t 是**标量**：对整个状态 S(t-1) 的所有分量做同一种衰减
+- KDA 把衰减变成 **d_k 个不同的 α**，再以对角矩阵 Diag(α_t) 乘进原递推——状态的不同维度可以有不同的衰减强度
+- 每个 α 的 logit 由低秩投影 z_t = W↑_α·W↓_α·x_t + b_α 生成（即微信文章所说的"上采样/投影出多个 α 值"），并经**有下界映射**转为实际衰减
+
+![KDA 递推与 GDN 对比示意图（微信文章原图）](/images/kimi-k3/kda-recurrence.png)
+
+### 4.3 K3 对 Kimi Linear 的两处关键改进
+
+技术报告明确指出，K3 的 KDA 相对 Kimi Linear 版 KDA 还有两处 K3 独有改动：
+
+**① 有下界的对数衰减（Lower-bounded decay）**：Kimi Linear 用负 Softplus 映射 g_t = −e^A·Softplus(z_t) ∈ (−∞, 0)，无下界——当保留因子极小时，chunk 内的累积衰减倒数 1/Γ 会在有限精度下溢出。K3 改用**缩放 sigmoid**：g_t = g_min·Sigmoid(e^A·z_t)，g_min = −5 固定，于是每个保留因子都满足 α > e^(−5) ≈ 6.7×10⁻³。这个有限范围让 16-token tile 内外的因果块**全部可以用稠密 Tensor Core 矩阵乘计算**，消除了 Kimi Linear 中只能逐位置计算的 diagonal tile 路径。
+
+**② 全秩输出门（Full-rank gate）**：KDA 输出在 head-wise RMSNorm 之后乘数据相关的输出门 y_t = W_o·[Sigmoid(W_g·x_t) ⊙ RMSNorm(õ_t)]，且门投影 W_g 是**全秩**的（Kimi Linear 用低秩门）。
+
+此外，KDA 采用**chunkwise 并行形式**：chunk 间串行递推、chunk 内并行计算（chunk size 下再分 16-token 次级 tile）——这是后续 FlashKDA 算子与上下文并行（KCP）的基础（见第 8 节）。
+
+![K3 混合注意力布局：69 KDA + 24 Gated MLA（微信文章原图）](/images/kimi-k3/hybrid-attention-layout.png)
+
+K3 的注意力层为 **69 KDA + 24 Gated MLA（约 3:1）**：多数层走线性注意力省 KV 与算力，少数层保留全局 Gated MLA 兜底长程依赖。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph KVALayer["KDA 层（69 层）"]
+        K1["线性注意力<br/>状态 S_t 递推压缩历史"]
+        K2["对角衰减矩阵<br/>每维度独立 α"]
+        K3["KV 开销 O(1)，支持超长上下文"]
+    end
+
+    subgraph MLALayer["Gated MLA 层（24 层）"]
+        M1["全局注意力<br/>无损长程依赖"]
+        M2["低秩 KV 压缩 + Output Gate"]
+    end
+
+    INPUT["输入序列"] --> KVALayer
+    INPUT --> MLALayer
+    KVALayer --> OUT2["输出"]
+    MLALayer --> OUT2
+
+    style KVALayer fill:#e1f5fe
+    style MLALayer fill:#c8e6c9
+`}/>
+
+> **原理说明 · 维度级衰减为什么更优**：真实序列中，不同特征通道的"寿命"天然不同——语法特征的衰减应快，全局语义特征应慢。标量衰减相当于对全体通道一刀切，要么记不住长程、要么存不下细节；对角化衰减让每个通道按自己的半衰期演化，在同样状态容量下显著提升压缩效率。代价是递推从标量乘法变成对角矩阵乘法，需要专门的 kernel 优化（FlashKDA、FLA 中的 KDA 算子）。
+
+**推理侧注意事项**：KDA 的递推状态与传统 prefix cache 不完全同构——技术报告为此专门设计了"KDA-aware 前缀缓存"：把固定大小的 KDA 递推状态与 MLA 的逐 token KV 缓存**打包进同一个分页池**，并采用 512 token 细粒度 hash 块 + 6144 token 物理块的双粒度方案（详见第 8 节）。工程上可关注 [FlashKDA](https://github.com/MoonshotAI/FlashKDA) 与 FLA 中的 KDA 算子。
+
+## 5. 宽度维：Stable LatentMoE——896 专家的稀疏工程
+
+### 5.1 MoE 的负载均衡难题
+
+K2/K2.5 已是较大稀疏 MoE；K3 进一步把**专家池扩到 896、每 token 激活 16 个、共享专家 2 个**（技术报告给出稀疏度 = 896/16 = **56**）。MoE 规模越大，"路由扎堆"问题越严重：少数"热门专家"被几乎所有 token 选中，造成显存与算力热点，甚至触发显存不足。传统做法是加辅助负载均衡损失（auxiliary load-balancing loss），但启发式权重对超参敏感、在大规模下易抖动。
+
+技术报告指出，896 专家规模放大了两个失效模式：
+
+1. **激活爆炸**：路由路径要经过 W↓ → 专家 FFN → W↑ 近四次连续矩阵乘，加上 2.8T 参数量，路由支路的内部激活容易爆炸
+2. **负载均衡失效**：近千个专家的均衡已超出既有"无辅助损失路由"方案的适用区间
+
+Stable LatentMoE 用三个组件应对：**W↓ 前加 RMSNorm**（Normalized LatentMoE）、**SiTU-GLU 抑制激活爆炸**、**Quantile Balancing 做负载均衡**。
+
+![Stable LatentMoE 路由示意图（微信文章原图）](/images/kimi-k3/latent-moe.png)
+
+**Routed 专家实际路径**：先把 7168 维投影到 3584（Latent MoE 维度），再在专家内做 3584→3072→3584 的 SiTU-GLU，最后映回 7168，并与 2 个 shared experts 相加。共享专家保留全宽路径处理公共变换，路由专家在紧凑的 3584 维潜空间内做特化（这正是 LatentMoE 让"896 专家 × 3072 隐层"的权重流量可承受的原因）。
+
+### 5.2 Normalized LatentMoE：聚合后的归一化
+
+原始 LatentMoE 把路由聚合结果 u 直接送进 W↑，而 u 的尺度会随选中专家与路由权重变化。K3 在专家聚合与 up 投影之间**插入 RMSNorm**：y = Σ E_shared(x) + W↑·RMSNorm(u)。报告称这不仅稳定训练，还一致地改善了验证损失与下游基准。
+
+### 5.3 Quantile Balancing：从启发式到分位数
+
+**Quantile Balancing（QB）** 的思路：不用辅助损失，而是在 router score 上维护每个专家的**偏置 b_j**，从**路由分数的分位数**直接推导偏置，使每个专家恰好获得目标负载 q = m·k/n（m 为 token 数，k 为每 token 选中数）。具体机制：
+
+- 对带偏置分数做 **Top-(k+1)** 选择：前 k 个是实际路由，第 k+1 个作为 cutoff α_i（token 侧阈值）
+- 每个专家按"边际分数 s_i,j − α_i 的 (1−k/n) 分位数"更新偏置——保证恰好 q 个 margin 高于阈值
+- 偏置只影响派发（dispatch），**不参与混合权重 p_i,j 的计算与路由梯度**，且**推理时冻结**
+- 大规模训练时用**直方图估计分位数**：一次 all-reduce 汇总各 rank 的 bin 计数（每专家仅数百个 bin），避免收集百万级 margin
+
+### 5.4 SiTU-GLU：为极端稀疏而生的激活函数
+
+相对上一代的 SwiGLU，SiTU-GLU（Sigmoid Tanh Unit GLU）的 gate 侧用 **β1·tanh(x/β1)·σ(x)** 限幅，up 支路用 **β2·tanh(x/β2)** 做有界变换（技术报告公式 12）：
+
+```
+SiTU-GLU(x) = [ β1·tanh(Wg·x/β1) ⊙ Sigmoid(Wg·x) ] ⊙ [ β2·tanh(Wu·x/β2) ]
+```
+
+官方 config.json 实测：**β1 = 4.0（gate 支路）、β2 = 25.0（up 支路）**，输出严格有界 |f(x)| ≤ β1·β2 = 100。K3 还在 W↓ 的 up 投影前加了 RMSNorm（即 5.2 节的 Normalized LatentMoE）。
+
+<MermaidDiagram chart={`flowchart LR
+    X["x"] --> UP["up 支路<br/>有界变换"]
+    X --> GATE["gate 支路<br/>β·tanh(x/β)·σ(x) 限幅"]
+    UP --> MUL["逐元素相乘"]
+    GATE --> MUL
+    MUL --> OUT["输出"]
+    style GATE fill:#fff9c4
+`}/>
+
+> **原理说明 · 为什么需要限幅**：896 专家 + 16 激活意味着每个专家只有 1.8% 的 token 经过，激活幅度方差极大。SwiGLU 的 gate 是单调无界的 σ(x)·x，在极端稀疏下可能出现个别超大激活值，放大数值不稳定。SiTU-GLU 的 tanh 项把 gate 输出钳制在有界区间，up 支路也做有界变换，从根源上抑制极端值——这对后续 MXFP4 低比特量化（第 8 节）也至关重要，量化对离群值极其敏感。
+
+> **补充 · 与 GLU/SwiGLU 的关系**：SwiGLU 的两个乘性因子都无界，巧合的大坐标会产生激活离群值、在低精度算术下增加溢出风险；原始 GLU 的 sigmoid gate 有界但失去了 Swish 的近线性正区间。SiTU-GLU 的 scaled-tanh 在原点附近近似线性（保留 SwiGLU 的局部响应），在大输入时平滑逼近有界值——报告指出这在稀疏路由场景（数值更极端）下稳定了训练。
+
+### 5.5 训练侧的配套工程
+
+- **Per-Head Muon**：技术报告 §2.5 给出了动机——对完整 Q/K/V 投影矩阵做 Newton–Schulz 正交化时，梯度/动量尺度大的 head 会主导共享更新方向，小尺度 head 得不到充分归一化；按 head 切分动量矩阵、逐 head 正交化可均化各头的更新尺度，也略微降低优化器开销
+- **Fully balanced expert-parallel**：训练侧强调静态 shape、关键路径上无 host sync，减轻大 EP 规模下因专家不均衡带来的吞吐抖动；报告将其命名为 **MoonEP**（完全均衡的专家并行：静态计算形状 + 零拷贝通信）
+
+## 6. Gated MLA：混合注意力的"全局兜底层"
+
+混合注意力里的"全局"层走的是 **Gated MLA**（KimiMLAAttention，且 `mla_use_output_gate=true`），末层再多挂一层 MLA。相对上一代（K2/K2.5 一类 MLA），压缩秩与 head 切分基本不动，主要变化有两点：
+
+1. **头数**：64 改为 96，单头 dim 不变，Q/K/V/O 宽度整体 ×1.5
+2. **Output gate**：attention 输出在 o_proj 前乘 `sigmoid(g_proj(h))`，即所谓 Gated
+
+![Gated MLA 示意图（微信文章原图）](/images/kimi-k3/gated-mla.png)
+
+| 项 | 上一代 MLA | K3 Gated MLA（config.json 实测） |
+|----|-----------|-------------|
+| q_lora_rank | 1536 | **1536** |
+| kv_lora_rank | 512 | **512** |
+| qk_nope / qk_rope / v_head | 128 / 64 / 128 | **128 / 64 / 128** |
+| qk_head_dim（nope+rope） | 192 | **192** |
+| num_attention_heads | 64 | **96** |
+| output gate | 无 | **有（g_proj，全秩）** |
+| 位置编码 | RoPE | **NoPE（无显式位置编码）** |
+
+> **原理说明 · MLA 与 Output Gate**：MLA（Multi-head Latent Attention，DeepSeek 提出、Kimi 沿用）用低秩投影把 KV 压到 kv_lora_rank=512，避免完整 KV 缓存随头数增长——这是 K3 能支撑 96 头仍保持 KV 高效的原因。Output gate 则给每层一个"是否相信本次注意力输出"的开关：gating 值接近 0 时该层注意力被旁路，训练中梯度可以更平滑地选择"哪些层真正需要注意力"，与 AttnRes 的"按需回看"哲学一致。
+
+> **补充 · K3 的 MLA 使用 NoPE**：技术报告 §2.1.2 明确：K3 对所有 MLA 层**不施加任何位置编码（NoPE）**，位置信息完全由 KDA 层的递推衰减机制隐式编码。好处有二：MLA 只做无位置的全局内容交互，位置敏感工作交给 KDA；上下文扩展时无需调整 RoPE 基频或做 YaRN 插值。
+
+注意：第一层（layer_idx=0）是 **KDA + Dense FFN**（config.json `first_k_dense_replace=1`），并不是 MLA + Dense；Gated MLA 只出现在上述全局层，且这些层的 FFN 已是 MoE。
+
+## 7. 视觉模块：MoonViT-V2 与视觉-语言融合
+
+### 7.1 视觉编码器升级
+
+K3 视觉编码器为 **MoonViT-V2**（约 401M），相对 K2.5/K2.6 的 MoonViT（约 400M）为同骨架升级：仍是 NaViT 式 3D patch + 2D RoPE + sd2_tpool merge。参数量几乎不变，但宽度、注意力、Norm、Projector 与预处理上限有实质变化（MoonViT-V2 列数字全部来自官方 config.json `vision_config`）：
+
+| 项目 | MoonViT（K2.6，据 InfraTech 分析） | MoonViT-V2（K3，config.json 实测） |
+|------|----------------|------------------|
+| 参数量 / 层数 / patch | 400M / 27 / 14 | 401M / **27 / 14** |
+| vt_hidden_size | 1152 | **1024** |
+| vt_intermediate_size | 4304 | **4096** |
+| 注意力头 / 通道 | 16 头，QKV=1152（每头 72） | **12 头，qkv_hidden_size=1536（每头 128）** |
+| Norm / 激活 | LayerNorm / gelu | **RMSNorm / gelu_pytorch_tanh** |
+| MM Projector | patchmerger（pre-LN） | **patchmergerv2**（无 pre-norm，post RMSNorm） |
+| merge kernel | — | **sd2_tpool，merge_kernel_size=[2,2]** |
+
+> **说明 · 图像上限**：微信文章称 MoonViT-V2 的 `in_patch_limit` 由 16384 提升到 65536，但该字段未在官方 config.json 中直接暴露，此数字**未经官方来源核实**，请谨慎引用。可核实的事实是：技术报告确认 MoonViT-V2 通过 pixel-shuffle 2×2 降采样把视觉 token 减少 4 倍，使**最高 3584×3584 像素**的输入在 1M 上下文内可负担。
+
+![MoonViT-V2 架构图（微信文章原图）](/images/kimi-k3/moonvit-v2.jpg)
+
+> **原理说明 · 从零训练的视觉塔**：技术报告 §2.4 指出一个反直觉的结论——MoonViT-V2 **完全从零训练（next-token prediction），不用 SigLIP 等对比预训练初始化**。动机是训练稳定性：SigLIP 初始化的编码器接入 LLM 联合优化时梯度范数持续偏高且频繁尖峰，而从零训练的 MoonViT-V2 全程平稳。而且从零训练让视觉表示直接由语言建模目标塑造（而非对比损失偏好的全局语义），报告发现其在视觉评测上与 SigLIP 初始化基线持平——说明对大规模多模态语言模型而言，对比预训练并非必需的初始化。
+
+MoonViT-V2 的工程细节：27 层 ViT、约 0.4B 参数，**采用 RMSNorm 且所有线性/注意力投影去掉 bias**；图像与视频共享参数，注意力分解为**帧内空间 + 帧间时间**两次 pass，时间维再做 temporal pooling 压缩 token。
+
+### 7.2 视觉与语言融合的六步流程
+
+<MermaidDiagram chart={`flowchart TB
+    P1["step1 预处理<br/>抽帧（视频）/ 尺寸调整 / padding → Patch"]
+    P2["step2 Patch 嵌入<br/>卷积式嵌入 + 时间/空间位置编码"]
+    P3["step3 编码<br/>多层 Encoder 堆叠提取视觉特征"]
+    P4["step4 Patch 池化与 merge<br/>merge_kernel 空间/时间维度聚合，压缩视觉 token"]
+    P5["step5 MM Projector<br/>视觉 hidden 维度 → text_hidden_size"]
+    P6["step6 序列拼接<br/>按占位符写入文本 embedding 序列"]
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6
+    P6 --> LLM["LLM 主干（KDA + Gated MLA + MoE）"]
+
+    style P4 fill:#fff9c4
+    style P6 fill:#c8e6c9
+    style LLM fill:#f3e5f5
+`}/>
+
+- **step 1 预处理**：经 ImageProcessor 完成抽帧（视频）、尺寸调整、padding，再切分为 Patch
+- **step 2 Patch 嵌入**：对 patch 做卷积式嵌入，叠加位置编码（含时间与空间）
+- **step 3 编码**：经多层 Encoder 堆叠，提取高层视觉特征
+- **step 4 Patch 池化与 merge**：通过 merge_kernel 等在空间（及配置下的时间）维度聚合，压缩视觉 token 数量
+- **step 5 MM Projector**：将视觉 hidden 维度映射到与文本一致的 text_hidden_size
+- **step 6 序列拼接**：按占位符把视觉特征写入文本 embedding 序列，得到 inputs_embeds 与 attention_mask
+
+## 8. 量化、加速与部署：从 QAT 到 KDA-aware 服务
+
+### 8.1 量化：MXFP4 QAT 的精确边界
+
+K3 从 SFT 阶段起做**量化感知训练（QAT）**。技术报告 §4.1.4 给出了精确的量化范围：**只有 MoE 专家权重**（占参数内存绝对大头）量化到 MXFP4，其输入激活用 MXFP8；而注意力投影、Latent MoE 投影、共享专家与 MoE router 等**非专家组件保持更高精度**。QAT 贯穿 SFT 与 RL 整个后训练阶段，且 **RL 的 rollout 与训练共用同一套量化方案**——消除训练-推理不一致。
+
+> **原理说明 · MX 格式与 QAT**：MX 格式（Microscaling）把张量按 32 个元素为一组共享一个 8 位缩放因子，组内元素用 4 位浮点（FP4）表示——相比传统逐张量 scale 的 INT4/FP8，MX 能以更细粒度捕捉局部数值范围，显著降低量化误差。**QAT（量化感知训练）与后训练量化（PTQ）的区别**：PTQ 是训练完再量化，精度损失靠校准数据修补；QAT 则把"量化误差"当成训练目标的一部分，让模型权重在训练中主动适应低比特表示。K3 只量化专家权重，也正因为 SiTU-GLU 的输出严格有界（第 5.4 节），离群值被结构性消除，低比特量化才可行。
+
+### 8.2 推理加速：MTP 草稿模型与 EAGLE-3
+
+技术报告还披露了 K3 的投机解码方案：预训练时在每个 block 结构的末尾加了 **MTP（Multi-Token Prediction）层**（config.json 也显示 MTP=1 层），后训练时将其微调为 **EAGLE-3 风格的草稿模型**（目标模型冻结）。草稿输入融合了第 1、4 个与最后一个 AttnRes block 的低/中/高层特征；微调直接优化**接受率损失（LK loss）**而非 KL 散度，因为最大化接受率才是投机解码加速的本质。草稿模型同样按 MXFP4/MXFP8 做 QAT。
+
+### 8.3 KDA 的系统-算法协同设计
+
+KDA 的递推依赖（状态逐 chunk 串行传播）与 GPU 的宽并行偏好天然冲突，技术报告为此设计了三个层次的支持：
+
+- **FlashKDA**（CUTLASS 实现）：chunkwise kernel 将"chunk 内 token 并行"与"chunk 间状态传播"**重叠调度**（token 并行阶段 + head 并行递推分别调优），显著优于 Triton 参考实现，并作为 flash-linear-attention 的后端自动派发
+- **KDA Context Parallelism（KCP）**：线性注意力的上下文并行只需固定大小 all-gather（因为跨 rank 传递的是固定尺寸的递推状态，而非随序列增长的 KV 块）；KDA 的 delta rule 让"段效果依赖入段状态"，KCP 把每段效果分解为"对入状态的累计转移 + 从零生成的本地状态"两部分，经前缀扫描（prefix scan）组合
+- **KDA-aware 前缀缓存**：KDA 递推状态与 MLA KV 缓存打包进**同一个分页池**（统一分配/引用计数/驱逐）；前缀哈希用 512 token 细粒度 hash 块（嵌在 6144 token 物理块内），KDA 状态只在稀疏的 hash 边界保存 checkpoint——命中时恢复 KDA checkpoint + copy-on-write 部分 MLA 块，从命中点继续 prefill
+
+### 8.4 部署框架
+
+部署上官方推荐 **vLLM / SGLang / TokenSpeed**（模型卡片与 InfraTech 仓库），并建议在较大高带宽通信域（如 ≥64 加速器的 supernode）上服务——896 专家 × 大并行度对 EP 通信带宽要求极高，这也是 5.5 节 MoonEP 要在训练侧消除 host sync 的原因。
+
+## 9. 总结
+
+Kimi K3 的三个维度创新共同指向一个方向：**在容量、深度与长度三个轴上同时推高极限**。
+
+| 维度 | 机制 | 解决的问题 | 关键数字 |
+|------|------|-----------|---------|
+| 序列维 | KDA 线性注意力 + Gated MLA 混合 | 1M 上下文下的 KV 开销 | 69 KDA + 24 MLA |
+| 深度维 | AttnRes（Block 化） | 深层的表示遗忘与 PreNorm 稀释 | 93 层，8 block × 12 层回看 |
+| 宽度维 | Stable LatentMoE | 千亿级稀疏的路由稳定性 | 896 专家 / 激活 16 / 稀疏度 56 |
+| 视觉 | MoonViT-V2 | 高分辨率多模态融合 | 401M，最高 3584×3584 像素 |
+| 量化 | MXFP4 QAT | 3T 级权重的部署可行性 | 专家权重 4bit + 激活 8bit |
+
+### 9.1 事实核查小结
+
+| 说法 | 结论 |
+|------|------|
+| 2.8T 总参 / 104B 激活 / 93 层 / 896 专家 / 1M 上下文 | ✅ 技术报告 Table 1 + config.json 完全一致 |
+| 69 KDA + 24 Gated MLA（每 4 层一个 MLA，末尾追加一层） | ✅ config.json `full_attn_layers=[4,8,…,92,93]` 完全吻合 |
+| q_lora_rank=1536 / kv_lora_rank=512 / 头维 128+64+128 / 96 头 | ✅ config.json 实测 |
+| SiTU-GLU（β1=4、β2=25）、attn_res_block_size=12、首层 Dense FFN | ✅ config.json 实测 |
+| MoonViT-V2：27 层 / 12 头 / 1024 维 / 4096 中间层 / patch 14 / sd2_tpool | ✅ config.json 实测 |
+| 视觉融合流程、QLoRA 式 MLA 细节（K2.6 列）、in_patch_limit=65536 | ⚠️ 来自微信/InfraTech 分析，官方来源未直接核实（K3 列数字已实测） |
+| "QAT 自 SFT 起，权重 MXFP4 + 激活 MXFP8" | ✅ 技术报告 §4.1.4（补充：仅 MoE 专家权重量化，非专家组件保持高精度） |
+| KDA 是 GDN 的"标量衰减→逐通道对角衰减" | ✅ 技术报告公式 1（另补充 K3 独有改动：有下界对数衰减 + 全秩输出门） |
+
+从工程视角，K3 最大的启示是"**创新密度**"：KDA、AttnRes、Quantile Balancing、SiTU-GLU 每一项都不是全新的理论，而是对既有机制（线性注意力、残差、负载均衡、激活函数）在**极致规模下的再工程**——当规模推到 2.8T 参数、1M 上下文、896 专家时，原本"够用就好"的细节全部变成了必须重新设计的约束。这正是 AI Infra 研究的常态：瓶颈不在某个天才想法，而在每一个被规模放大的细节。
+
+## 参考资料
+
+**源文章：**
+
+- [Kimi K3架构概览与关键模块解析 - InfraTech 微信公众号](https://mp.weixin.qq.com/s/tZuBzGUUdQanVobi35OMVw)（正文 7 张图已下载引用：架构总览、AttnRes、KDA、混合注意力、Gated MLA、LatentMoE、MoonViT-V2）
+- [InfraTech 仓库：models/kimi_k_3 目录（README 与架构图）](https://github.com/CalvinXKY/InfraTech/tree/main/models/kimi_k_3)
+- [InfraTech 知识库主页](https://github.com/CalvinXKY/InfraTech)
+
+**官方资源（本文事实核对基准）：**
+
+- [Kimi K3 技术报告（PDF，47 页）](https://github.com/MoonshotAI/Kimi-K3/blob/main/k3_tech_report.pdf)
+- [官方权重 config.json（Hugging Face）](https://huggingface.co/moonshotai/Kimi-K3)（本文 96 头/896 专家/MLA 维度/视觉配置等均实测自此文件）
+- [官方仓库 MoonshotAI/Kimi-K3](https://github.com/MoonshotAI/Kimi-K3)
+- [模型权重（ModelScope）](https://www.modelscope.cn/models/moonshotai/Kimi-K3)
+- [官方博客：Kimi K3 整体介绍](https://www.kimi.com/zh-cn/blog/kimi-k3)
+- [Kimi-Linear（KDA 相关）](https://github.com/MoonshotAI/Kimi-Linear)
+- [Attention-Residuals](https://github.com/MoonshotAI/Attention-Residuals)
+- [FlashKDA 算子](https://github.com/MoonshotAI/FlashKDA)

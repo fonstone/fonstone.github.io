@@ -42,3 +42,4 @@ yarn-error.log*
 next-env.d.ts
 
 EASTER_EGGS_GUIDE.md
+/.superpowers/

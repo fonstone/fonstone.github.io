@@ -1,0 +1,164 @@
+---
+title: "AI 时代异构操作系统的新接口，四篇 2026 年 arXiv 论文拆解"
+description: "2026 年 7 月末到 8 月中，arXiv 上连续出现四篇把软硬件接口重新划分的论文，MemSpec 给边缘设备投机解码做内存感知运行时，Themis 用页表项 hint 让软件指挥硬件预取器，Agora 针对 Agentic AI 工作流收割闲置算力，PFM 为 NPU-PIM 异构内存做双视图映射。本文逐一核对论文原文，拆解每篇的原理、算法与代码实现细节，并给出它们对 AI 时代异构操作系统演进的共同启示。"
+date: "2026-08-13"
+tags: ["操作系统", "AI", "异构计算", "投机解码", "硬件预取", "NPU", "PIM", "Agentic AI", "arXiv"]
+---
+
+# AI 时代异构操作系统的新接口，四篇 2026 年 arXiv 论文拆解
+
+7 月 31 日到 8 月 12 日，arXiv 上四篇论文把同一个问题从四个角度各切了一刀。MemSpec 在 Jetson Orin Nano 上给投机解码配了内存感知运行时，Themis 把硬件预取器的开关权交到页表项里，Agora 用 Azure 生产数据论证 Agentic 工作流下 CPU 和 GPU 的碎片化，PFM 为 NPU-PIM 异构内存设计了双视图映射。四篇论文的落点各不相同，共同点是它们都在重画软件和硬件之间的那条线。我把四篇全文逐字核对了一遍，下面按论文拆原理，算法和代码实现按原文写。
+
+## 一、MemSpec，边缘设备上投机解码的内存账本
+
+投机解码用小草稿模型先猜几个 token，再让目标模型并行验证，猜对了就少跑一轮目标模型解码。边缘设备上这套机制有个前提，草稿模型得常驻在快存里。Jetson Orin Nano 只有 8GB 内存，装下主模型后，最多同时常驻两个草稿模型。选中的草稿不在内存里，就要现场加载，论文用 400M 参数的草稿模型实测过一次加载的开销，远大于一次投机解码迭代的收益。
+
+已有的自适应方法把草稿选择当成多臂老虎机问题，在线探索哪个草稿好。论文指出这套方法在边缘设备上失效的原因，探索式选择会频繁切换草稿，而切换前提是草稿能立刻执行，这个假设在内存受限的边端不成立。选得再好，加载开销把收益吃光。
+
+MemSpec 的思路是预测代替探索。轻量预测器在推理前先估计哪个草稿最有效，运行时按预测结果管理常驻工作集。草稿选择和执行解耦，当前最优的常驻草稿先跑，次优但值得用的草稿在后台异步预取，等切换时刻到来时模型已经就位。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph Pred["预测引擎"]
+        BERT["fine-tuned BERT 编码器"] --> Rank["草稿排序"]
+    end
+
+    subgraph Cache["草稿缓存管理器"]
+        RWS["常驻工作集<br/>容量 K"]
+        PF["后台异步预取"]
+        EV["按得分驱逐"]
+    end
+
+    subgraph Exec["执行循环"]
+        Active["当前常驻草稿<br/>立即执行"]
+        Target["目标模型验证"]
+    end
+
+    Rank -->|"候选排名"| Cache
+    RWS --> Active
+    PF -.->|"提前加载"| RWS
+    EV --> RWS
+    Active --> Target
+    Target -.->|"上下文反馈"| BERT
+`} />
+
+预测引擎用 fine-tuned BERT 编码器，输入 prompt 和最近的 token，输出每个候选草稿的概率。训练数据是投机解码轨迹，每条上下文标出取得最高解码效用的草稿，预测目标和系统级性能直接对齐。论文强调预测引擎只需要排序足够准，不用精细估效用，因为下游缓存管理器和运行时控制器只看相对优先级。
+
+![MemSpec 总体架构](/images/ai-os-arxiv-2026/memspec-arch.png)
+
+*MemSpec 论文 Figure 5，预测引擎排序草稿，缓存管理器维护常驻工作集并异步预取，运行时循环按调度点切换。作者 Eunjeong Kim 等，arXiv 2608.10362*
+
+### 算法一，上下文感知的草稿排序
+
+论文的 Algorithm 1 把排序过程写成三步。预测引擎每个调度间隔调用一次，输入 prompt、最近 token 和候选草稿集合，输出排名列表。代码逻辑是，如果上下文命中缓存就直接用，否则跑 BERT 编码器得概率，按概率排序返回。
+
+**缓存更新的 Algorithm 2 更关键**。输入当前上下文、候选集合、常驻容量 K 和活跃草稿，先取 top-K 候选，逐个检查是否已常驻。没常驻又没在预取中的，异步发起预取。空间不够就按得分驱逐，活跃草稿特殊保护，只要可能就不驱逐，保证执行不中断。预取全部异步，和正在进行的解码重叠，这样切换时刻到来时模型已经就位，论文原文强调这点，不完整的预取不会引入执行停滞。
+
+**Algorithm 3 是运行时主循环**。每到一个调度点，先跑预测得排序，更新缓存，然后选当前常驻的最优草稿执行。调度间隔论文默认设为若干 token，太短来不及预取，太长错过切换机会，敏感性实验显示间隔存在最佳区间。
+
+实验在 Jetson Orin Nano 上跑，稳态生成吞吐相对静态基线提升 58.8%，相对最优 bandit 自适应方法提升 40.7%。论文还做了容量敏感性实验，K 增大后收益递减，因为高效用草稿大部分时候已在常驻集内。
+
+## 二、Themis，页表当软件控制硬件的手柄
+
+数据缓存未命中是数据中心工作负载的主要停顿来源。硬件预取器为此造得越来越复杂，但复杂有代价，为了覆盖率必须激进，激进必然带来大量不准确的预取，白白消耗多租户环境下稀缺的内存带宽。论文在 Google Workload Traces 上量到，数据中心负载的平均覆盖率只有约 30%，无用预取却占约 70%，准确率不到三分之一。SPEC2017 上同样的预取器覆盖率 60% 以上，无用预取约 30%。
+
+Themis 的核心观察是，数据页粒度上可以精确过滤无用的预取，不影响覆盖率。按页存预取有用性元数据在硬件里太贵，论文提出软硬件接口的分工，软件决定往哪预取，硬件在软件圈定的区域内识别并发起预取。
+
+![Themis 使用模型](/images/ai-os-arxiv-2026/themis-fig5.png)
+
+*Themis 论文 Figure 5，页面级 hint 存进页表项，TLB 命中后预取器按 hint 启用或停用。作者 Keisuke Kamahori 等，arXiv 2608.00259*
+
+落点放在页表属性上。论文用 Arm 的 page-based hardware attributes 机制，PTE 和 TLB 条目扩展一个 bit，软件置位，预取器读 TLB 条目里的 bit 决定该页开不开预取。关键设计是 hint 懒传播，页表结构不变，hint 随 TLB miss 自然进入 TLB，不需要 TLB shootdown，因为这是性能提示不是正确性标志。
+
+<MermaidDiagram chart={`flowchart TD
+    subgraph HW["硬件侧"]
+        PMU["Cache PMU<br/>+ FIFO 缓冲"] -->|"无用预取<br/>记录被驱逐地址"| Prof
+        TLB["TLB 条目<br/>prefetch-enable bit"] -->|"使能信号"| PF["硬件预取器"]
+        PF --> Cache
+    end
+
+    subgraph SW["软件侧"]
+        Prof["内核模块<br/>周期性采样"] --> Calc["计算每页<br/>usefulness"]
+        Calc -->|"pte_set_flag"| PTE["页表项属性"]
+        PTE -.->|"懒传播"| TLB
+    end
+`} />
+
+### 内核模块与 profiling 流程
+
+论文 Figure 6 画出系统组件。硬件侧只改 Cache PMU，加一个小 FIFO 缓冲，跟踪被预取但没被使用的缓存驱逐地址。无用预取被检测到时，PMU 除了递增 L2_LINES_OUT.USELESS_HWPF 计数器，还把被驱逐地址记进 FIFO，机制类似 LBR 采样。软件侧是个轻量内核模块，周期性采样 FIFO，计算每页的 usefulness 指标，最后用 Linux 内核的 pte_set_flag 更新 PTE 属性。
+
+usefulness 的计算有个参数，论文叫 usefulness factor，用来区分有用预取和无用预取的不同影响。hint 更新频率不需要高，预取友好性由页上的数据结构决定，数组所在页大概率预取友好，指针式访问所在页大概率不友好，这些在页分配后很少变化，所以 profiling 按页分配释放的节奏跑就行。论文验证了 hint 跨数十亿指令的一致性，大多数页的开关决定在多个 trace 片段间高度一致。
+
+![Themis 微架构与 profiling 机制](/images/ai-os-arxiv-2026/themis-fig6.png)
+
+*Themis 论文 Figure 6，Cache PMU 记录无用预取地址，内核模块周期采样、计算 usefulness、更新页表属性。作者 Keisuke Kamahori 等，arXiv 2608.00259*
+
+效果数字，无用预取请求减少约 40%，七个预取器在数据中心负载上 IPC 全部提升，BOP 4.1%，SPP+PPF 3.1%，Pythia 1.4%。论文还报告了一个反直觉的结果，虽然只是按页关停预取，平均有用预取数量反而增加，因为抑制了缓存污染，预取器把资源集中到更可能受益的数据上。
+
+## 三、Agora，Agentic 工作流把 CPU 推回关键路径
+
+前两篇管的还是单机内的指令和数据流，Agora 把视野拉到整个服务器。论文基于 Microsoft Azure 的生产研究和开源框架对照实验，把 Agentic 工作流第一次做了系统的架构刻画。核心发现是，agentic 执行是碎片化的。一次请求展开成一个工作流，包含多次 LLM 推理、工具调用和编排决策，频繁跨越 CPU-GPU 边界。编排和工具跑在宿主 CPU 上，CPU 因此被放到关键路径上。
+
+碎片化带来三个架构失配。执行结构决定负载随时间的变化，大部分时间低负载、突然出现尖峰。模型组合决定 GPU 用得均不均匀。任务和工具的多样性进一步拉大这个范围。常规的均匀服务器在这种负载下，CPU 和 GPU 容量两头空转，不同软件角色混在一个同质 CPU 池里效率低下，多个 agent 复用共享核还破坏微架构局部性。
+
+Agora 在商品服务器上做原型验证，机制分三层。第一层收割闲置的 CPU 和 GPU 周期，把更多 agent 塞进更少的 GPU，利用同租户 agent 的局部性。第二层 GPU 内存超订，单个 GPU 上放更多 agent，预取下一个 agent 的状态来掩盖换入换出延迟。第三层角色感知的核心池化，编排、调度、执行三类角色按需分池，池内 pin 任务恢复局部性。
+
+![Agora GPU 收割机制](/images/ai-os-arxiv-2026/agora-gpu-harvest.png)
+
+*Agora 论文 Figure 20，把 agent 合并到更少的 GPU 上，收割空闲 GPU 容量，同时保留同租户任务局部性。作者 Jirong Yang 等，arXiv 2608.04458*
+
+CPU 收割的机制值得细看。收割器只在 agent 空闲窗口动手，工具调用是主要空闲来源，agent 等工具返回时 CPU 核闲着。论文专门测了工具调用的频率分布，P99 和平均差一个量级，尖峰来临时收割器要能立刻收手。Agora 在检测到工具尖峰后等一个短暂恢复窗口再恢复收割，被收割的负载分配也跟着收缩。结果是在保持 agentic tail 延迟的前提下，回收了相当于若干台服务器整机的算力。
+
+## 四、PFM，NPU-PIM 统一内存的双视图
+
+最后一篇把视角转到异构内存。NPU-PIM 架构用 NPU 跑计算密集的算子，PIM 模块跑内存密集的操作，decode 阶段的注意力、低算术强度的 MoE 专家都属于这一类。已有统一内存设计的隐含假设是，每个 tensor 在分配时绑定固定执行设备，按静态的、设备偏置的布局映射。
+
+论文指出这个假设在现代 LLM 工作负载下站不住。prefill 和 decode 两阶段的计算特性完全不同，prefill 计算密集，decode 内存密集。MoE 路由更进一步，论文在 Qwen1.5-MoE-A2.7B 上量到，同一个专家 step 0 的算术强度是 78，step 1 掉到 6，从高度计算密集变成内存密集。最优执行设备随步变化，静态映射和访问模式失配，有效带宽能掉到峰值的两成以下。
+
+论文做了量化分析，即使是最灵活的已有统一内存设计 FACIL，也只达到 oracle 的 29.5%。oracle 动态同时选择执行设备和布局。直接的办法是运行时重布局，论文实测这条路走不通，按 1 到 20 步的间隔扫最优值，重布局流量占端到端执行时间的 10% 到 46%，重布局策略反而可能输给单一设备偏置策略。
+
+PFM 的解法是双视图。物理布局只优化一次，NPU 和 PIM 各看到一个按自己访问模式解释的逻辑视图。存储不做重复拷贝，运行时在内存控制器里做两层轻量扩展。Address Remapping Unit 用预计算的算子专属映射把物理地址翻译成硬件地址，Flexible Access Scheduler 对 NPU 请求按通道并发和行局部性重排，对 PIM 请求按 bank 并行广播批量处理，两类请求流仲裁，延迟敏感的先走。
+
+![PFM 内存分配与访问](/images/ai-os-arxiv-2026/pfm-pfm-malloc.png)
+
+*PFM 论文 Figure 8，PFMMalloc 用双视图映射优化选择联合地址映射，访问路径先做 VA 到 PA 翻译，再用 MDT 和请求来源解析硬件地址。作者 Shixin Zhao 等，arXiv 2608.06989*
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph SW["软件侧"]
+        API["PFMMalloc 用户级 API"] --> OPT["双视图映射优化<br/>解析模型"]
+    end
+
+    subgraph HW["PFM 控制器"]
+        ARU["ARU 地址重映射<br/>MDT + AGU"] --> FAS["FAS 灵活访问调度"]
+        FAS -->|"NPU 通道并发"| N
+        FAS -->|"PIM bank 并行"| P
+    end
+
+    OPT -->|"映射规则"| ARU
+`} />
+
+地址翻译细节，内存请求先走标准 VA 到 PA 翻译，然后 PFM 控制器用 MDT 和请求来源解析硬件地址。MDT 存映射函数描述，规定物理地址位怎么分配进内存层级，AGU 按选中规则实时翻译。映射在 PFMMalloc 时确定，计算内核不用改，cuBLAS 这类库原样跑，硬件也只动内存控制器，DRAM 单元阵列、时序协议、NPU 核心一概不动。
+
+评估跨多个 LLM，端到端吞吐相对最优已有统一内存设计最高提升 2.32 倍。论文还给了案例研究，展示双视图映射优化在不同算子上的取舍，比如 KV cache 的 tensor 用 PIM 视角布局，MoE 专家权重按访问模式折中。
+
+## 共同线索与对照
+
+四篇论文放在一起，一条线很清晰，知识往软件侧搬。Themis 把预取有用性判断搬进内核模块，MemSpec 把草稿选择搬进 BERT 预测器，Agora 把角色感知调度搬进运行时，PFM 把布局决策搬进离线映射优化。硬件保留的是执行和覆盖，软件提供的是判断和精度。
+
+| 论文 | 编号 | 接口重新划分 | 关键数字 |
+|------|------|-------------|---------|
+| MemSpec | 2608.10362 | 草稿选择解耦执行，预测器 + 常驻工作集 | 吞吐 +40.7% vs bandit |
+| Themis | 2608.00259 | 页表 hint 指挥硬件预取器 | 无用预取 -40%，BOP +4.1% |
+| Agora | 2608.04458 | 运行时收割闲置算力，角色分池 | 回收多台服务器算力，tail 保持 |
+| PFM | 2608.06989 | 物理布局解耦逻辑视图，ARU+FAS | 吞吐最高 2.32x |
+
+四篇里三篇做了软硬件协同但只改最小硬件面，Themis 只加一个 bit 和 FIFO，PFM 只动内存控制器，MemSpec 纯软件。Agora 纯软件但扎根真实生产数据。这种改法对 AI 时代异构 OS 有直接启示，异构性带来的性能问题，越来越多地在软件层就能解决，硬件只留最小接口。四篇论文都有完整实现细节，代码层面能落到内核模块、运行时和内存控制器三种位置。
+
+## 参考文献
+
+四篇论文的摘要与正文均来自 arXiv 官方 HTML 页面，编号与作者如下。
+
+- MemSpec，Memory-Aware Runtime for Adaptive Draft Scheduling in Speculative Decoding on Edge Devices，arXiv 2608.10362，Eunjeong Kim、Yeong Jun Jeon、Myeonggyun Han，LCTES 2026
+- Themis，Software-Defined Hardware Prefetching，arXiv 2608.00259，Keisuke Kamahori 等 15 人
+- Architectural Implications of Agentic AI Workflows，arXiv 2608.04458，Jirong Yang、Peizhe Liu、Chaojie Zhang、Jovan Stojkovic
+- Rethinking Unified Memory for NPU-PIM Systems，Dual-View Memory for Dynamic Inference of LLM，arXiv 2608.06989，Shixin Zhao 等 5 人，MICRO 2026

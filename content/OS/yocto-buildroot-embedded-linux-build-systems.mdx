@@ -1,0 +1,186 @@
+---
+title: "Yocto 与 Buildroot 详解，嵌入式 Linux 构建系统的原理、流程与作用"
+description: "系统讲解两大嵌入式 Linux 构建系统。Yocto 部分覆盖层模型、BitBake 任务引擎、构建工作流、sstate 与签名机制，附 openembedded-core 真实 busybox recipe 源码。Buildroot 部分覆盖 Makefile 集合原理、menuconfig 配置流程、stamp 文件机制与包基础设施，附用户手册 libfoo.mk 完整示例。所有数字与机制均核对自 Yocto 6.0 官方文档、BitBake 2.18 手册与 Buildroot 2026.05 用户手册。"
+date: "2026-08-13"
+tags: ["Yocto", "Buildroot", "嵌入式", "Linux", "BitBake", "构建系统", "交叉编译"]
+---
+
+# Yocto 与 Buildroot 详解，嵌入式 Linux 构建系统的原理、流程与作用
+
+嵌入式产品的软件形态和桌面 Linux 完全不同。桌面发行版装几百个包无所谓，嵌入式设备的 flash 常常只有几十 MB，启动时间按秒算，目标架构可能是 ARM、RISC-V 或者某家厂商的定制核。传统做法是手工下载源码、交叉编译、拼根文件系统，组件一多就失控。Yocto 和 Buildroot 是两条主流的自动化路线，前者强调可定制性和可复现性，后者强调简单和快。本文依据两边的官方文档逐条核对，把原理、流程和每个环节的实际作用讲清楚。Yocto 部分对应 6.0 版文档与 BitBake 2.18 手册，Buildroot 部分对应 2026.05 版用户手册。
+
+## Yocto 的基本原理，层模型与任务引擎
+
+Yocto 项目的官方定位是帮助开发者创建定制 Linux 系统的开源协作项目，不绑定任何硬件架构。它支持的架构包括 Intel、ARM、MIPS、AMD、PPC、RISC-V，大多数芯片厂商都会提供配套 BSP 层。整个系统建立在两个核心组件上，BitBake 和 OpenEmbedded-Core。
+
+BitBake 是通用任务执行引擎，它解析 recipe 和配置数据，建立依赖树，排序编译任务并执行。官方文档明确说 BitBake 和 make 类似，但依赖约束复杂得多。OpenEmbedded-Core 是公共元数据层，包含基础 recipe、class 和相关文件，Yocto 与 OpenEmbedded 两个项目共同维护它。Yocto 的参考发行版叫 Poky，它是一份完整的发行版配置，但官方文档特别提醒，Poky 不能直接当作产品用，它是定制起点和测试配置。
+
+理解 Yocto 必须先理解层模型。层是包含相关指令集合的仓库，告诉构建系统做什么。官方文档用一句话点明层模型的价值，它同时支持协作和定制。BSP 层、GUI 层、发行版配置层、中间件层、应用层分开存放，机器配置放在专门的 BSP 层，GUI 环境相关的 recipe 放另一层。层覆盖是关键机制，后面的层可以覆盖前面的任何设置。`.bbappend` 文件专门干这个，BSP 层用它给 GUI 层的某个 recipe 做机器相关的追加修改，GUI 层本身不受污染。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph L1["层 1 meta-poky（参考发行版）"]
+        A1["Poky DISTRO 配置"]
+    end
+    subgraph L2["层 2 meta-<vendor>（BSP 层）"]
+        A2["机器配置<br/>内核 recipe 追加"]
+    end
+    subgraph L3["层 3 meta-<product>（产品层）"]
+        A3["产品应用 recipe<br/>本地 patch"]
+    end
+    A1 --> A2
+    A2 --> A3
+`} />
+
+层的名字通常以 meta- 开头，这是社区公认标准，官方文档说这不是硬性要求。覆盖能力往下传递，产品层可以改 BSP 层的设置，BSP 层可以改发行版层的设置，越靠后的层优先级越高。
+
+## BitBake 的执行流程，从配置解析到任务执行
+
+BitBake 执行一个构建目标时，流程分五个阶段，官方文档按这个顺序展开。
+
+第一阶段解析基础配置元数据。BitBake 先找 `conf/bblayers.conf`，读 `BBLAYERS` 变量得到层列表，对每个层解析其 `conf/layer.conf`，这些文件负责设置 `BBPATH` 和 `BBFILES`。`BBPATH` 用于搜索配置文件，`BBFILES` 用于定位 `.bb` recipe 和 `.bbappend` 追加文件。随后解析 `conf/bitbake.conf`，它会 include 架构、机器、本地环境相关的其他文件。最后 BitBake 用继承机制加载 class 文件，`base.bbclass` 永远包含，`INHERIT` 变量指定的其他 class 也会加载。
+
+第二阶段定位并解析 recipe。`BBFILES` 支持通配符，BitBake 逐个解析 recipe 和追加文件，存进数据存储。recipe 文件名本身携带信息，`something_1.2.3.bb` 会被解析成 `PN=something`、`PV=1.2.3`，这个约定写在 bitbake.conf 里。解析完成后 BitBake 缓存感兴趣的信息，之后用基础配置的校验和判断缓存是否有效，有效就直接复用，省掉重新解析。
+
+第三阶段确定提供者。每个 recipe 有 `PROVIDES` 列表，默认包含 recipe 名，也可以显式追加。`PREFERRED_PROVIDER_virtual/kernel = "linux-yocto"` 是机器配置里的典型写法，多个内核 recipe 都提供 virtual/kernel，机器选一个。多版本存在时 BitBake 默认选最高版本，版本比较用 Debian 的方法，`PREFERRED_VERSION` 可以强制指定。nginx 的 recipe 里 `DEFAULT_PREFERENCE = "-1"` 就是典型用法，标记新版本默认不选。
+
+第四阶段计算依赖。BitBake 把每个任务当作独立实体，用 `DEPENDS` 和 `RDEPENDS` 计算依赖关系。第五阶段生成任务列表并执行，线程数由 `BB_NUMBER_THREADS` 控制，官方文档建议用 `grep processor /proc/cpuinfo` 数核设置。每个任务完成时写时间戳到 `STAMP` 指定目录，后续构建看时间戳判断任务要不要重跑。现代 BitBake 在时间戳后追加哈希，配置一变哈希就变，任务自动重跑，这就是 OEBasicHash 签名处理器做的事，它让元数据变更自动扩散到整个构建，官方文档说这消除了手动 bump PR 值的需要。
+
+## Yocto 的构建工作流与 recipe 实际长什么样
+
+官方文档把 OpenEmbedded 构建系统的工作流概括为七个步骤。开发者指定架构、策略、patch 和配置细节，构建系统从指定位置拉取源码，解压到本地工作区并打 patch，然后配置、编译，安装到临时暂存区，按选定的包格式打成 RPM、DEB 或 IPK，全程跑各种 QA 和 sanity 检查。二进制完成后生成包源，最终合成根文件系统镜像，同时生成定制 SDK 供应用开发。
+
+<MermaidDiagram chart={`flowchart TD
+    S1["指定架构 策略 patch 配置"] --> S2["拉取源码<br/>tarball 或 git"]
+    S2 --> S3["解压到工作区<br/>打 patch"]
+    S3 --> S4["配置与编译<br/>交叉编译"]
+    S4 --> S5["安装到暂存区<br/>打 RPM/DEB/IPK 包"]
+    S5 --> S6["QA 与 sanity 检查"]
+    S6 --> S7["生成包源 合成根文件系统镜像"]
+    S7 --> S8["生成定制 SDK"]
+`} />
+
+recipe 是 Yocto 最核心的元数据形式，一份 recipe 描述源码从哪来、打哪些 patch、依赖哪些库、怎么配置编译。下面这份是 openembedded-core 仓库里 busybox 1.38.0 的真实 recipe，我按原样截取关键部分。`SRC_URI` 列出源码地址和所有 patch，`sha256sum` 校验下载完整性，条件追加语法按 libc 类型和架构加不同配置。
+
+```
+require busybox.inc
+
+SRC_URI = "https://busybox.net/downloads/busybox-${PV}.tar.bz2;name=tarball \
+           file://0001-depmod-Ignore-.debug-directories.patch \
+           file://busybox-cron \
+           file://busybox-httpd \
+           file://busybox-udhcpd \
+           file://CVE-2025-60876.patch \
+           file://CVE-2024-58251.patch \
+           file://CVE-2026-38754.patch \
+           "
+SRC_URI:append:libc-musl = " file://musl.cfg"
+SRC_URI:append:x86-64 = " file://sha_accel.cfg"
+
+SRC_URI[tarball.sha256sum] = "34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2"
+```
+
+注意 `require busybox.inc`，recipe 的公共部分抽在 .inc 文件里，多版本 recipe 共用。CVE patch 直接列在 SRC_URI 里，安全修复和功能 patch 在 recipe 层就区分开。这份 recipe 是真实仓库现状，包含 2025、2024、2026 三个年份的 CVE 补丁，能直接说明 Yocto 的安全补丁管理方式。
+
+## Yocto 的具体作用，sstate、可复现性与许可管理
+
+sstate 是 Yocto 最重要的工程特性。官方文档说，共享状态缓存让系统不用重建没被触碰过的包。第一次全量构建从零编译所有包，时间很长，官方文档明确说这是无法避免的，但 sstate 让后续构建大幅提速。机制上它依赖签名，任务哈希一致就可以从缓存恢复构建产物，这就是 setscene 流程，BitBake 构建前先问缓存有没有匹配的产物，有就用 `xxx_setscene` 任务恢复，不跑主任务。
+
+二进制可复现性有官方数字。文档给出的 core-image-minimal 可复现率是 99.8%，来源是构建系统对依赖的精确定位。许可管理是另一个实际作用，Yocto 生成 license manifest，供法务团队追踪开源许可证使用情况，这在产品合规里是硬需求。
+
+Pseudo 解决无 root 构建问题。打包时常需要设置文件属主和权限，Yocto 用 LD_PRELOAD 注入 Pseudo 模拟 root 环境，官方文档明确说，靠 Pseudo，Yocto 构建镜像永远不需要 root 权限。运行时包管理也支持，包格式 RPM、DEB、IPK 三选一，镜像里启用运行时包管理后，目标设备上可以用对应工具在线装包。
+
+发行节奏方面，官方文档说大版本每六个月发布一次，固定在四月和十月，最近两个版本支持点发布修漏洞。最新版本表显示，6.0 Wrynose 2026 年 4 月发布，长期支持到 2030 年 4 月，上一代 5.0 Scarthgap 支持到 2028 年 4 月，这两个是当前同时维护的 LTS。
+
+## Buildroot 的基本原理，Makefile 集合与 Kconfig
+
+Buildroot 的定位完全不同。官方手册第一句就点明，Buildroot 是用交叉编译简化并自动化构建完整嵌入式 Linux 系统的工具。它只干一件事，生成交叉编译工具链、根文件系统、内核镜像和 bootloader，四者可以任意组合，比如只用现有工具链只构建根文件系统。
+
+原理上 Buildroot 是一组 Makefile，每个软件包一个 `.mk` 文件，手册第 15 章原文说，这些 Makefile 下载、配置、编译软件并打上正确的选项，还带一些 patch，主要是交叉编译工具链相关的。源码目录按职责划分，`toolchain/` 管工具链相关软件，`arch/` 管支持的处理器架构定义，`package/` 管所有用户空间软件，`linux/` 管内核，`boot/` 管 bootloader，`system/` 管系统集成，`fs/` 管根文件系统镜像生成。每个目录至少有两个文件，`something.mk` 负责下载配置编译安装，`Config.in` 是配置工具描述文件。
+
+配置界面用 Kconfig，和内核同一个体系。手册 16.1 节说，Config.in 文件是 Buildroot 配置工具的输入，就是常规的 Kconfig。`make menuconfig` 打开字符界面，`/` 键搜索，和内核配置体验一致。
+
+## Buildroot 的构建流程，从 menuconfig 到镜像
+
+Buildroot 快速上手只有两个命令。第一步 `make menuconfig` 生成 `.config`，第二步 `make` 开始构建。手册明确说可以用普通用户跑，不需要 root，理由写得很直白，用普通用户保护系统不被构建过程中行为异常的包搞坏。
+
+`make` 执行的标准步骤手册列得很清楚。下载源码，配置构建安装交叉编译工具链，或者导入外部工具链，配置构建安装选中的目标包，构建内核镜像，构建 bootloader 镜像，最后按选定格式生成根文件系统。默认情况下 Buildroot 不支持顶层并行构建，`make -jN` 没必要，顶层并行是实验特性。
+
+<MermaidDiagram chart={`flowchart TD
+    C1["make menuconfig<br/>Kconfig 生成 .config"] --> C2["make"]
+    C2 --> T1["下载源码"]
+    T1 --> T2["配置构建工具链<br/>或导入外部工具链"]
+    T2 --> T3["配置构建安装目标包"]
+    T3 --> T4["构建内核镜像"]
+    T4 --> T5["构建 bootloader"]
+    T5 --> T6["按格式生成根文件系统"]
+`} />
+
+构建产物全部放在 `output/` 目录，结构手册讲得很细。`images/` 放最终镜像，是真正要烧到目标板的东西。`build/` 放所有组件的构建目录。`host/` 放宿主工具和工具链 sysroot，包含开发文件和未 strip 的库，手册特别提醒，这个目录不适合当目标根文件系统，太大了。`target/` 接近完整根文件系统，但缺 `/dev` 设备文件，权限也不对，手册明确说不要直接用这个目录，要用 images/ 里的镜像。`staging/` 是指向 host/ 里工具链 sysroot 的符号链接，为向后兼容保留。
+
+## Buildroot 的包基础设施与 stamp 文件机制
+
+给 Buildroot 加包，套路是固定的。手册第 18 章给了完整流程，包目录、Config.in、.mk 文件、.hash 文件。generic-package 教程里的 libfoo 示例是理解一切的钥匙，下面是手册 18.6.1 节的原文摘录，变量名规则是包名大写加前缀。
+
+```
+################################################################################
+#
+# libfoo
+#
+################################################################################
+
+LIBFOO_VERSION = 1.0
+LIBFOO_SOURCE = libfoo-$(LIBFOO_VERSION).tar.gz
+LIBFOO_SITE = http://www.foosoftware.org/download
+LIBFOO_LICENSE = GPL-3.0+
+LIBFOO_LICENSE_FILES = COPYING
+LIBFOO_INSTALL_STAGING = YES
+LIBFOO_CONFIG_SCRIPTS = libfoo-config
+LIBFOO_DEPENDENCIES = host-libaaa libbbb
+
+define LIBFOO_BUILD_CMDS
+    $(MAKE) $(TARGET_CONFIGURE_OPTS) -C $(@D) all
+endef
+
+define LIBFOO_INSTALL_STAGING_CMDS
+    $(INSTALL) -D -m 0755 $(@D)/libfoo.a $(STAGING_DIR)/usr/lib/libfoo.a
+    $(INSTALL) -D -m 0644 $(@D)/foo.h $(STAGING_DIR)/usr/include/foo.h
+    $(INSTALL) -D -m 0755 $(@D)/libfoo.so* $(STAGING_DIR)/usr/lib
+endef
+
+define LIBFOO_INSTALL_TARGET_CMDS
+    $(INSTALL) -D -m 0755 $(@D)/libfoo.so* $(TARGET_DIR)/usr/lib
+    $(INSTALL) -d -m 0755 $(TARGET_DIR)/etc/foo.d
+endef
+
+$(eval $(generic-package))
+```
+
+变量各有分工。`LIBFOO_VERSION` 和 `LIBFOO_SOURCE` 定位源码包，`LIBFOO_SITE` 给下载地址，`LIBFOO_LICENSE` 和 `LIBFOO_LICENSE_FILES` 声明许可证，`LIBFOO_INSTALL_STAGING = YES` 对库是必须的，头文件和开发文件要装进暂存区供其他包编译用，`LIBFOO_DEPENDENCIES` 声明依赖，Buildroot 保证这些包先构建。`$(eval $(generic-package))` 是魔法行，它按前面定义的变量生成这个包的全部 Makefile 逻辑。
+
+`*-config` 脚本的处理是个经典细节。这类脚本装进暂存区后被第三方包执行，用来查库的位置和链接参数，默认给出的是宿主系统的错误标志，`-I/usr/include` 而不是暂存区的路径。Buildroot 对列出的脚本做 sed 修正，手册原文用词是 some sed magic。`LIBFOO_CONFIG_SCRIPTS = libfoo-config` 告诉 Buildroot 修正哪个脚本，同时它还会从目标目录删掉这些脚本，目标上不需要它们。
+
+stamp 文件机制控制重建粒度。手册 8.3 节说，Buildroot 用 stamp 文件记录每个包完成了哪些构建步骤，存在 `output/build/<package>-<version>/` 下，命名为 `.stamp_<step-name>`。`make <package>-dirclean` 删构建目录强制完整重建，`make <package>-rebuild` 从编译步骤重来，`make <package>-reconfigure` 从配置步骤重来。这些命令只作用于该包，不触发根文件系统镜像重建，要重新生成镜像还得跑 make。
+
+## Buildroot 的取舍，为何不做二进制包
+
+Buildroot 和 Yocto 的分水岭在包管理理念。手册第 11.7 节 FAQ 直接回答了"为什么 Buildroot 不生成二进制包"，这是官方立场，值得完整理解。跟踪每个包装了哪些文件这件事，官方认为远比表面复杂。文件跟踪要覆盖 target/ 目录、host/ 和 sysroot 里的全部位置。反依赖问题更麻烦，取消一个包要连带移除依赖它的所有包并重建。还有隐性依赖，可选依赖甚至 Buildroot 本身都不知道，`.mk` 文件该声明但没声明，就会出现不可复现的行为。
+
+手册最后给了开发者立场声明。Buildroot 追求的是让根文件系统生成变得容易，名字就说明了一切。Buildroot 不是发行版生成器，大多数开发者认为这不是该追求的目标，OpenEmbedded 和 OpenWrt 更适合做发行版。对大多数嵌入式系统，二进制包没必要甚至有潜在危害，部分升级会产生海量版本组合，每种组合都要在设备上测试，整镜像升级保证部署的镜像就是测试过的镜像。
+
+## 两套系统的选型依据
+
+选 Yocto 还是 Buildroot，官方文档各自给了判断依据。Yocto 手册的挑战一节说得坦诚，学习曲线陡，完成同样任务有太多路径，首次构建时间长。Buildroot 的定位是把根文件系统这件事做到极致简单。
+
+实际选型可以按项目特征判断。需要长期维护、多产品线复用、法务要许可证清单、安全补丁要按 CVE 管理，选 Yocto，层模型和 recipe 体系就是为这种规模设计的。产品形态固定、团队小、交付周期紧、系统只需要一套固定镜像，选 Buildroot，一个 .mk 加一个 Config.in 就能把包加进去，整个构建从配置到出镜像的路径短得多。两种工具都支持外部工具链，Yocto 还支持用外部 SDK 交叉开发，Buildroot 手册则明确说不支持 OpenEmbedded 或 Yocto 生成的 SDK，因为那些工具链附带大量预编译库，不是纯工具链。
+
+一个被反复验证的事实收尾。Buildroot 官方文档说，没有二进制包意味着整镜像升级，部署到设备的镜像就是测试验证过的镜像。Yocto 官方文档给 core-image-minimal 的可复现率是 99.8%，这是同一原则的另一侧面，构建系统存在的意义，是让交付的软件可以复现、可以审计、可以维护。两个工具从不同起点走向同一个目标，选择取决于你的项目处在哪个阶段。
+
+## 参考文献
+
+本文事实均核对自以下官方一手来源。
+
+- Yocto Project Overview and Concepts Manual，6.0 版，docs.yoctoproject.org，最后更新 2026 年 8 月 14 日
+- BitBake User Manual，2.18 版，Execution 章节，docs.yoctoproject.org/bitbake
+- Yocto Project Releases 版本表，wiki.yoctoproject.org，6.0 Wrynose LTS 至 2030 年 4 月，6.1 Blacksail 计划 2026 年 10 月
+- openembedded-core 仓库 busybox_1.38.0.bb recipe，github.com/openembedded/openembedded-core
+- Buildroot User Manual，2026.05 版，第 11.7、14、15、16.1、18.6.1 节，buildroot.org

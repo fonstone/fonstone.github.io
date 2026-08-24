@@ -2,7 +2,7 @@
 title: "信号"
 description: "在本节之前的 IPC 机制主要集中在进程间的数据传输和数据交换方面，这需要两个进程之间相互合作，同步地来实现。比如，一个进程发出 read 系统调用，另外一个进程需要发出对应的 write 系统调用，这样两个进程才能协同..."
 date: "2026-07-12"
-order: 76
+order: 70
 tags: ["信号", "signal", "事件通知", "异步"]
 est_time: "30分钟"
 ---
@@ -689,3 +689,69 @@ pub fn sys_sigreturn() -> isize {
 - <https://venam.nixers.net/blog/unix/2016/10/21/unix-signals.html>
 - <https://www.onitroad.com/jc/linux/man-pages/linux/man2/sigreturn.2.html>
 - <http://web.stanford.edu/class/cs110/>
+
+---
+
+## 本节练习
+
+2. \*\* 分别编写基于UNIX的signal机制的Linux应用程序，实现进程间异步通知。
+
+   > ```
+   > #include <unistd.h>
+   > #include <stdio.h>
+   > #include <stdlib.h>
+   > #include <signal.h>
+   >
+   > static void sighandler(int sig) {
+   >   printf("received signal %d, exiting\n", sig);
+   >   exit(EXIT_SUCCESS);
+   > }
+   >
+   > int main(void) {
+   >   struct sigaction sa;
+   >   sa.sa_handler = sighandler;
+   >   sa.sa_flags = 0;
+   >   sigemptyset(&sa.sa_mask);
+   >   // register function sighandler as signal handler for SIGUSR1
+   >   if (sigaction(SIGUSR1, &sa, NULL) != 0) {
+   >     perror("failed to register signal handler");
+   >     exit(EXIT_FAILURE);
+   >   }
+   >
+   >   int pid = fork();
+   >   if (pid == -1) {
+   >     perror("failed to fork");
+   >     exit(EXIT_FAILURE);
+   >   }
+   >
+   >   if (pid == 0) {
+   >     while (1) {
+   >       // loop and wait for signal
+   >     }
+   >   } else {
+   >     // send SIGUSR1 to child process
+   >     kill(pid, SIGUSR1);
+   >   }
+   >
+   >   return EXIT_SUCCESS;
+   > }
+
+5. \*\*\* 扩展内核，实现signal机制。
+
+   > 略，设计思路可参见问答题2。
+
+2. \*\* 试说明基于UNIX的signal机制，如果在本章内核中实现，请描述其大致设计思路和运行过程。
+
+   > 首先需要添加两个syscall，其一是注册signal handler，其二是发送signal。其次是添加对应的内核数据结构，对于每个进程需要维护两个表，其一是signal到handler地址的对应，其二是尚未处理的signal。当进程注册signal handler时，将所注册的处理函数的地址填入表一。当进程发送signal时，找到目标进程，将signal写入表二的队列之中。随后修改从内核态返回用户态的入口点的代码，检查是否有待处理的signal。若有，检查是否有对应的signal handler并跳转到该地址，如无则执行默认操作，如杀死进程。需要注意的是，此时需要记住原本的跳转地址，当进程从signal handler返回时将其还原。
+
+7. \*\* 请描述Linux的bash shell中执行与一个程序时，用户敲击 Ctrl+C 后，会产生什么信号（signal），导致什么情况出现。
+
+   > 会产生SIGINT，如果该程序没有捕获该信号，它将会被杀死，若捕获了，通常会在处理完或是取消当前正在进行的操作后主动退出。
+
+8. \*\* 请描述Linux的bash shell中执行与一个程序时，用户敲击 Ctrl+Zombie 后，会产生什么信号（signal），导致什么情况出现。
+
+   > 会产生SIGTSTP，该进程将会暂停运行，将控制权重新转回shell。
+
+9. \*\* 请描述Linux的bash shell中执行 kill -9 2022 这个命令的含义是什么？导致什么情况出现。
+
+   > 向pid为2022的进程发送SIGKILL，该信号无法被捕获，该进程将会被强制杀死。

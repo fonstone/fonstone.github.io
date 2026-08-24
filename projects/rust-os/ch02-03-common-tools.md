@@ -2,7 +2,7 @@
 title: "附录B：常见工具的使用方法"
 description: "可以在 5setup-devel-env 中下载编译好的二进制（版本为8.3.0，由于包括整个哦那工具链，解压后大小约为1G）,也可以编译最新版本（仅gdb，大小约为300M）"
 date: "2026-07-12"
-order: 12
+order: 11
 tags: ["附录", "工具", "QEMU", "GDB", "调试"]
 est_time: "20分钟"
 ---

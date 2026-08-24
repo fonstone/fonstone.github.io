@@ -2,7 +2,7 @@
 title: "进程"
 description: "第 12 章（地址空间）已完成，每个任务拥有独立的地址空间；本章在任务之上引入进程抽象，支持应用的动态创建与执行。"
 date: "2026-07-12"
-order: 87
+order: 79
 tags: ["进程", "PCB", "fork", "exec", "wait", "系统调用"]
 est_time: "20分钟"
 ---
@@ -21,7 +21,7 @@ est_time: "20分钟"
 | `02-core-data-structures.md` | 进程管理的核心数据结构 |
 | `03-process-mechanism.md` | 进程管理机制的设计实现 |
 | `04-scheduling.md` | 进程调度 |
-| `05-exercise.md` | 练习与参考答案 |
+| 各小节末尾 | 练习与参考答案（已融入对应小节） |
 
 ## 前置知识
 

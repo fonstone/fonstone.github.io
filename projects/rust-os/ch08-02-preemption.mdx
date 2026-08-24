@@ -2,7 +2,7 @@
 title: "FIQ 真抢占实现"
 description: "基于 FIQ 定时器中断的抢占式调度"
 date: "2026-07-12"
-order: 54
+order: 50
 tags: ["SRSDB", "RFEIA", "FIQ handler", "真抢占", "优先级调度", "16字帧"]
 est_time: "60分钟"
 ---
@@ -358,3 +358,268 @@ Q: 为什么 delay_ticks() 忙等时，低优先级任务仍然无法运行？
 + 因为 delay_ticks 是忙等（不停轮询 get_ticks()），任务始终处于 Running/Ready 状态而非 Blocked；每次 FIQ 调度时高优先级任务仍然是"最高 Ready"，所以始终被选中
 E: Blocked 状态（真正的睡眠）意味着任务不参与调度，直到被事件唤醒。delay_ticks 只是一个轮询循环，任务还在 Running/Ready 状态。每次 FIQ 调度时，高优先级任务仍然满足"最高优先级 Ready"，所以总被选中。真正的优先级抢占（高优先级任务被唤醒后立刻打断低优先级）需要 Blocked 状态支持，这是第 08 章同步原语要实现的功能。
 ```
+
+---
+
+## 本节练习
+
+5. \*\*\* 扩展内核，支持在内核态响应中断。
+
+内核开关中断的控制主要涉及sstatus寄存器的两个位：
+
+- 在 sie 位可开关中断，如使用
+
+  ```
+  use riscv::register::sstatus;
+  unsafe `{ sstatus::set_sie() }`; // 打开内核态中断
+  unsafe `{ sstatus::clear_sie() }`; // 关闭内核态中断
+  ```
+- 在 spp 位可以分辨中断的来源。现在**将原本的
+  ``trap/mod.rs:trap\_handler()`` 改名为 ``user\_trap\_handler()``，
+  并增加一个新的 ``trap\_handler()`` 函数**：
+
+  ```
+  #[unsafe(no_mangle)]
+  pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
+      match sstatus::read().spp() {
+          sstatus::SPP::Supervisor => kernel_trap_handler(cx),
+          sstatus::SPP::User => user_trap_handler(cx),
+      }
+  }
+  ```
+
+从上面的函数可以看出，我们还需要额外在 trap/mod.rs 写一个
+kernel\_trap\_handler 来处理内核中断：
+
+```
+/// 处理内核异常和中断
+pub fn kernel_trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
+    let scause = scause::read();
+    let stval = stval::read();
+    let trap: Trap<Interrupt, Exception> = match scause.cause().try_into() {
+        Ok(trap) => trap,
+        Err(_) => panic!(
+            "Unsupported trap {:?}, stval = {:#x}!",
+            scause.cause(),
+            stval
+        ),
+    };
+    match trap {
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            // 内核中断来自一个时钟中断
+            println!("kernel interrupt: from timer");
+            // 标记一下触发了中断
+            mark_kernel_interrupt();
+            set_next_trigger();
+        }
+        Trap::Exception(Exception::StoreFault) | Trap::Exception(Exception::StorePageFault) => {
+            panic!("[kernel] PageFault in kernel, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.", stval, cx.sepc);
+        }
+        _ => {
+            // 其他的内核异常/中断
+            panic!("unknown kernel exception or interrupt");
+        }
+    }
+    cx
+}
+```
+
+其中和用户态的中断实现大致相同，但异常和中断没有写全，可以后续补充。值得注意的有以下几点：
+
+- 在函数中不使用 clear\_sie / set\_sie
+  来开关中断，这是因为虽然我们在main.rs的测试中打开了中断，但
+  RISC-V 会自动在中断触发时关闭 sstatus.SIE，在
+  sret返回时打开
+  sstatus.SIE。**在内核中需要小心打开中断的时机**。例如触发中断时，内核正在拿着一些
+  mutex 锁，那么它在 trap\_handler
+  中处理时一旦尝试拿锁，就可能自己跟自己造成死锁。
+- 在收到时钟中断时，输出了内容并调用了
+  mark\_kernel\_interrupt。这和中断机制无关，只是在trap/mod.rs
+  中增加了一个全局变量，用于检查是否成功触发了内核中断
+
+```
+static mut KERNEL_INTERRUPT_TRIGGERED: bool = false;
+
+/// 检查内核中断是否触发
+pub fn check_kernel_interrupt() -> bool {
+    unsafe { (&mut KERNEL_INTERRUPT_TRIGGERED as *mut bool).read_volatile() }
+}
+
+/// 标记内核中断已触发
+pub fn trigger_kernel_interrupt() {
+    unsafe {
+        (&mut KERNEL_INTERRUPT_TRIGGERED as *mut bool).write_volatile(true);
+    }
+}
+```
+
+相对应的，在 main.rs 中，我们在 timer::set\_next\_trigger()
+之后，在开始用户程序的 task::run\_first\_task();
+之前加了一段测试程序：
+
+```
+pub fn rust_main() -> ! {
+    clear_bss();
+    println!("[kernel] Hello, world!");
+    trap::init();
+    loader::load_apps();
+    trap::enable_timer_interrupt();
+    timer::set_next_trigger();
+
+    use riscv::register::sstatus;
+    unsafe { sstatus::set_sie() }; // 打开内核态中断
+    loop {
+        if trap::check_kernel_interrupt() {
+            println!("kernel interrupt returned.");
+            break;
+        }
+    }
+    unsafe { sstatus::clear_sie() }; // 关闭内核态中断
+    task::run_first_task();
+    panic!("Unreachable in rust_main!");
+}
+```
+
+但修改上面的代码后还无法通过编译，**因为真正的“中断入口处理”是在
+``trap.S`` 中的汇编代码，如果它不做任何处理**：
+
+- 一个内核中断进入原本的 trap.S 代码时，它会首先遇到
+  csrrw sp, sscratch, sp
+
+  - 按上面的测试，此时还没有进入用户程序，那么交换后 sp 为 0。
+
+    trap.S 下面的代码是增长栈并尝试保存寄存器：
+
+    ```
+    __alltraps:
+        csrrw sp, sscratch, sp
+        # now sp->kernel stack, sscratch->user stack
+        # allocate a TrapContext on kernel stack
+        addi sp, sp, -34*8
+        # save general-purpose registers
+        sd x1, 1*8(sp)
+    ```
+
+    在addi指令后， sp 会被写成 0xfffffffffffffef8；在
+    sd
+    指令时，因为写入地址不合法（整个内核都在0x80200000附近）会触发
+    StorePageFault
+- - 由于触发StorePageFault，此时又会进入
+    \_\_alltraps，于是内核在这几条语句上死循环了
+
+如果进入用户程序后，在用户程序的内核态触发内核中断，那么此时会把用户态的栈交换到
+sp 寄存器，并在用户态的栈里写内核信息。这也是不可接受的错误。
+
+因此，我们需要**在 ``trap.S``
+内陷入和返回时做出判断，如果是内核中断异常则不换栈，如果是用户中断异常则通过
+``csrrw sp, sscratch, sp`` 换栈**
+
+将 \_\_alltrap 的开头改为：
+
+```
+__alltraps:
+    csrr tp, sstatus
+    andi tp, tp, 0x100
+    beqz tp, __user_trap_start
+    j __real_trap_entry
+
+__user_trap_start:
+    csrrw sp, sscratch, sp
+
+__real_trap_entry:
+    # now sp->kernel stack, sscratch->user stack
+    # allocate a TrapContext on kernel stack
+    addi sp, sp, -34*8
+    ......
+```
+
+这段代码等价于取出sstatus寄存器的
+spp位做判断，如果为0则是用户态中断，否则是内核态中断。类似地，在中断返回时也要做一次判断。将
+\_\_restore 改为：
+
+```
+__restore:
+    # now sp->kernel stack(after allocated), sscratch->user stack
+    # restore sstatus/sepc
+    ld t0, 32*8(sp)
+    ld t1, 33*8(sp)
+    ld t2, 2*8(sp)
+    csrw sstatus, t0
+    csrw sepc, t1
+    csrw sscratch, t2
+    # get SPP
+    andi t0, t0, 0x100
+    bnez t0, __kernel_trap_end
+
+__user_trap_end:
+    # restore general-purpuse registers except sp/tp
+    ld x1, 1*8(sp)
+    ld x3, 3*8(sp)
+    .set n, 5
+    .rept 27
+        LOAD_GP %n
+        .set n, n+1
+    .endr
+    # release TrapContext on kernel stack
+    addi sp, sp, 34*8
+    # now sp->kernel stack, sscratch->user stack
+    csrrw sp, sscratch, sp
+    sret
+
+__kernel_trap_end:
+    # restore general-purpuse registers except sp/tp
+    ld x1, 1*8(sp)
+    ld x3, 3*8(sp)
+    .set n, 5
+    .rept 27
+        LOAD_GP %n
+        .set n, n+1
+    .endr
+    # release TrapContext on kernel stack
+    addi sp, sp, 34*8
+    sret
+```
+
+> **Caution!**
+>
+> 注意返回时需要先获取中断来源信息再恢复寄存器。
+
+以上就是内核中断的一个基本实现了，但还不具备实用价值，真正利用内核中断还需要扩展
+kernel\_trap\_handler 函数，支持更有意义的中断类型。
+
+#### 如何在不破坏寄存器的情况下检查中断来源
+
+在上面的代码实现中，在陷入 \_\_alltrap 时利用了 tp 寄存器来检查
+sstatus的SPP 信息，这样原本tp
+寄存器的信息就丢失了。但后续也有很多方法可以避免这个问题：
+
+- 在
+  rCore-Tutorial本章节中，内核栈和用户栈都直接写在loader.rs
+  中。但在实际的内核中，用户空间往往在低地址（0x00000......），而内核空间在高地址（0xfffff......）。
+
+  可以利用这一点，把 sp
+  看作有符号整数，如果它是负数则是内核栈地址，代表内核态发的中断；如果它是正数则是用户栈地址，代表用户态发的中断。即：
+
+  ```
+  __alltraps:
+      bgtz sp, __user_trap_start
+      j __real_trap_entry
+
+  __user_trap_start:
+      csrrw sp, sscratch, sp
+
+  __real_trap_entry:
+      # now sp->kernel stack, sscratch->user stack
+      # allocate a TrapContext on kernel stack
+      addi sp, sp, -34*8
+      ......
+  ```
+
+这样就可以规避目前代码中丢失 tp 寄存器的问题。
+
+- 另一种方法是扩展 sscratch 的定义。目前 sscratch
+  只用于用户栈和内核栈的交换，可以使它表示一个专门的页或者中间栈或者处理函数，在其中完成寄存器的保存，再安全地用寄存器检查中断来源。
+
+注：上述扩展内核的编程基于 rcore/ucore tutorial v3: Branch ch3
+
+6. \*\*\* 扩展内核，支持在内核运行的任务（简称内核任务），并支持内核任务的抢占式切换。

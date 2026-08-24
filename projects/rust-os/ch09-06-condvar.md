@@ -2,7 +2,7 @@
 title: "条件变量机制"
 description: "到目前为止，我们已经了解了操作系统提供的互斥锁和信号量两种同步原语。它们可以用来实现各种同步互斥需求，但是它们比较复杂（特别是信号量），对于程序员的要求较高。如果使用不当，就有可能导致效率低下或者产生竞态条件、死锁或一些..."
 date: "2026-07-12"
-order: 66
+order: 61
 tags: ["条件变量", "condvar", "同步", "等待", "唤醒"]
 est_time: "40分钟"
 ---
@@ -418,3 +418,44 @@ impl Condvar {
 - Hansen, Per Brinch (1993). "Monitors and concurrent Pascal: a personal history". HOPL-II: The second ACM SIGPLAN conference on History of programming languages. History of Programming Languages. New York, NY, USA: ACM. pp. 1–35. doi:10.1145/155360.155361. ISBN 0-89791-570-4.
 - [Monitor, Wikipedia](https://en.wikipedia.org/wiki/Monitor_(synchronization))
 - [Concurrent Pascal, Wikipedia](https://en.wikipedia.org/wiki/Concurrent_Pascal)
+
+---
+
+## 本节练习
+
+2. \*\* 在Linux环境下，请用互斥锁和条件变量实现哲学家就餐的多线程应用程序。
+
+7. \*\* 条件变量的 Wait 操作为什么必须关联一个锁？
+
+当调用条件变量的 wait 操作阻塞当前线程的时候，该操作是在管程过程中，因此此时当前线程持有锁。在持有锁的情况下不能陷入阻塞 ，因此在陷入阻塞状态之前当前线程必须先释放锁；当被阻塞的线程被其他线程使用 signal 操作唤醒之后，需要重新获取到锁才能继续执行，不然的话就无法保证管程过程的互斥访问。
+
+因此，站在线程的视角，必须持有锁才能调用条件变量的 wait 操作阻塞自身。
+
+8. \*\* 下面是条件变量的wait操作实现伪代码：
+
+```
+Condvar::wait(lock) {
+  Add this thread to q.
+  lock.unlock();
+  schedule();
+  lock.lock();
+}
+```
+
+如果改成下面这样：
+
+```
+Condvar::wait() {
+  Add this thread to q.
+  schedule();
+}
+lock.unlock();
+condvar.wait();
+lock.lock();
+```
+
+会出现什么问题？举一个例子说明。
+
+会出现什么问题？举一个例子说明。
+
+> 这种情况就是第7题提到的条件变量的wait操作没有关联一个锁。会造成被阻塞的线程被其他线程使用 signal 操作唤醒之后，无法获取锁，从而无法保证管程过程的互斥访问，导致管程失效。

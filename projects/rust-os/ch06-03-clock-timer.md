@@ -2,7 +2,7 @@
 title: "时钟中断与计时器"
 description: "由于软件（特别是操作系统）需要一种计时机制，RISC-V 架构要求处理器要有一个内置时钟，其频率一般低于 CPU 主频。此外，还有一个计数器用来统计处理器自上电以来经过了多少个内置时钟的时钟周期。在 RISC-V 64 ..."
 date: "2026-07-12"
-order: 44
+order: 40
 tags: ["mtime", "mtimecmp", "计时器", "set_next_trigger", "时钟中断"]
 est_time: "30分钟"
 ---

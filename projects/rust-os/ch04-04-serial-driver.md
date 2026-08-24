@@ -2,7 +2,7 @@
 title: "串口驱动程序"
 description: "现在我们对如何了解计算机系统中给的外设信息，以及如何初始化或与外设进行交互有了基本的了解。接下来，我们需要看看如何在完整的操作系统中通过添加设备驱动程序来扩展应用访问外设的I/O能力。本节将通过介绍一个具体的物理设备串口..."
 date: "2026-07-12"
-order: 29
+order: 27
 tags: ["串口", "驱动", "UART", "中断", "输入输出"]
 est_time: "40分钟"
 ---
@@ -199,3 +199,9 @@ impl<const BASE_ADDR: usize> CharDevice for NS16550a<BASE_ADDR> {
 [1] [ 1 ] ( 1 , 2 ) Serial UART information， https://www.lammertbies.nl/comm/info/serial-uart
 
 [2] [ 2 ] TECHNICAL DATA ON 16550， http://www.byterunner.com/16550.html
+
+---
+
+## 本节练习
+
+2. 对于串口驱动程序，在RustSBI中有具体的实现，请问它与本章讲的串口驱动有何异同之处？

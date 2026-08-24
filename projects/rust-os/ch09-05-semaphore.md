@@ -2,7 +2,7 @@
 title: "信号量机制（rCore 实现）"
 description: "在上一节中，我们介绍了互斥锁的起因、使用和实现过程。通过互斥锁，可以让线程在临界区执行时，独占共享资源。然而，当我们需要一种线程间更灵活的同步访问需求，如要求同时最多只允许 N 个线程在临界区中访问共享资源，或让某个线程..."
 date: "2026-07-12"
-order: 65
+order: 60
 tags: ["信号量", "semaphore", "同步", "实现"]
 est_time: "40分钟"
 ---
@@ -338,3 +338,13 @@ new 方法比较简单。而 up 和 down 方法和我们在信号量基本思路
 - Downey, Allen B. (2016) [2005]. "The Little Book of Semaphores" (2nd ed.). Green Tea Press.
 - Leppäjärvi, Jouni (May 11, 2008). "A pragmatic, historically oriented survey on the universality of synchronization primitives" (pdf). University of Oulu, Finland.
 - [Producer-consumer problem, Wikipedia](https://en.wikipedia.org/wiki/Producer%E2%80%93consumer_problem)
+
+---
+
+## 本节练习
+
+1. \*\* 在Linux环境下，请用信号量实现哲学家就餐的多线程应用程序。
+
+4. \*\* 扩展内核功能，实现读者优先的读写信号量。
+
+5. \*\* 扩展内核功能，实现写者优先的读写信号量。

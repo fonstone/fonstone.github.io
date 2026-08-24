@@ -2,7 +2,7 @@
 title: "附录C：深入机器模式——RustSBI"
 description: "RISC-V指令集的SBI标准规定了类Unix操作系统之下的运行环境规范。这个规范拥有多种实现，RustSBI是它的一种实现。"
 date: "2026-07-12"
-order: 22
+order: 21
 tags: ["附录", "RustSBI", "机器模式", "SBI", "固件"]
 est_time: "20分钟"
 ---
@@ -17,3 +17,11 @@ RustSBI项目发起于鹏城实验室的“rCore代码之夏-2020”活动，它
 RustSBI项目的目标是，制作一个从固件启动的最小Rust语言SBI实现，为可能的复杂实现提供参考和支持。 RustSBI也可以作为一个库使用，帮助更多的SBI开发者适配自己的平台，以支持更多处理器核和片上系统。
 
 当前项目实现源码：<https://github.com/rustsbi/rustsbi>
+
+---
+
+## 本节练习
+
+5. \* RISC-V中的SBI的含义和功能是啥？
+
+   > 详情见 [SBI 官方文档](https://github.com/riscv-non-isa/riscv-sbi-doc/blob/master/riscv-sbi.adoc)

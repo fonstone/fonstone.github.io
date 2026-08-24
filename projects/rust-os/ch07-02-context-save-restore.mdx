@@ -2,7 +2,7 @@
 title: "上下文保存与恢复实现"
 description: "context_switch 汇编实现与首次启动"
 date: "2026-07-12"
-order: 48
+order: 44
 tags: ["global_asm", "裸函数", "寄存器保存", "ABI", "context_switch", "任务切换汇编"]
 est_time: "60分钟"
 ---
@@ -404,3 +404,161 @@ Q: global_asm! 里写 {{r0-r12, lr}} 而不是 {r0-r12, lr}，原因是什么？
 + 因为 Rust 宏把单花括号 { } 解释为格式化占位符，双花括号 {{ }} 才能输出字面量的 { }
 E: Rust 的 format_args!/asm!/global_asm! 等宏都使用 { } 作为占位符语法。要在宏展开后输出字面量的花括号，必须写 {{ 和 }}，它们分别被转义为 { 和 }。ARM 汇编里的 push {r0-r12, lr} 需要字面量花括号，所以在 global_asm! 里必须写成 {{r0-r12, lr}}。
 ```
+
+---
+
+## 本节练习
+
+10. \* 任务上下文切换需要保存与恢复哪些内容？
+
+    需要保存通用寄存器的值，PC；恢复的时候除了保存的内容以外还要恢复特权级到用户态。
+
+11. \* 特权级上下文和任务上下文有何异同？
+
+- 相同点：特权级上下文和任务上下文都保留了一组寄存器，都代表一个“执行流”
+- 不同点：
+- - 特权级上下文切换可以发生在中断异常时，所以它不符合函数调用约定，需要保存所有通用寄存器。同时它又涉及特权级切换，所以还额外保留了一些
+    CSR，在切换时还会涉及更多的 CSR。
+  - 任务上下文由内核手动触发，它包装在
+    os/src/task/switch.rs:\_\_switch()
+    里，所以除了“返回函数与调用函数不同”之外，它符合函数调用约定，只需要保存通用寄存器中
+    callee
+    类型的寄存器。为了满足切换执行流时“返回函数与调用函数不同”的要求，它还额外保存
+    ra。
+
+12. \* 上下文切换为什么需要用汇编语言实现？
+
+    上下文切换过程中，需要我们直接控制所有的寄存器。C 和 Rust 编译器在编译代码的时候都会“自作主张”使用通用寄存器，以及我们不知道的情况下访问栈，这是我们需要避免的。
+
+    切换到内核的时候，保存好用户态状态之后，我们将栈指针指向内核栈，相当于构建好一个高级语言可以正常运行的环境，这时候就可以由高级语言接管了。
+
+15. \*\*\* 我们已经在 rCore 里实现了不少操作系统的基本功能：特权级、上下文切换、系统调用……为了让大家对相关代码更熟悉，我们来以另一个操作系统为例，比较一下功能的实现。看看换一段代码，你还认不认识操作系统。
+
+    阅读 Linux 源代码，特别是 riscv 架构相关的代码，回答以下问题：
+
+    1. Linux 正常运行的时候， stvec 指向哪个函数？是哪段代码设置的 stvec 的值？
+    2. Linux 里进行上下文切换的函数叫什么？（对应 rCore 的 \_\_switch ）
+    3. Linux 里，和 rCore 中的 TrapContext 和 TaskContext 这两个类型大致对应的结构体叫什么？
+    4. Linux 在内核态运行的时候， tp 寄存器的值有什么含义？ sscratch 的值是什么？
+    5. Linux 在用户态运行的时候， sscratch 的值有什么含义？
+    6. Linux 在切换到内核态的时候，保存了和用户态程序相关的什么状态？
+    7. Linux 在内核态的时候，被打断的用户态程序的寄存器值存在哪里？在 C 代码里如何访问？
+    8. Linux 是如何根据系统调用编号找到对应的函数的？（对应 rCore 的 syscall::syscall() 函数的功能）
+    9. Linux 用户程序调用 ecall 的参数是怎么传给系统调用的实现的？系统调用的返回值是怎样返回给用户态的？
+
+    阅读代码的时候，可以重点关注一下如下几个文件，尤其是第一个 entry.S ，当然也可能会需要读到其它代码：
+
+    - arch/riscv/kernel/entry.S （与 rCore 的 switch.S 对比）
+    - arch/riscv/include/asm/current.h
+    - arch/riscv/include/asm/processor.h
+    - arch/riscv/include/asm/switch\_to.h
+    - arch/riscv/kernel/process.c
+    - arch/riscv/kernel/syscall\_table.c
+    - arch/riscv/kernel/traps.c
+    - include/linux/sched.h
+
+    此外，推荐使用 https://elixir.bootlin.com 阅读 Linux 源码，方便查找各个函数、类型、变量的定义及引用情况。
+
+    一些提示：
+
+    - Linux 支持各种架构，查找架构相关的代码的时候，请认准文件名中的 arch/riscv 。
+    - 为了同时兼容 RV32 和 RV64，Linux 在汇编代码中用了几个宏定义。例如， REG\_L 在 RV32 上是 lw ，而在 RV64 上是 ld 。同理， REG\_S 在 RV32 上是 sw ，而在 RV64 上是 sd 。
+    - 如果看到 #ifdef CONFIG\_ 相关的预处理指令，是 Linux 根据编译时的配置启用不同的代码。一般阅读代码时，要么比较容易判断出这些宏有没有被定义，要么其实无关紧要。比如，Linux 内核确实应该和 rCore 一样，是在 S-mode 运行的，所以 CONFIG\_RISCV\_M\_MODE 应该是没有启用的。
+    - 汇编代码中可能会看到有些 TASK\_ 和 PT\_ 开头的常量，找不到定义。这些常量并没有直接写在源码里，而是自动生成的。
+
+      在汇编语言中需要用到的很多 struct 里偏移量的常量定义可以在 arch/riscv/kernel/asm-offsets.c 文件里找到。其中， OFFSET(NAME, struct\_name, field) 指的是 NAME 的值定义为 field 这一项在 struct\_name 结构体里，距离结构体开头的偏移量。最终这些代码会生成 asm/asm-offsets.h 供汇编代码使用。
+    - `#include <asm/unistd.h>` 在 arch/riscv/include/uapi/asm/unistd.h ， `#include <asm-generic/unistd.h>` 在 include/uapi/asm-generic/unistd.h 。
+
+    1. arch/riscv/kernel/entry.S 里的 handle\_exception ； arch/riscv/kernel/head.S 里的 setup\_trap\_vector
+    2. arch/riscv/kernel/entry.S 里的 \_\_switch\_to
+    3. TrapContext 对应 pt\_regs ； TaskContext 对应 task\_struct （在 task\_struct 中也包含一些其它的和调度相关的信息）
+    4. tp 指向当前被打断的任务的 task\_struct （参见 arch/riscv/include/asm/current.h 里的宏 current ）； sscratch 是 0
+    5. sscratch 指向当前正在运行的任务的 task\_struct ，这样设计可以用来区分异常来自用户态还是内核态。
+    6. 所有通用寄存器， sstatus, sepc, scause
+    7. 内核栈底； arch/riscv/include/asm/processor.h 里的 task\_pt\_regs 宏
+    8. arch/riscv/kernel/syscall\_table.c 里的 sys\_call\_table 作为跳转表，根据系统调用编号调用。
+    9. 从保存的 pt\_regs 中读保存的 a0 到 a7 到机器寄存器里，这样系统调用实现的 C 函数就会作为参数接收到这些值，返回值是将返回的 a0 写入保存的 pt\_regs ，然后切换回用户态的代码负责将其“恢复”到 a0
+
+3. \*\* 编写浮点应用程序A，并扩展内核，支持面向浮点应用的正常切换与抢占。
+
+需要在 trap.S 中加入浮点寄存器组的保存和恢复指令（见中文注释处）：
+
+```
+__alltraps:
+    csrrw sp, sscratch, sp
+    # now sp->kernel stack, sscratch->user stack
+    # allocate a TrapContext on kernel stack
+    addi sp, sp, -34*8
+    # save general-purpose registers
+    sd x1, 1*8(sp)
+    # skip sp(x2), we will save it later
+    sd x3, 3*8(sp)
+    # skip tp(x4), application does not use it
+    # save x5~x31
+    .set n, 5
+    .rept 27
+        SAVE_GP %n
+        .set n, n+1
+    .endr
+    # we can use t0/t1/t2 freely, because they were saved on kernel stack
+    csrr t0, sstatus
+    csrr t1, sepc
+    sd t0, 32*8(sp)
+    sd t1, 33*8(sp)
+    # read user stack from sscratch and save it on the kernel stack
+    csrr t2, sscratch
+    # 浮点寄存器
+    fsd fs0, 34*8(sp)
+    fsd fs1, 35*8(sp)
+    ......
+    sd t2, 2*8(sp)
+    # set input argument of trap_handler(cx: &mut TrapContext)
+    mv a0, sp
+    call trap_handler
+
+__restore:
+    # now sp->kernel stack(after allocated), sscratch->user stack
+    # restore sstatus/sepc
+    ld t0, 32*8(sp)
+    ld t1, 33*8(sp)
+    ld t2, 2*8(sp)
+    csrw sstatus, t0
+    csrw sepc, t1
+    csrw sscratch, t2
+    # restore general-purpuse registers except sp/tp
+    ld x1, 1*8(sp)
+    ld x3, 3*8(sp)
+    .set n, 5
+    .rept 27
+        LOAD_GP %n
+        .set n, n+1
+    .endr
+    # 浮点寄存器
+    fld fs0, 34*8(sp)
+    fld fs1, 35*8(sp)
+    ......
+    # release TrapContext on kernel stack
+    addi sp, sp, 34*8
+    # now sp->kernel stack, sscratch->user stack
+    csrrw sp, sscratch, sp
+    sret
+```
+
+此外，支持浮点指令可能还需要(包括但不限于)以下条件：
+
+- 机器本身支持浮点指令
+- Rust 编译目标包含浮点指令
+
+  - 在 os/Makefile 中的 TARGET := riscv64gc-unknown-none-elf
+    支持浮点指令，而对应的 riscv64imac 则不支持。
+  - 如果机器本身支持但使用riscv64imac作为编译目标，仍然可以通过强行插入指令的方式来支持浮点，如
+    fld fs0, 280(sp) 在 RISCV 指令集中表示为机器码 0x2472
+    ，就可以在上面的 trap.S 中插入
+
+    ```
+    .short 0x2472 # fld fs0, 280(sp)
+    ```
+
+    来支持浮点指令
+- 需要通过控制浮点控制状态寄存器（如 fcsr）来检查FPU状态。详见
+  https://five-embeddev.com/riscv-isa-manual/latest/machine.html#machine-trap-vector-base-address-register-mtvec

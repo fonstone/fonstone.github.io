@@ -2,7 +2,7 @@
 title: "附录D：RISC-V 汇编入门"
 description: ""
 date: "2026-07-12"
-order: 23
+order: 22
 tags: ["附录", "RISC-V", "汇编", "指令集"]
 est_time: "30分钟"
 ---

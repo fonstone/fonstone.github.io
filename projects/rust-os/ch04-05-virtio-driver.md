@@ -2,7 +2,7 @@
 title: "virtio 设备驱动程序"
 description: "本节主要介绍了QEMU模拟的RISC-V计算机中的virtio设备的架构和重要组成部分，以及面向virtio设备的驱动程序主要功能；并对virtio-blk设备及其驱动程序，virtio-gpu设备及其驱动程序进行了比较..."
 date: "2026-07-12"
-order: 30
+order: 28
 tags: ["virtio", "驱动", "虚拟设备", "队列"]
 est_time: "35分钟"
 ---

@@ -2,7 +2,7 @@
 title: "在内核中接入 easy-fs"
 description: "上节实现了 easy-fs 文件系统，并能在用户态来进行测试，但还没有放入到内核中来。本节我们介绍如何将 easy-fs 文件系统接入内核中从而在内核中支持常规文件和目录。为此，在操作系统内核中需要有对接 easy-fs..."
 date: "2026-07-12"
-order: 96
+order: 87
 tags: ["easy-fs", "内核", "系统调用", "文件", "接入"]
 est_time: "45分钟"
 ---
@@ -697,3 +697,536 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
 ```
 
 操作系统都是通过文件描述符在当前进程的文件描述符表中找到某个文件，无需关心文件具体的类型，只要知道它一定实现了 File Trait 的 read/write 方法即可。Trait 对象提供的运行时多态能力会在运行的时候帮助我们定位到符合实际类型的 read/write 方法。
+
+---
+
+## 本节练习
+
+2. \* 扩展内核功能，支持stat系统调用，能显示文件的inode元数据信息。
+
+
+你将在本章的编程实验中实现这个功能。
+
+3. \*\* 扩展内核功能，支持mmap系统调用，支持对文件的映射，实现基于内存读写方式的文件读写功能。
+
+
+> **Note**
+>
+> 这里只是给出了一种参考实现。mmap本身行为比较复杂，使用你认为合理的方式实现即可。
+
+在第四章的编程实验中你应该已经实现了mmap的匿名映射功能，这里我们要实现文件映射。
+[mmap](https://man7.org/linux/man-pages/man2/mmap.2.html) 的原型如下：
+
+```
+void *mmap(void *addr, size_t length, int prot, int flags,
+                int fd, off_t offset);
+```
+
+其中 addr 是一个虚拟地址的hint，在映射文件时我们不关心具体的虚拟地址（相当于传入 NULL ），这里我们的系统调用忽略这个参数。 prot 和 flags 指定了一些属性，为简单起见我们也不要这两个参数，映射的虚拟内存的属性直接继承自文件的读写属性。我们最终保留 length 、 fd 和 offset 三个参数。
+
+考虑最简单的一种实现方式：mmap调用时随便选择一段虚拟地址空间，将它映射到一些随机的物理页面上，之后再把文件的对应部分全部读到内存里。如果这段映射是可写的，那么内核还要在合适的时机（比如调用msync、munmap、进程退出时）把内存里的东西回写到文件。
+
+这样做的问题是被映射的文件可能很大，将映射的区域全部读入内存可能很慢，而且用户未必会访问所有的页面。这里可以应用按需分页的惰性加载策略：先不实际建立虚拟内存到物理内存的映射，当用户访问映射的区域时会触发缺页异常，我们在处理异常时分配实际的物理页面并将文件读入内存。
+
+按照上述方式已经可以实现文件映射了，但让我们来考虑较为微妙的情况。比如以下的Linux C程序：
+
+```
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <stdio.h>
+
+int main()
+{
+    char str[] = {"asdbasdq3423423\n"};
+    int fd = open("2.txt", O_RDWR | O_CREAT | O_TRUNC, 0664);
+    if (fd < 0) {
+        printf("open failed\n");
+        return -1;
+    }
+
+    if (write(fd, str, sizeof(str)) < 0) {
+        printf("write failed\n");
+        return -1;
+    }
+
+    char *p1 = mmap(NULL, sizeof(str), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    char *p2 = mmap(NULL, sizeof(str), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    printf("p1 = %p, p2 = %p\n", p1, p2);
+    close(fd);
+
+    p1[1] = '1';
+    p2[2] = '2';
+    p2[0] = '2';
+    p1[0] = '1';
+    printf("content1: %s", p1);
+    printf("content2: %s", p2);
+    return 0;
+}
+```
+
+一个可能的输出结果如下：
+
+```
+p1 = 0x7f955a3cf000, p2 = 0x7f955a3a2000
+content1: 112basdq3423423
+content2: 112basdq3423423
+```
+
+可以看到文件的同一段区域被映射到了两个不同的虚拟地址，对这两段虚拟内存的修改全部生效（冲突的修改也是最后的可见），修改后再读出来的内容也相同。这样的结果是符合直觉的，因为底层的文件只有一个（也与 MAP\_SHARED 有关，由于设置 MAP\_PRIVATE 标志不会将修改真正写入文件，我们参考 MAP\_SHARED 的行为）。如果按照上面说的方式将两个虚拟内存区域映射到不同的物理页面，那么对两个区域的修改无法同时生效，我们也无法确定应该将哪个页面回写到文件。这个例子启示我们， **如果文件映射包含文件的相同部分，那么相应的虚拟页面应该映射到相同的物理页** 。
+
+不幸的是，现有的 MapArea 类型只含 Identical 和 Framed ，不支持不同的虚拟页面共享物理页，所以我们需要手动管理一些资源。下面的 FileMapping 结构描述了一个文件的若干段映射：
+
+```
+pub struct FileMapping {
+    file: Arc<Inode>,
+    ranges: Vec<MapRange>,
+    frames: Vec<FrameTracker>,
+    dirty_parts: BTreeSet<usize>, // file segments that need writing back
+    map: BTreeMap<usize, PhysPageNum>, // file offset -> ppn
+}
+```
+
+其中 file 代表被映射的文件，你可能会好奇它的类型为什么不是一个文件描述符编号或者 Arc<dyn File> 。首先mmap之后使用的文件描述符可以立即被关闭而不会对文件映射造成任何影响，所以不适合只存放fd编号；其次mmap通常要求映射的文件是常规文件 （例：映射stdin和stdout毫无意义），这里用 Inode 来提醒我们这点。 ranges 里面存放了若干 MapRange ，每个都用于描述一段映射区域。 frames 用于管理实际分配的物理页帧。 dirty\_parts 记录了需要回写的脏页，注意它实际上用文件内的偏移来表示。 map 维护文件内偏移到物理页号的映射。需要注意的是这里记录脏页的方式比较简单，而且也完全没有考虑在进程间共享物理页，你可以使用引用计数等手段进行扩展。
+
+```
+#[derive(Clone)]
+struct MapRange {
+    start: VirtAddr,
+    len: usize,    // length in bytes
+    offset: usize, // offset in file
+    perm: MapPermission,
+}
+```
+
+MapRange 描述了一段映射区域。 start 是该区域的起始虚拟地址， offset 为其在文件中的偏移， perm 记录了该区域的属性。
+
+前面提到过，我们的mmap忽略掉作为hint的 addr 参数，那这里的虚拟地址填什么呢？一般来说64位架构具有大到用不完的虚拟地址空间，用一个简单的线性分配器随便分配虚拟地址即可。
+
+```
+/// Base virtual address for mmap
+pub const MMAP_AREA_BASE: usize = 0x0000_0001_0000_0000; // 随便选的基址，挑块没人用的
+
+/// A naive linear virtual address space allocator
+pub struct VirtualAddressAllocator {
+    cur_va: VirtAddr,
+}
+
+impl VirtualAddressAllocator {
+    /// Create a new allocator with given base virtual address
+    pub fn new(base: usize) -> Self {
+        Self {
+            cur_va: base.into(),
+        }
+    }
+
+    /// Allocate a virtual address area
+    pub fn alloc(&mut self, len: usize) -> VirtAddr {
+        let start = self.cur_va;
+        let end: VirtAddr = (self.cur_va.0 + len).into();
+        self.cur_va = end.ceil().into();
+        start
+    }
+
+    // 不必释放
+}
+```
+
+然后把 VirtualAddressAllocator 和 FileMapping 放进 TaskControlBlockInner 里。为简单起见，fork时不考虑这两个字段的复制和映射的共享。
+
+```
+pub struct TaskControlBlockInner {
+    pub trap_cx_ppn: PhysPageNum,
+    pub base_size: usize,
+    pub task_cx: TaskContext,
+    pub task_status: TaskStatus,
+    pub memory_set: MemorySet,
+    pub parent: Option<Weak<TaskControlBlock>>,
+    pub children: Vec<Arc<TaskControlBlock>>,
+    pub exit_code: i32,
+    pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+    pub mmap_va_allocator: VirtualAddressAllocator,
+    pub file_mappings: Vec<FileMapping>,
+}
+```
+
+下面来添加mmap系统调用：
+
+```
+/// This is a simplified version of mmap which only supports file-backed mapping
+pub fn sys_mmap(fd: usize, len: usize, offset: usize) -> isize {
+    if len == 0 {
+        // invalid length
+        return -1;
+    }
+    if (offset & (PAGE_SIZE - 1)) != 0 {
+        // offset must be page size aligned
+        return -1;
+    }
+
+    let task = current_task().unwrap();
+    let mut tcb = task.inner_exclusive_access();
+    if fd >= tcb.fd_table.len() {
+        return -1;
+    }
+    if tcb.fd_table[fd].is_none() {
+        return -1;
+    }
+
+    let fp = tcb.fd_table[fd].as_ref().unwrap();
+    let opt_inode = fp.as_any().downcast_ref::<OSInode>();
+    if opt_inode.is_none() {
+        // must be a regular file
+        return -1;
+    }
+
+    let inode = opt_inode.unwrap();
+    let perm = parse_permission(inode);
+    let file = inode.clone_inner_inode();
+    if offset >= file.get_size() {
+        // file offset exceeds size limit
+        return -1;
+    }
+
+    let start = tcb.mmap_va_allocator.alloc(len);
+    let mappings = &mut tcb.file_mappings;
+    if let Some(m) = find_file_mapping(mappings, &file) {
+        m.push(start, len, offset, perm);
+    } else {
+        let mut m = FileMapping::new_empty(file);
+        m.push(start, len, offset, perm);
+        mappings.push(m);
+    }
+    start.0 as isize
+}
+```
+
+这里面有不少无聊的参数检查和辅助函数，就不详细介绍了。总之这个系统调用实际做的事情只有维护对应的 FileMapping 结构，实际的工作被推迟到缺页异常处理例程中。
+
+```
+#[unsafe(no_mangle)]
+/// handle an interrupt, exception, or system call from user space
+pub fn trap_handler() -> ! {
+    set_kernel_trap_entry();
+    let scause = scause::read();
+    let stval = stval::read();
+    let trap: Trap<Interrupt, Exception> = match scause.cause().try_into() {
+        Ok(trap) => trap,
+        Err(_) => panic!(
+            "Unsupported trap {:?}, stval = {:#x}!",
+            scause.cause(),
+            stval
+        ),
+    };
+    match trap {
+        Trap::Exception(Exception::UserEnvCall) => {
+            // ...
+        }
+        Trap::Exception(Exception::StoreFault)
+        | Trap::Exception(Exception::StorePageFault)
+        | Trap::Exception(Exception::InstructionFault)
+        | Trap::Exception(Exception::InstructionPageFault)
+        | Trap::Exception(Exception::LoadFault)
+        | Trap::Exception(Exception::LoadPageFault) => {
+            if !handle_page_fault(stval) {
+                println!(
+                    "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
+                    scause.cause(),
+                    stval,
+                    current_trap_cx().sepc,
+                );
+                // page fault exit code
+                exit_current_and_run_next(-2);
+            }
+        }
+        Trap::Exception(Exception::IllegalInstruction) => {
+            // ...
+        }
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            // ...
+        }
+        _ => {
+            panic!(
+                "Unsupported trap {:?}, stval = {:#x}!",
+                scause.cause(),
+                stval
+            );
+        }
+    }
+    trap_return();
+}
+```
+
+我们在这里尝试处理缺页异常，如果 handle\_page\_fault 返回 true 表明异常已经被处理，否则内核仍然会杀死当前进程。
+
+```
+/// Try to handle page fault caused by demand paging
+/// Returns whether this page fault is fixed
+pub fn handle_page_fault(fault_addr: usize) -> bool {
+    let fault_va: VirtAddr = fault_addr.into();
+    let fault_vpn = fault_va.floor();
+    let task = current_task().unwrap();
+    let mut tcb = task.inner_exclusive_access();
+
+    if let Some(pte) = tcb.memory_set.translate(fault_vpn) {
+        if pte.is_valid() {
+            return false; // fault va already mapped, we cannot handle this
+        }
+    }
+
+    match tcb.file_mappings.iter_mut().find(|m| m.contains(fault_va)) {
+        Some(mapping) => {
+            let file = Arc::clone(&mapping.file);
+            // fix vm mapping
+            let (ppn, range, shared) = mapping.map(fault_va).unwrap();
+            tcb.memory_set.map(fault_vpn, ppn, range.perm);
+
+            if !shared {
+                // load file content
+                let file_size = file.get_size();
+                let file_offset = range.file_offset(fault_vpn);
+                assert!(file_offset < file_size);
+
+                // let va_offset = range.va_offset(fault_vpn);
+                // let va_len = range.len - va_offset;
+                // Note: we do not limit `read_len` with `va_len`
+                // consider two overlapping areas with different lengths
+
+                let read_len = PAGE_SIZE.min(file_size - file_offset);
+                file.read_at(file_offset, &mut ppn.get_bytes_array()[..read_len]);
+            }
+            true
+        }
+        None => false,
+    }
+}
+```
+
+- handle\_page\_fault 的9~13行先检查触发异常的虚拟内存页是否已经映射到物理页面，如果是则说明此异常并非源自惰性按需分页（比如写入只读页），这个问题不归我们管，直接返回 false。
+- 接下来的第15行检查出错的虚拟地址是否在映射区域内，如果是我们才上手来处理。
+
+在实际的修复过程中：
+- 第19行先调用 FileMapping 的 map 方法建立目标虚拟地址到物理页面的映射；
+- 第20行将新的映射关系添加到页表；
+- 第22~35行处理文件读入。注意实际的文件读取只发生在物理页面的引用计数从0变为1的时候，存在共享的情况下再读取文件可能会覆盖掉用户对内存的修改。
+
+FileMapping 的 map 方法实现如下：
+
+```
+impl FileMapping {
+    /// Create mapping for given virtual address
+    fn map(&mut self, va: VirtAddr) -> Option<(PhysPageNum, MapRange, bool)> {
+        // Note: currently virtual address ranges never intersect
+        let vpn = va.floor();
+        for range in &self.ranges {
+            if !range.contains(va) {
+                continue;
+            }
+            let offset = range.file_offset(vpn);
+            let (ppn, shared) = match self.map.get(&offset) {
+                Some(&ppn) => (ppn, true),
+                None => {
+                    let frame = frame_alloc().unwrap();
+                    let ppn = frame.ppn;
+                    self.frames.push(frame);
+                    self.map.insert(offset, ppn);
+                    (ppn, false)
+                }
+            };
+            if range.perm.contains(MapPermission::W) {
+                self.dirty_parts.insert(offset);
+            }
+            return Some((ppn, range.clone(), shared));
+        }
+        None
+    }
+}
+```
+
+- 第6~9行先找到包含目标虚拟地址的映射区域；
+- 第10行计算虚拟地址对应的文件内偏移；
+- 第11~20行先查询此文件偏移是否对应已分配的物理页，如果没有则分配一个物理页帧并记录映射关系；
+- 第21~23行检查此映射区域是否有写入权限，如果有则将对应的物理页面标记为脏页。这个处理实际上比较粗糙，有些没有被真正写入的页面也被视为脏页，导致最后会有多余的文件回写。你也可以考虑不维护脏页信息，而是通过检查页表项中由硬件维护的 Dirty 位来确定哪些是真正的脏页。
+
+修复后用户进程重新执行触发缺页异常的指令，此时物理页里存放了文件的内容，这样用户就实现了以读取内存的方式来读取文件。最后来处理被修改的脏页的同步，给 FileMapping 添加 sync 方法：
+
+```
+impl FileMapping {
+    /// Write back all dirty pages
+    pub fn sync(&self) {
+        let file_size = self.file.get_size();
+        for &offset in self.dirty_parts.iter() {
+            let ppn = self.map.get(&offset).unwrap();
+            if offset < file_size {
+                // WARNING: this can still cause garbage written
+                //  to file when sharing physical page
+                let va_len = self
+                    .ranges
+                    .iter()
+                    .map(|r| {
+                        if r.offset <= offset && offset < r.offset + r.len {
+                            PAGE_SIZE.min(r.offset + r.len - offset)
+                        } else {
+                            0
+                        }
+                    })
+                    .max()
+                    .unwrap();
+                let write_len = va_len.min(file_size - offset);
+
+                self.file
+                    .write_at(offset, &ppn.get_bytes_array()[..write_len]);
+            }
+        }
+    }
+}
+```
+
+这个方法将所有潜在的脏物理页内容回写至文件。第10~22行的计算主要为了限制写入内容的长度，以避免垃圾被意外写入文件。
+
+剩下的问题是何时调用 sync 。正常来说munmap、msync是同步点，你可以自行实现这两个系统调用，这里我们把它放在进程退出之前：
+
+```
+/// Exit the current 'Running' task and run the next task in task list.
+pub fn exit_current_and_run_next(exit_code: i32) {
+    let task = take_current_task().unwrap();
+    // ...
+    let mut inner = task.inner_exclusive_access();
+    // ...
+    inner.children.clear();
+    // deallocate user space
+    inner.memory_set.recycle_data_pages();
+    // write back dirty pages
+    for mapping in inner.file_mappings.iter() {
+        mapping.sync();
+    }
+    drop(inner);
+    // **** release current PCB
+    // drop task manually to maintain rc correctly
+    drop(task);
+    // ...
+}
+```
+
+8. \*\* 为什么要同时维护进程的打开文件表和操作系统的打开文件表？这两个打开文件表有什么区别和联系？
+
+   多个进程可能会同时打开同一个文件，操作系统级的打开文件表可以加快后续的打开操作，但同时由于每个进程打开文件时使用的访问模式或是偏移量不同，所以还需要进程的打开文件表另外记录。
+
+---
+
+## 本节练习
+
+### 实验作业
+
+## 实验练习
+
+实验练习包括实践作业和问答作业两部分。
+
+**理解文件系统比较费事，编程难度适中**
+
+### 实践作业
+
+#### 硬链接
+
+硬链接要求两个不同的目录项指向同一个文件，在我们的文件系统中也就是两个不同名称目录项指向同一个磁盘块。
+
+本节要求实现三个系统调用 sys\_linkat、sys\_unlinkat、sys\_stat 。
+
+**linkat**：
+
+> - syscall ID: 37
+> - 功能：创建一个文件的一个硬链接， [linkat标准接口](https://linux.die.net/man/2/linkat) 。
+> - Ｃ接口： int linkat(int olddirfd, char\* oldpath, int newdirfd, char\* newpath, unsigned int flags)
+> - Rust 接口： fn linkat(olddirfd: i32, oldpath: \*const u8, newdirfd: i32, newpath: \*const u8, flags: u32) -> i32
+> - 参数：
+>   :   - olddirfd，newdirfd: 仅为了兼容性考虑，本次实验中始终为 AT\_FDCWD (-100)，可以忽略。
+>       - flags: 仅为了兼容性考虑，本次实验中始终为 0，可以忽略。
+>       - oldpath：原有文件路径
+>       - newpath: 新的链接文件路径。
+> - 说明：
+>   :   - 为了方便，不考虑新文件路径已经存在的情况（属于未定义行为），除非链接同名文件。
+>       - 返回值：如果出现了错误则返回 -1，否则返回 0。
+> - 可能的错误
+>   :   - 链接同名文件。
+
+**unlinkat**:
+
+> - syscall ID: 35
+> - 功能：取消一个文件路径到文件的链接, [unlinkat标准接口](https://linux.die.net/man/2/unlinkat) 。
+> - Ｃ接口： int unlinkat(int dirfd, char\* path, unsigned int flags)
+> - Rust 接口： fn unlinkat(dirfd: i32, path: \*const u8, flags: u32) -> i32
+> - 参数：
+>   :   - dirfd: 仅为了兼容性考虑，本次实验中始终为 AT\_FDCWD (-100)，可以忽略。
+>       - flags: 仅为了兼容性考虑，本次实验中始终为 0，可以忽略。
+>       - path：文件路径。
+> - 说明：
+>   :   - 为了方便，不考虑使用 unlink 彻底删除文件的情况。
+> - 返回值：如果出现了错误则返回 -1，否则返回 0。
+> - 可能的错误
+>   :   - 文件不存在。
+
+**fstat**:
+
+> - syscall ID: 80
+> - 功能：获取文件状态。
+> - Ｃ接口： int fstat(int fd, struct Stat\* st)
+> - Rust 接口： fn fstat(fd: i32, st: \*mut Stat) -> i32
+> - 参数：
+>   :   - fd: 文件描述符
+>       - st: 文件状态结构体
+>
+>       ```
+>       #[repr(C)]
+>       #[derive(Debug)]
+>       pub struct Stat {
+>           /// 文件所在磁盘驱动器号，该实验中写死为 0 即可
+>           pub dev: u64,
+>           /// inode 文件所在 inode 编号
+>           pub ino: u64,
+>           /// 文件类型
+>           pub mode: StatMode,
+>           /// 硬链接数量，初始为1
+>           pub nlink: u32,
+>           /// 无需考虑，为了兼容性设计
+>           pad: [u64; 7],
+>       }
+>
+>       /// StatMode 定义：
+>       bitflags! {
+>           pub struct StatMode: u32 {
+>               const NULL  = 0;
+>               /// directory
+>               const DIR   = 0o040000;
+>               /// ordinary regular file
+>               const FILE  = 0o100000;
+>           }
+>       }
+>       ```
+
+#### 实验要求
+
+- 实现分支：ch7-lab
+- 实验目录要求不变
+- 通过所有测例
+
+  在 os 目录下 make run TEST=1 加载所有测例， test\_usertest 打包了所有你需要通过的测例，你也可以通过修改这个文件调整本地测试的内容。
+
+  你的内核必须前向兼容，能通过前一章的所有测例。
+
+> **Note**
+>
+> **如何调试 easy-fs**
+>
+> 如果你在第一章练习题中已经借助 log crate 实现了日志功能，那么你可以直接在 easy-fs 中引入 log crate，通过 log::info!/debug! 等宏即可进行调试并在内核中看到日志输出。具体来说，在 easy-fs 中的修改是：在 easy-fs/Cargo.toml 的依赖中加入一行 log = "0.4.0"，然后在 easy-fs/src/lib.rs 中加入一行 extern crate log 。
+>
+> 你也可以完全在用户态进行调试。仿照 easy-fs-fuse 建立一个在当前操作系统中运行的应用程序，将测试逻辑写在 main 函数中。这个时候就可以将它引用的 easy-fs 的 no\_std 去掉并使用 println! 进行调试。
+
+### 问答作业
+
+无
+
+### 实验练习的提交报告要求
+
+- 简单总结本次实验与上个实验相比你增加的东西。（控制在5行以内，不要贴代码）
+- 完成问答问题
+- (optional) 你对本次实验设计及难度的看法。

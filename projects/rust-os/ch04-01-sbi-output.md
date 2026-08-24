@@ -2,7 +2,7 @@
 title: "基于 SBI 服务完成输出和关机"
 description: "本节我们将进行构建“三叶虫”操作系统的最后一个步骤，即基于 RustSBI 提供的服务完成在屏幕上打印 Hello world! 和关机操作。事实上，作为对我们之前提到的 应用程序执行环境 的细化，RustSBI 介于底..."
 date: "2026-07-12"
-order: 26
+order: 24
 tags: ["SBI", "输出", "关机", "println", "系统调用"]
 est_time: "25分钟"
 ---

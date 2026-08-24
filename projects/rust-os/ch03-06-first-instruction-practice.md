@@ -2,7 +2,7 @@
 title: "内核第一条指令（实践篇）"
 description: "承接上一节，本节我们将实践在 Qemu 上执行内核的第一条指令。首先我们编写内核第一条指令并嵌入到我们的内核项目中，接着指定内核的内存布局使得我们的内核可以正确对接到 Qemu 中。由于 Qemu 的文件加载功能过于简单..."
 date: "2026-07-12"
-order: 20
+order: 19
 tags: ["第一条指令", "内核入口", "汇编", "RISC-V", "QEMU"]
 est_time: "45分钟"
 ---
@@ -301,3 +301,174 @@ $3 = 0x0
 ```
 
 可以看到我们在 entry.asm 中编写的第一条指令可以在 0x80200000 处找到。这里 ra 是寄存器 x1 的别名， p/d $x1 可以以十进制打印寄存器 x1 的值，它的结果正确。最后，作为下一节的铺垫，我们可以检查此时栈指针 sp 的值，可以发现它目前是 0 。下一节我们将设置好栈空间，使得内核代码可以正常进行函数调用，随后将控制权转交给 Rust 代码。
+
+---
+
+## 本节练习
+
+4. \*\* 请基于QEMU模拟RISC—V的执行过程和QEMU源代码，说明RISC-V硬件加电后的几条指令在哪里？完成了哪些功能？
+
+   在 QEMU 源码 [[1]] 中可以找到“上电”的时候刚执行的几条指令，如下：
+
+   ```
+   uint32_t reset_vec[10] = {
+       0x00000297,                   /* 1:  auipc  t0, %pcrel_hi(fw_dyn) */
+       0x02828613,                   /*     addi   a2, t0, %pcrel_lo(1b) */
+       0xf1402573,                   /*     csrr   a0, mhartid  */
+   #if defined(TARGET_RISCV32)
+       0x0202a583,                   /*     lw     a1, 32(t0) */
+       0x0182a283,                   /*     lw     t0, 24(t0) */
+   #elif defined(TARGET_RISCV64)
+       0x0202b583,                   /*     ld     a1, 32(t0) */
+       0x0182b283,                   /*     ld     t0, 24(t0) */
+   #endif
+       0x00028067,                   /*     jr     t0 */
+       start_addr,                   /* start: .dword */
+       start_addr_hi32,
+       fdt_load_addr,                /* fdt_laddr: .dword */
+       0x00000000,
+                                     /* fw_dyn: */
+   };
+   ```
+
+   完成的工作是：
+
+   - 读取当前的 Hart ID CSR mhartid 写入寄存器 a0
+   - （我们还没有用到：将 FDT (Flatten device tree) 在物理内存中的地址写入 a1）
+   - 跳转到 start\_addr ，在我们实验中是 RustSBI 的地址
+
+7. \*\* 请简要说明从QEMU模拟的RISC-V计算机加电开始运行到执行应用程序的第一条指令这个阶段的执行过程。
+
+   接第 5 题，跳转到 RustSBI 后，SBI 会对部分硬件例如串口等进行初始化，然后通过 mret 跳转到 payload 也就是 kernel 所在的起始地址。kernel 进行一系列的初始化后（内存管理，虚存管理，线程（进程）初始化等），通过 sret 跳转到应用程序的第一条指令开始执行。
+
+---
+
+## 本节练习
+
+### 实验作业
+
+### 实践作业
+
+#### 彩色化 LOG
+
+lab1 的工作使得我们从硬件世界跳入了软件世界，当看到自己的小 os 可以在裸机硬件上输出 hello world 是不是很高兴呢？但是为了后续的一步开发，更好的调试环境也是必不可少的，第一章的练习要求大家实现更加炫酷的彩色log。
+
+详细的原理不多说，感兴趣的同学可以参考 [ANSI转义序列](https://zh.wikipedia.org/wiki/ANSI%E8%BD%AC%E4%B9%89%E5%BA%8F%E5%88%97) ，现在执行如下这条命令试试
+
+```
+$ echo -e "\x1b[31mhello world\x1b[0m"
+```
+
+如果你明白了我们是如何利用串口实现输出，那么要实现彩色输出就十分容易了，只需要用需要输出的字符串替换上一条命令中的 hello world，用期望颜色替换 31(代表红色) 即可。
+
+> **Warning**
+>
+> 以下内容仅为推荐实现，不是练习要求，有时间和兴趣的同学可以尝试。
+
+我们推荐实现如下几个等级的输出，输出优先级依次降低：
+
+log 等级推荐
+
+|  |  |  |
+| --- | --- | --- |
+| 名称 | 颜色 | 用途 |
+| ERROR | 红色(31) | 表示发生严重错误，很可能或者已经导致程序崩溃 |
+| WARN | 黄色(93) | 表示发生不常见情况，但是并不一定导致系统错误 |
+| INFO | 蓝色(34) | 比较中庸的选项，输出比较重要的信息，比较常用 |
+| DEBUG | 绿色(32) | 输出信息较多，在 debug 时使用 |
+| TRACE | 灰色(90) | 最详细的输出，跟踪了每一步关键路径的执行 |
+
+我们可以输出比设定输出等级以及更高输出等级的信息，如设置 LOG = INFO，则输出 ERROR、WARN、INFO 等级的信息。简单 demo 如下，输出等级为 INFO:
+
+![color-demo.png](/images/rust-os/rcore/chapter1/color-demo.png)
+
+为了方便使用彩色输出，我们要求同学们实现彩色输出的宏或者函数，用以代替 print 完成输出内核信息的功能，它们有着和 prinf 十分相似的使用格式，要求支持可变参数解析，形如：
+
+```
+// 这段代码输出了 os 内存空间布局，这到这些信息对于编写 os 十分重要
+
+info!(".text [{:#x}, {:#x})", linker_symbol_addr!(s_text), linker_symbol_addr!(e_text));
+debug!(".rodata [{:#x}, {:#x})", linker_symbol_addr!(s_rodata), linker_symbol_addr!(e_rodata));
+error!(".data [{:#x}, {:#x})", linker_symbol_addr!(s_data), linker_symbol_addr!(e_data));
+```
+
+```
+info("load range : [%d, %d] start = %d\n", s, e, start);
+```
+
+在以后，我们还可以在 log 信息中增加线程、CPU等信息（只是一个推荐，不做要求），这些信息将极大的方便你的代码调试。
+
+#### 实验要求
+
+- 实现分支：ch1
+- 完成实验指导书中的内容并在裸机上实现 hello world 输出。
+- 实现彩色输出宏(只要求可以彩色输出，不要求 log 等级控制，不要求多种颜色)
+- 隐形要求
+
+  可以关闭内核所有输出。从 lab2 开始要求关闭内核所有输出（如果实现了 log 等级控制，那么这一点自然就实现了）。
+- 利用彩色输出宏输出 os 内存空间布局
+
+  输出 .text、.data、.rodata、.bss 各段位置，输出等级为 INFO。
+
+challenge: 支持多核，实现多个核的 boot。
+
+#### 实验检查
+
+- 实验目录要求(Rust)
+
+```
+├── os(内核实现)
+│   ├── Cargo.toml(配置文件)
+│   ├── Makefile (要求 make run LOG=xxx 可以正确执行，可以不实现对 LOG 这一属性的支持，设置默认输出等级为 INFO)
+│   └── src(所有内核的源代码放在 os/src 目录下)
+│       ├── main.rs(内核主函数)
+│       └── ...
+├── reports
+│   ├── lab1.md/pdf
+│   └── ...
+├── README.md（其他必要的说明）
+├── ...
+```
+
+报告命名 labx.md/pdf，统一放在 reports 目录下。每个实验新增一个报告，为了方便修改，检查报告是以最新分支的所有报告为准。
+
+- 检查
+
+```
+$ cd os
+$ git checkout ch1
+$ make run LOG=INFO
+```
+
+可以正确执行(可以不支持LOG参数，只有要彩色输出就好)，可以看到正确的内存布局输出，根据实现不同数值可能有差异，但应该位于 linker.ld 中指示 BASE\_ADDRESS 后一段内存，输出之后关机。
+
+#### tips
+
+- 对于 Rust, 可以使用 crate [log](https://docs.rs/log/0.4.14/log/) ，推荐参考 [rCore](https://github.com/rcore-os/rCore/blob/master/kernel/src/logging.rs)
+- 对于 C，可以实现不同的函数（注意不推荐多层可变参数解析，有时会出现不稳定情况），也可以参考 [linux printk](https://github.com/torvalds/linux/blob/master/include/linux/printk.h#L312-L385) 使用宏实现代码重用。
+- 两种语言都可以使用 extern 关键字获得在其他文件中定义的符号。
+
+### 问答作业
+
+1. 请学习 gdb 调试工具的使用(这对后续调试很重要)，并通过 gdb 简单跟踪从机器加电到跳转到 0x80200000 的简单过程。只需要描述重要的跳转即可，只需要描述在 qemu 上的情况。
+2. tips:
+
+> - 事实上进入 rustsbi 之后就不需要使用 gdb 调试了。可以直接阅读代码。[rustsbi起始代码](https://github.com/rustsbi/rustsbi-qemu/blob/main/rustsbi-qemu/src/main.rs#L146) 。
+> - 可以使用示例代码 Makefile 中的 make debug 指令。
+> - 一些可能用到的 gdb 指令：
+>   :   - x/10i 0x80000000 : 显示 0x80000000 处的10条汇编指令。
+>       - x/10i $pc : 显示即将执行的10条汇编指令。
+>       - x/10xw 0x80000000 : 显示 0x80000000 处的10条数据，格式为16进制32bit。
+>       - info register: 显示当前所有寄存器信息。
+>       - info r t0: 显示 t0 寄存器的值。
+>       - break funcname: 在目标函数第一条指令处设置断点。
+>       - break \*0x80200000: 在 0x80200000 处设置断点。
+>       - continue: 执行直到碰到断点。
+>       - si: 单步执行一条汇编指令。
+
+### 实验练习的提交报告要求
+
+- 简单总结本次实验你编程的内容。（控制在5行以内，不要贴代码）
+- 由于彩色输出不好自动测试，请附正确运行后的截图。
+- 完成问答问题。
+- (optional) 你对本次实验设计及难度/工作量的看法，以及有哪些需要改进的地方，欢迎畅所欲言。

@@ -2,7 +2,7 @@
 title: "文件系统"
 description: "第 11 章（IPC）已完成，进程间通过管道、信号等方式通信；本章实现文件系统，为数据持久化提供支持。"
 date: "2026-07-12"
-order: 93
+order: 84
 tags: ["文件系统", "文件", "目录", "easy-fs", "磁盘"]
 est_time: "20分钟"
 ---
@@ -22,7 +22,7 @@ est_time: "20分钟"
 | `03-easyfs-kernel.md` | 在内核中接入 easy-fs |
 | `04-final-lab.md` | 综合练习 |
 | `05-terminology.md` | 术语中英文对照表 |
-| `06-exercise.md` | 练习与参考答案 |
+| 各小节末尾 | 练习与参考答案（已融入对应小节） |
 
 ## 前置知识
 

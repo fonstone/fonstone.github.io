@@ -2,7 +2,7 @@
 title: "管理 SV39 多级页表"
 description: "上一节更多的是站在硬件的角度来分析SV39多级页表的硬件机制，本节我们主要讲解基于 SV39 多级页表机制的操作系统内存管理。这还需进一步管理计算机系统中当前已经使用的或空闲的物理页帧，这样操作系统才能给应用程序动态分配..."
 date: "2026-07-12"
-order: 82
+order: 75
 tags: ["SV39", "页表管理", "页表项", "PTE", "实现"]
 est_time: "50分钟"
 ---
@@ -479,3 +479,192 @@ impl PageTable {
 之后，当遇到需要查一个特定页表（非当前正处在的地址空间的页表时），便可先通过 PageTable::from\_token 新建一个页表，再调用它的 translate 方法查页表。
 
 小结一下，上一节和本节讲解了如何基于 RISC-V64 的 SV39 分页机制建立多级页表，并实现基于虚存地址空间的内存使用环境。这样，一旦启用分页机制，操作系统和应用都只能在虚拟地址空间中访问数据了，只是操作系统可以通过页表机制来限制应用访问的实际物理内存范围。这就要在后续小节中，进一步看看操作系统内核和应用程序是如何在虚拟地址空间中进行代码和数据访问的。
+
+---
+
+## 本节练习
+
+2. \*\*\* 修改本章操作系统内核，实现任务和操作系统内核共用同一张页表的单页表机制。
+
+   要实现任务和操作系统内核通用一张页表，需要了解清楚内核地址空间和任务地址空间的布局，然后为每个任务在内核地址空间中单独分配一定的地址空间。
+
+   在描述任务的struct proc中添加新的成员“kpgtbl”、“trapframe\_base”，前者用户保存内核页表，后者用于保存任务的TRAPFRAME虚地址。并增加获取内核页表的函数“get\_kernel\_pagetable()”。
+
+```
+//os/proc.h
+struct proc {
+     enum procstate state; // Process state
+     int pid; // Process ID
+     pagetable_t pagetable; // User page table
+     uint64 ustack;
+     uint64 kstack; // Virtual address of kernel stack
+     struct trapframe *trapframe; // data page for trampoline.S
+     struct context context; // swtch() here to run process
+     uint64 max_page;
+     uint64 program_brk;
+     uint64 heap_bottom;
+     pagetable_t kpgtbl; // 增加kpgtbl，用于保存内核页表
+     uint64 trapframe_base; // 增加trapframe，用于保存任务自己的trapframe
+}
+//os/vm.c
+//增加get_kernel_pagetable函数，返回内核页表
+pagetable_t get_kernel_pagetable(){
+     return kernel_pagetable;
+}
+```
+
+让任务使用内核页表，在内核地址空间中为每个任务分配一定的地址空间，在bin\_loader()函数中修改任务的内存布局。
+
+```
+//os/loader.c
+//修改任务的地址空间
+pagetable_t bin_loader(uint64 start, uint64 end, struct proc *p, int num)
+{
+     //pagetable_t pg = uvmcreate(); //任务不创建自己的页表
+     pagetable_t pg = get_kernel_pagetable(); //获取内核页表
+     uint64 trapframe = TRAPFRAME - (num + 1)* PAGE_SIZE; // 为每个任务依次指定TRAPFRAME
+     if (mappages(pg, trapframe, PGSIZE, (uint64)p->trapframe,
+                  PTE_R | PTE_W) < 0) {
+             panic("mappages fail");
+     }
+     if (!PGALIGNED(start)) {
+             panic("user program not aligned, start = %p", start);
+     }
+     if (!PGALIGNED(end)) {
+             // Fix in ch5
+             warnf("Some kernel data maybe mapped to user, start = %p, end = %p",
+                   start, end);
+     }
+     end = PGROUNDUP(end);
+     uint64 length = end - start;
+     uint64 base_address = BASE_ADDRESS + (num * (p->max_page + 100)) * PAGE_SIZE; //设置任务的起始地址，并为任务保留100个页用做堆内存
+     if (mappages(pg, base_address, length, start,
+                  PTE_U | PTE_R | PTE_W | PTE_X) != 0) {
+             panic("mappages fail");
+     }
+     p->pagetable = pg;
+     uint64 ustack_bottom_vaddr = base_address + length + PAGE_SIZE;
+     if (USTACK_SIZE != PAGE_SIZE) {
+             // Fix in ch5
+             panic("Unsupported");
+     }
+     mappages(pg, ustack_bottom_vaddr, USTACK_SIZE, (uint64)kalloc(),
+              PTE_U | PTE_R | PTE_W | PTE_X);
+     p->ustack = ustack_bottom_vaddr;
+     p->trapframe->epc = base_address;
+     p->trapframe->sp = p->ustack + USTACK_SIZE;
+     p->max_page = PGROUNDUP(p->ustack + USTACK_SIZE - 1) / PAGE_SIZE;
+     p->program_brk = p->ustack + USTACK_SIZE;
+     p->heap_bottom = p->ustack + USTACK_SIZE;
+     p->trapframe_base = trapframe; //任务保存自己的TRAPFRAME
+     return pg;
+}
+```
+
+在内核返回任务中使用任务自己的TRAPFRAME。
+
+```
+//os/trap.c
+void usertrapret()
+{
+     set_usertrap();
+     struct trapframe *trapframe = curr_proc()->trapframe;
+     trapframe->kernel_satp = r_satp(); // kernel page table
+     trapframe->kernel_sp =
+             curr_proc()->kstack + KSTACK_SIZE; // process's kernel stack
+     trapframe->kernel_trap = (uint64)usertrap;
+     trapframe->kernel_hartid = r_tp(); // unuesd
+     w_sepc(trapframe->epc);
+     // set up the registers that trampoline.S's sret will use
+     // to get to user space.
+     // set S Previous Privilege mode to User.
+     uint64 x = r_sstatus();
+     x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
+     x |= SSTATUS_SPIE; // enable interrupts in user mode
+     w_sstatus(x);
+     // tell trampoline.S the user page table to switch to.
+     uint64 satp = MAKE_SATP(curr_proc()->pagetable);
+     uint64 fn = TRAMPOLINE + (userret - trampoline);
+     tracef("return to user @ %p", trapframe->epc);
+     ((void (*)(uint64, uint64))fn)(curr_proc()->trapframe_base, satp); //使用任务自己的TRAPFRAME
+     //((void (*)(uint64, uint64))fn)(TRAPFRAME, satp);
+}
+```
+
+---
+
+## 本节练习
+
+### 实验作业
+
+## 实验练习
+
+实验练习包括实践作业和问答作业两部分。
+
+### 实践作业
+
+#### 重写 sys\_get\_time
+
+引入虚存机制后，原来内核的 sys\_get\_time 函数实现就无效了。请你重写这个函数，恢复其正常功能。
+
+#### mmap 和 munmap 匿名映射
+
+[mmap](https://man7.org/linux/man-pages/man2/mmap.2.html) 在 Linux 中主要用于在内存中映射文件，本次实验简化它的功能，仅用于申请内存。
+
+请实现 mmap 和 munmap 系统调用，mmap 定义如下：
+
+```
+fn sys_mmap(start: usize, len: usize, prot: usize) -> isize
+```
+
+- syscall ID：222
+- 申请长度为 len 字节的物理内存（不要求实际物理内存位置，可以随便找一块），将其映射到 start 开始的虚存，内存页属性为 prot
+- 参数：
+  :   - start 需要映射的虚存起始地址，要求按页对齐
+      - len 映射字节长度，可以为 0
+      - prot：第 0 位表示是否可读，第 1 位表示是否可写，第 2 位表示是否可执行。其他位无效且必须为 0
+- 返回值：执行成功则返回 0，错误返回 -1
+- 说明：
+  :   - 为了简单，目标虚存区间要求按页对齐，len 可直接按页向上取整，不考虑分配失败时的页回收。
+- 可能的错误：
+  :   - start 没有按页大小对齐
+      - prot & !0x7 != 0 (prot 其余位必须为0)
+      - prot & 0x7 = 0 (这样的内存无意义)
+      - [start, start + len) 中存在已经被映射的页
+      - 物理内存不足
+
+munmap 定义如下：
+
+```
+fn sys_munmap(start: usize, len: usize) -> isize
+```
+
+- syscall ID：215
+- 取消到 [start, start + len) 虚存的映射
+- 参数和返回值请参考 mmap
+- 说明：
+  :   - 为了简单，参数错误时不考虑内存的恢复和回收。
+- 可能的错误：
+  :   - [start, start + len) 中存在未被映射的虚存。
+
+TIPS：注意 prot 参数的语义，它与内核定义的 MapPermission 有明显不同！
+
+#### 实验要求
+
+- 实现分支：ch4-lab
+- 实验目录要求不变
+- 通过所有测例
+
+  在 os 目录下 make run TEST=1 测试 sys\_get\_time， make run TEST=2 测试 map 和 unmap。
+
+challenge: 支持多核。
+
+### 问答作业
+
+无
+
+### 实验练习的提交报告要求
+
+- 简单总结本次实验与上个实验相比你增加的东西。（控制在5行以内，不要贴代码）
+- 完成问答问题。
+- (optional) 你对本次实验设计及难度的看法。

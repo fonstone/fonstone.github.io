@@ -2,7 +2,7 @@
 title: "进程管理的核心数据结构"
 description: "为了更好实现进程管理，同时也使得操作系统整体架构更加灵活，能够满足后续的一些需求，我们需要重新设计一些数据结构包含的内容及接口。本节将按照如下顺序来进行介绍："
 date: "2026-07-12"
-order: 89
+order: 81
 tags: ["PCB", "进程控制块", "任务", "数据结构", "进程管理"]
 est_time: "45分钟"
 ---
@@ -562,3 +562,36 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
 ```
 
 这里，我们需要传入即将被切换出去的任务的 task\_cx\_ptr 来在合适的位置保存任务上下文，之后就可以通过 \_\_switch 来切换到 idle 控制流。从源代码来看，切换回去之后，内核将跳转到 run\_tasks 中 \_\_switch 返回之后的位置，也即开启了下一轮的调度循环。
+
+---
+
+## 本节练习
+
+1. \* 实现一个使用nice,fork,exec,spawn等与进程管理相关的系统调用的linux应用程序。
+
+   参考实现：
+
+   ```
+   #include <unistd.h>
+   #include <stdlib.h>
+   #include <stdio.h>
+   int main(void)
+   {
+      int childpid;
+      int i;
+
+      if (fork() == 0){
+            //child process
+            char * execv_str[] = {"echo", "child process, executed by execv",NULL};
+            if (execv("/usr/bin/echo",execv_str) <0 ){
+               perror("error on exec\n");
+               exit(0);
+            }
+      }else{
+            //parent process
+            wait(&childpid);
+            printf("parent process, execv done\n");
+      }
+      return 0;
+   }
+   ```

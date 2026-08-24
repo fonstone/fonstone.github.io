@@ -25,3 +25,9 @@ openEuler在具有通用的Linux系统架构，包括内存管理子系统、进
 | KAE | 鲲鹏加速引擎(Kunpeng Accelerator Engine) | <https://docs.openeuler.org/zh/docs/21.03/docs/Administration>/使用KAE加速引擎.html |
 | MPAM | Memory System Resource Partitioning and Monitoring | <https://mp.weixin.qq.com/s/0TgrFjFtobmk-h1HwJskqg> |
 | 毕昇 JDK | Huawei开源JDK | <https://gitee.com/openeuler/bishengjdk-8/wikis/Home> |
+
+---
+
+## 本节练习
+
+10. \* 请简要描述支持单个应用的OS、批处理OS、多道程序OS、分时共享OS的特点。

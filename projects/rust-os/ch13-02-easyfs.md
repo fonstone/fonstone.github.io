@@ -2,7 +2,7 @@
 title: "简易文件系统 easy-fs"
 description: "本节我们介绍一个简易文件系统的实现 -- easy-fs。作为一个文件系统而言，它的磁盘布局（为了叙述方便，我们用磁盘来指代一系列持久存储设备）体现在磁盘上各扇区的内容上，而它解析磁盘布局得到的逻辑目录树结构则是通过内存..."
 date: "2026-07-12"
-order: 95
+order: 86
 tags: ["easy-fs", "文件系统", "磁盘布局", "inode", "实现"]
 est_time: "50分钟"
 ---
@@ -1516,3 +1516,495 @@ fn easy_fs_pack() -> std::io::Result<()> {
 - 第 48 行开始，枚举 apps 中的每个应用，从放置应用执行程序的目录中找到对应应用的 ELF 文件（这是一个 Linux 上的文件），并将数据读入内存。接着需要在 easy-fs 中创建一个同名文件并将 ELF 数据写入到这个文件中。这个过程相当于将 Linux 上的文件系统中的一个文件复制到我们的 easy-fs 中。
 
 尽管没有进行任何同步写回磁盘的操作，我们也不用担心块缓存中的修改没有写回磁盘。因为在 easy-fs-fuse 这个应用正常退出的过程中，块缓存因生命周期结束会被回收，届时如果块缓存的 modified 标志为 true ，就会将其修改写回磁盘。
+
+---
+
+## 本节练习
+
+1. \* 扩展easy-fs文件系统功能，扩大单个文件的大小,支持三重间接inode。
+
+
+在修改之前，先看看原始inode的结构：
+
+```
+/// The max number of direct inodes
+const INODE_DIRECT_COUNT: usize = 28;
+
+#[repr(C)]
+pub struct DiskInode {
+    pub size: u32,
+    pub direct: [u32; INODE_DIRECT_COUNT],
+    pub indirect1: u32,
+    pub indirect2: u32,
+    type_: DiskInodeType,
+}
+
+#[derive(PartialEq)]
+pub enum DiskInodeType {
+    File,
+    Directory,
+}
+```
+
+一个 DiskInode 在磁盘上占据128字节的空间。我们考虑加入 indirect3 字段并缩减 INODE\_DIRECT\_COUNT 为27以保持 DiskInode 的大小不变。此时直接索引可索引13.5KiB的内容，一级间接索引和二级间接索引仍然能索引64KiB和8MiB的内容，而三级间接索引能索引128 \* 8MiB = 1GiB的内容。当文件大小大于13.5KiB + 64KiB + 8MiB时，需要用到三级间接索引。
+
+下面的改动都集中在 easy-fs/src/layout.rs 中。首先修改 DiskInode 和相关的常量定义。
+
+```
+pub struct DiskInode {
+    pub size: u32,
+    pub direct: [u32; INODE_DIRECT_COUNT],
+    pub indirect1: u32,
+    pub indirect2: u32,
+    pub indirect3: u32,
+    type_: DiskInodeType,
+}
+```
+
+在计算给定文件大小对应的块总数时，需要新增对三级间接索引的处理。三级间接索引的存在使得二级间接索引所需的块数不再计入所有的剩余数据块。
+
+```
+pub fn total_blocks(size: u32) -> u32 {
+    let data_blocks = Self::_data_blocks(size) as usize;
+    let mut total = data_blocks as usize;
+    // indirect1
+    if data_blocks > INODE_DIRECT_COUNT {
+        total += 1;
+    }
+    // indirect2
+    if data_blocks > INDIRECT1_BOUND {
+        total += 1;
+        // sub indirect1
+        let level2_extra =
+            (data_blocks - INDIRECT1_BOUND + INODE_INDIRECT1_COUNT - 1) / INODE_INDIRECT1_COUNT;
+        total += level2_extra.min(INODE_INDIRECT1_COUNT);
+    }
+    // indirect3
+    if data_blocks > INDIRECT2_BOUND {
+        let remaining = data_blocks - INDIRECT2_BOUND;
+        let level2_extra = (remaining + INODE_INDIRECT2_COUNT - 1) / INODE_INDIRECT2_COUNT;
+        let level3_extra = (remaining + INODE_INDIRECT1_COUNT - 1) / INODE_INDIRECT1_COUNT;
+        total += 1 + level2_extra + level3_extra;
+    }
+    total as u32
+}
+```
+
+DiskInode 的 get\_block\_id 方法中遇到三级间接索引要额外读取三次块缓存。
+
+```
+pub fn get_block_id(&self, inner_id: u32, block_device: &Arc<dyn BlockDevice>) -> u32 {
+    let inner_id = inner_id as usize;
+    if inner_id < INODE_DIRECT_COUNT {
+        // ...
+    } else if inner_id < INDIRECT1_BOUND {
+        // ...
+    } else if inner_id < INDIRECT2_BOUND {
+        // ...
+    } else { // 对三级间接索引的处理
+        let last = inner_id - INDIRECT2_BOUND;
+        let indirect1 = get_block_cache(self.indirect3 as usize, Arc::clone(block_device))
+            .lock()
+            .read(0, |indirect3: &IndirectBlock| {
+                indirect3[last / INODE_INDIRECT2_COUNT]
+            });
+        let indirect2 = get_block_cache(indirect1 as usize, Arc::clone(block_device))
+            .lock()
+            .read(0, |indirect2: &IndirectBlock| {
+                indirect2[(last % INODE_INDIRECT2_COUNT) / INODE_INDIRECT1_COUNT]
+            });
+        get_block_cache(indirect2 as usize, Arc::clone(block_device))
+            .lock()
+            .read(0, |indirect1: &IndirectBlock| {
+                indirect1[(last % INODE_INDIRECT2_COUNT) % INODE_INDIRECT1_COUNT]
+            })
+    }
+}
+```
+
+方法 increase\_size 的实现本身比较繁琐，如果按照原有的一级和二级间接索引的方式实现对三级间接索引的处理，代码会比较丑陋。实际上多重间接索引是树结构，变量 current\_blocks 和 total\_blocks 对应着当前树的叶子数量和目标叶子数量，我们可以用递归函数来实现树的生长。先实现以下的辅助方法：
+
+```
+/// Helper to build tree recursively
+/// extend number of leaves from `src_leaf` to `dst_leaf`
+fn build_tree(
+    &self,
+    blocks: &mut alloc::vec::IntoIter<u32>,
+    block_id: u32,
+    mut cur_leaf: usize,
+    src_leaf: usize,
+    dst_leaf: usize,
+    cur_depth: usize,
+    dst_depth: usize,
+    block_device: &Arc<dyn BlockDevice>,
+) -> usize {
+    if cur_depth == dst_depth {
+        return cur_leaf + 1;
+    }
+    get_block_cache(block_id as usize, Arc::clone(block_device))
+        .lock()
+        .modify(0, |indirect_block: &mut IndirectBlock| {
+            let mut i = 0;
+            while i < INODE_INDIRECT1_COUNT && cur_leaf < dst_leaf {
+                if cur_leaf >= src_leaf {
+                    indirect_block[i] = blocks.next().unwrap();
+                }
+                cur_leaf = self.build_tree(
+                    blocks,
+                    indirect_block[i],
+                    cur_leaf,
+                    src_leaf,
+                    dst_leaf,
+                    cur_depth + 1,
+                    dst_depth,
+                    block_device,
+                );
+                i += 1;
+            }
+        });
+    cur_leaf
+}
+```
+
+然后修改方法 increase\_size。不要忘记在填充二级间接索引时维护 current\_blocks 的变化，并限制目标索引 (a1, b1) 的范围。
+
+```
+/// Increase the size of current disk inode
+pub fn increase_size(
+    &mut self,
+    new_size: u32,
+    new_blocks: Vec<u32>,
+    block_device: &Arc<dyn BlockDevice>,
+) {
+    // ...
+    // alloc indirect2
+    // ...
+    // fill indirect2 from (a0, b0) -> (a1, b1)
+    // 不要忘记限制 (a1, b1) 的范围
+    // ...
+    // alloc indirect3
+    if total_blocks > INODE_INDIRECT2_COUNT as u32 {
+        if current_blocks == INODE_INDIRECT2_COUNT as u32 {
+            self.indirect3 = new_blocks.next().unwrap();
+        }
+        current_blocks -= INODE_INDIRECT2_COUNT as u32;
+        total_blocks -= INODE_INDIRECT2_COUNT as u32;
+    } else {
+        return;
+    }
+    // fill indirect3
+    self.build_tree(
+        &mut new_blocks,
+        self.indirect3,
+        0,
+        current_blocks as usize,
+        total_blocks as usize,
+        0,
+        3,
+        block_device,
+    );
+```
+
+对方法 clear\_size 的修改与 increase\_size 类似。先实现辅助方法 collect\_tree\_blocks：
+
+```
+/// Helper to recycle blocks recursively
+fn collect_tree_blocks(
+    &self,
+    collected: &mut Vec<u32>,
+    block_id: u32,
+    mut cur_leaf: usize,
+    max_leaf: usize,
+    cur_depth: usize,
+    dst_depth: usize,
+    block_device: &Arc<dyn BlockDevice>,
+) -> usize {
+    if cur_depth == dst_depth {
+        return cur_leaf + 1;
+    }
+    get_block_cache(block_id as usize, Arc::clone(block_device))
+        .lock()
+        .read(0, |indirect_block: &IndirectBlock| {
+            let mut i = 0;
+            while i < INODE_INDIRECT1_COUNT && cur_leaf < max_leaf {
+                collected.push(indirect_block[i]);
+                cur_leaf = self.collect_tree_blocks(
+                    collected,
+                    indirect_block[i],
+                    cur_leaf,
+                    max_leaf,
+                    cur_depth + 1,
+                    dst_depth,
+                    block_device,
+                );
+                i += 1;
+            }
+        });
+    cur_leaf
+}
+```
+
+然后修改方法 clear\_size。
+
+```
+/// Clear size to zero and return blocks that should be deallocated.
+/// We will clear the block contents to zero later.
+pub fn clear_size(&mut self, block_device: &Arc<dyn BlockDevice>) -> Vec<u32> {
+    // ...
+    // indirect2 block
+    // ...
+    // indirect2
+    // 不要忘记限制 (a1, b1) 的范围
+    self.indirect2 = 0;
+    // indirect3 block
+    assert!(data_blocks <= INODE_INDIRECT3_COUNT);
+    if data_blocks > INODE_INDIRECT2_COUNT {
+        v.push(self.indirect3);
+        data_blocks -= INODE_INDIRECT2_COUNT;
+    } else {
+        return v;
+    }
+    // indirect3
+    self.collect_tree_blocks(&mut v, self.indirect3, 0, data_blocks, 0, 3, block_device);
+    self.indirect3 = 0;
+    v
+}
+```
+
+4. \*\* 扩展easy-fs文件系统功能，支持二级目录结构。可扩展：支持N级目录结构。
+
+
+实际上easy-fs现有的代码支持目录的存在，只不过整个文件系统只有根目录一个目录，我们考虑放宽现有代码的一些限制。
+
+原本的 easy-fs/src/vfs.rs 中有一个用于在当前目录下创建常规文件的 create 方法，我们给它加个参数并包装一下：
+
+```
+impl Inode {
+    /// Create inode under current inode by name
+    fn create_inode(&self, name: &str, inode_type: DiskInodeType) -> Option<Arc<Inode>> {
+        let mut fs = self.fs.lock();
+        let op = |root_inode: &DiskInode| {
+            // assert it is a directory
+            assert!(root_inode.is_dir());
+            // has the file been created?
+            self.find_inode_id(name, root_inode)
+        };
+        if self.read_disk_inode(op).is_some() {
+            return None;
+        }
+        // create a new file
+        // alloc a inode with an indirect block
+        let new_inode_id = fs.alloc_inode();
+        // initialize inode
+        let (new_inode_block_id, new_inode_block_offset) = fs.get_disk_inode_pos(new_inode_id);
+        get_block_cache(new_inode_block_id as usize, Arc::clone(&self.block_device))
+            .lock()
+            .modify(new_inode_block_offset, |new_inode: &mut DiskInode| {
+                new_inode.initialize(inode_type);
+            });
+        self.modify_disk_inode(|root_inode| {
+            // append file in the dirent
+            let file_count = (root_inode.size as usize) / DIRENT_SZ;
+            let new_size = (file_count + 1) * DIRENT_SZ;
+            // increase size
+            self.increase_size(new_size as u32, root_inode, &mut fs);
+            // write dirent
+            let dirent = DirEntry::new(name, new_inode_id);
+            root_inode.write_at(
+                file_count * DIRENT_SZ,
+                dirent.as_bytes(),
+                &self.block_device,
+            );
+        });
+
+        let (block_id, block_offset) = fs.get_disk_inode_pos(new_inode_id);
+        block_cache_sync_all();
+        // return inode
+        Some(Arc::new(Self::new(
+            block_id,
+            block_offset,
+            self.fs.clone(),
+            self.block_device.clone(),
+        )))
+        // release efs lock automatically by compiler
+    }
+
+    /// Create regular file under current inode
+    pub fn create(&self, name: &str) -> Option<Arc<Inode>> {
+        self.create_inode(name, DiskInodeType::File)
+    }
+
+    /// Create directory under current inode
+    pub fn create_dir(&self, name: &str) -> Option<Arc<Inode>> {
+        self.create_inode(name, DiskInodeType::Directory)
+    }
+}
+```
+
+这样我们就可以在一个目录底下调用 create\_dir 创建新目录了（笑）。本质上我们什么也没改，我们再改改其它方法装装样子：
+
+```
+impl Inode {
+    /// List inodes under current inode
+    pub fn ls(&self) -> Vec<String> {
+        let _fs = self.fs.lock();
+        self.read_disk_inode(|disk_inode| {
+            let mut v: Vec<String> = Vec::new();
+            if disk_inode.is_file() {
+                return v;
+            }
+
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            for i in 0..file_count {
+                let mut dirent = DirEntry::empty();
+                assert_eq!(
+                    disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
+                    DIRENT_SZ,
+                );
+                v.push(String::from(dirent.name()));
+            }
+            v
+        })
+    }
+
+    /// Write data to current inode
+    pub fn write_at(&self, offset: usize, buf: &[u8]) -> usize {
+        let mut fs = self.fs.lock();
+        let size = self.modify_disk_inode(|disk_inode| {
+            assert!(disk_inode.is_file());
+
+            self.increase_size((offset + buf.len()) as u32, disk_inode, &mut fs);
+            disk_inode.write_at(offset, buf, &self.block_device)
+        });
+        block_cache_sync_all();
+        size
+    }
+
+    /// Clear the data in current inode
+    pub fn clear(&self) {
+        let mut fs = self.fs.lock();
+        self.modify_disk_inode(|disk_inode| {
+            assert!(disk_inode.is_file());
+
+            let size = disk_inode.size;
+            let data_blocks_dealloc = disk_inode.clear_size(&self.block_device);
+            assert!(data_blocks_dealloc.len() == DiskInode::total_blocks(size) as usize);
+            for data_block in data_blocks_dealloc.into_iter() {
+                fs.dealloc_data(data_block);
+            }
+        });
+        block_cache_sync_all();
+    }
+}
+```
+
+对一个普通文件的inode调用 ls 方法毫无意义，但为了保持接口不变，我们返回一个空 Vec。随意地清空或写入目录文件都会损坏目录结构，这里直接在 write\_at 和 clear 方法中断言，你也可以改成其它的错误处理方式。
+
+接下来是实际一点的修改（有，但不多）：我们让 find 方法支持简单的相对路径（不含“.”和“..”）。
+
+```
+impl Inode {
+    /// Find inode under current inode by **path**
+    pub fn find(&self, path: &str) -> Option<Arc<Inode>> {
+        let fs = self.fs.lock();
+        let mut block_id = self.block_id as u32;
+        let mut block_offset = self.block_offset;
+        for name in path.split('/').filter(|s| !s.is_empty()) {
+            let inode_id = get_block_cache(block_id as usize, self.block_device.clone())
+                .lock()
+                .read(block_offset, |disk_inode: &DiskInode| {
+                    if disk_inode.is_file() {
+                        return None;
+                    }
+                    self.find_inode_id(name, disk_inode)
+                });
+            if inode_id.is_none() {
+                return None;
+            }
+            (block_id, block_offset) = fs.get_disk_inode_pos(inode_id.unwrap());
+        }
+        Some(Arc::new(Self::new(
+            block_id,
+            block_offset,
+            self.fs.clone(),
+            self.block_device.clone(),
+        )))
+    }
+}
+```
+
+最后在 easy-fs-fuse/src/main.rs 里试试我们添加的新特性：
+
+```
+fn read_string(file: &Arc<Inode>) -> String {
+    let mut read_buffer = [0u8; 512];
+    let mut offset = 0usize;
+    let mut read_str = String::new();
+    loop {
+        let len = file.read_at(offset, &mut read_buffer);
+        if len == 0 {
+            break;
+        }
+        offset += len;
+        read_str.push_str(core::str::from_utf8(&read_buffer[..len]).unwrap());
+    }
+    read_str
+}
+
+fn tree(inode: &Arc<Inode>, name: &str, depth: usize) {
+    for _ in 0..depth {
+        print!("  ");
+    }
+    println!("{}", name);
+    for name in inode.ls() {
+        let child = inode.find(&name).unwrap();
+        tree(&child, &name, depth + 1);
+    }
+}
+
+#[test]
+fn efs_dir_test() -> std::io::Result<()> {
+    let block_file = Arc::new(BlockFile(Mutex::new({
+        let f = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open("target/fs.img")?;
+        f.set_len(8192 * 512).unwrap();
+        f
+    })));
+    EasyFileSystem::create(block_file.clone(), 4096, 1);
+    let efs = EasyFileSystem::open(block_file.clone());
+    let root = Arc::new(EasyFileSystem::root_inode(&efs));
+    root.create("f1");
+    root.create("f2");
+
+    let d1 = root.create_dir("d1").unwrap();
+
+    let f3 = d1.create("f3").unwrap();
+    let d2 = d1.create_dir("d2").unwrap();
+
+    let f4 = d2.create("f4").unwrap();
+    tree(&root, "/", 0);
+
+    let f3_content = "3333333";
+    let f4_content = "4444444444444444444";
+    f3.write_at(0, f3_content.as_bytes());
+    f4.write_at(0, f4_content.as_bytes());
+
+    assert_eq!(read_string(&d1.find("f3").unwrap()), f3_content);
+    assert_eq!(read_string(&root.find("/d1/f3").unwrap()), f3_content);
+    assert_eq!(read_string(&d2.find("f4").unwrap()), f4_content);
+    assert_eq!(read_string(&d1.find("d2/f4").unwrap()), f4_content);
+    assert_eq!(read_string(&root.find("/d1/d2/f4").unwrap()), f4_content);
+    assert!(f3.find("whatever").is_none());
+    Ok(())
+}
+```
+
+如果你觉得这个练习不够过瘾，可以试试下面的任务：
+
+- 让easy-fs支持包含“.”和“..”的相对路径。你可以在目录文件里存放父目录的inode。
+- 在内核里给进程加上当前路径信息，然后实现chdir和getcwd。当然，也可以顺便补上openat和mkdir。
+
+5. \*\*\* 扩展easy-fs文件系统功能，通过日志机制支持crash一致性。

@@ -2,7 +2,7 @@
 title: "实验环境配置（RISC-V）"
 description: "本节我们将完成实验环境配置并成功运行 rCore-Tutorial-v3。根据您的需求和操作系统，我们提供了多种配置方式，支持大多数 Linux 发行版、macOS、Windows 以及部分 RISC-V 开发板。"
 date: "2026-07-12"
-order: 11
+order: 10
 tags: ["RISC-V", "QEMU", "Docker", "工具链", "环境配置"]
 est_time: "30分钟"
 ---
@@ -492,3 +492,9 @@ sudo apt install python3-serial
   > k210-hal = { git = "https://gitee.com/wyfcyx/k210-hal" }
   > k210-soc = { git = "https://gitee.com/wyfcyx/k210-soc" }
   > ```
+
+---
+
+## 本节练习
+
+1. \* 在你日常使用的操作系统环境中安装并配置好实验环境。简要说明你碰到的问题/困难和解决方法。

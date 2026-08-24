@@ -2,7 +2,7 @@
 title: "管道"
 description: "在上一节，我们实现了基于文件接口的标准输入和输出，这样一个进程可以根据不同的输入产生对应的输出。本节我们将基于上一节介绍的文件接口 File 来把不同进程的输入和输出连接起来，从而在不改变应用程序代码的情况下，让操作系统..."
 date: "2026-07-12"
-order: 74
+order: 68
 tags: ["管道", "pipe", "进程间通信", "数据流"]
 est_time: "30分钟"
 ---
@@ -363,3 +363,311 @@ Pipe 的 write 方法 -- 即通过管道的写端向管道中写入数据的实�
 
 这一章讲述的重点是一种有趣的进程间通信的机制--管道。通过管道，能够把不同进程的输入和输出连接在一起，实现进程功能的组合。为了能够统一表示输入，输出，以及管道，我们给出了与 **地址空间** 、 **进程** 齐名的操作系统抽象 **文件** ，并基于文件重构了操作系统的输入/输出机制。目前，仅仅实现了非常简单的基于父子进程的管道机制。在操作系统层面，还缺乏对命令行参数的支持，在应用层面，还缺少I/O重定向和shell程序中基于 "|" 管道符号的支持。但我们已经建立了基本的进程通信机制，实现了支持协作的白垩纪“迅猛龙”操作系统的大部分功能，使得应用程序之间可以合作完成更复杂的工作。
 但如果要让相互独立的应用程序之间也能合作，还需要对应用的执行参数进行一定的扩展，支持进程执行的命令行参数。这样才能在应用程序的层面，完善I/O重定向，并在shell中支持基于 "|" 管道符号，形成更加灵活的独立进程间的通信能力和shell命令行支持。
+
+---
+
+## 本节练习
+
+1. \* 分别编写基于UNIX System V IPC的管道、共享内存、信号量和消息队列的Linux应用程序，实现进程间的数据交换。
+
+   > 管道
+   >
+   > ```
+   > #include <unistd.h>
+   > #include <stdio.h>
+   > #include <stdlib.h>
+   > #include <string.h>
+   >
+   > int main(void) {
+   >   int pipefd[2];
+   >   // pipe syscall creates a pipe with two ends
+   >   // pipefd[0] is the read end
+   >   // pipefd[1] is the write end
+   >   // ref: https://man7.org/linux/man-pages/man2/pipe.2.html
+   >   if (pipe(pipefd) == -1) {
+   >     perror("failed to create pipe");
+   >     exit(EXIT_FAILURE);
+   >   }
+   >
+   >   int pid = fork();
+   >   if (pid == -1) {
+   >     perror("failed to fork");
+   >     exit(EXIT_FAILURE);
+   >   }
+   >
+   >   if (pid == 0) {
+   >     // child process reads from the pipe
+   >     close(pipefd[1]); // close the write end
+   >     // read a byte at a time
+   >     char buf;
+   >     while (read(pipefd[0], &buf, 1) > 0) {
+   >       printf("%s", &buf);
+   >     }
+   >     close(pipefd[0]); // close the read end
+   >   } else {
+   >     // parent process writes to the pipe
+   >     close(pipefd[0]); // close the read end
+   >     // parent writes
+   >     char* msg = "hello from pipe\n";
+   >     write(pipefd[1], msg, strlen(msg)); // omitting error handling
+   >     close(pipefd[1]); // close the write end
+   >   }
+   >
+   >   return EXIT_SUCCESS;
+   > }
+   > ```
+   >
+   > 共享内存
+   >
+   > ```
+   > #include <unistd.h>
+   > #include <stdio.h>
+   > #include <stdlib.h>
+   > #include <string.h>
+   > #include <sys/shm.h>
+   >
+   > int main(void) {
+   >   // create a new anonymous shared memory segment of page size, with a permission of 0600
+   >   // ref: https://man7.org/linux/man-pages/man2/shmget.2.html
+   >   int shmid = shmget(IPC_PRIVATE, sysconf(_SC_PAGESIZE), IPC_CREAT | 0600);
+   >   if (shmid == -1) {
+   >     perror("failed to create shared memory");
+   >     exit(EXIT_FAILURE);
+   >   }
+   >
+   >   int pid = fork();
+   >   if (pid == -1) {
+   >     perror("failed to fork");
+   >     exit(EXIT_FAILURE);
+   >   }
+   >
+   >   if (pid == 0) {
+   >     // attach the shared memory into child process's address space
+   >     char* shm = shmat(shmid, NULL, 0);
+   >     while (!shm[0]) {
+   >       // wait until the parent signals that the data is ready
+   >       // WARNING: this is not the correct way to synchronize processes
+   >       // on SMP systems due to memory orders, but this implementation
+   >       // is chosen here specifically for ease of understanding
+   >     }
+   >     printf("%s", shm + 1);
+   >   } else {
+   >     // attach the shared memory into parent process's address space
+   >     char* shm = shmat(shmid, NULL, 0);
+   >     // copy message into shared memory
+   >     strcpy(shm + 1, "hello from shared memory\n");
+   >     // signal that the data is ready
+   >     shm[0] = 1;
+   >   }
+   >
+   >   return EXIT_SUCCESS;
+   > }
+   > ```
+   >
+   > 信号量
+   >
+   > ```
+   > #include <unistd.h>
+   > #include <stdio.h>
+   > #include <stdlib.h>
+   > #include <string.h>
+   > #include <sys/sem.h>
+   >
+   > int main(void) {
+   >   // create a new anonymous semaphore set, with permission 0600
+   >   // ref: https://man7.org/linux/man-pages/man2/semget.2.html
+   >   int semid = semget(IPC_PRIVATE, 1, IPC_CREAT | 0600);
+   >   if (semid == -1) {
+   >     perror("failed to create semaphore");
+   >     exit(EXIT_FAILURE);
+   >   }
+   >
+   >   struct sembuf sops[1];
+   >   sops[0].sem_num = 0; // operate on semaphore 0
+   >   sops[0].sem_op  = 1; // increase the semaphore's value by 1
+   >   sops[0].sem_flg = 0;
+   >   if (semop(semid, sops, 1) == -1) {
+   >     perror("failed to increase semaphore");
+   >     exit(EXIT_FAILURE);
+   >   }
+   >
+   >   int pid = fork();
+   >   if (pid == -1) {
+   >     perror("failed to fork");
+   >     exit(EXIT_FAILURE);
+   >   }
+   >
+   >   if (pid == 0) {
+   >     printf("hello from child, waiting for parent to release semaphore\n");
+   >     struct sembuf sops[1];
+   >     sops[0].sem_num = 0; // operate on semaphore 0
+   >     sops[0].sem_op  = 0; // wait for the semaphore to become 0
+   >     sops[0].sem_flg = 0;
+   >     if (semop(semid, sops, 1) == -1) {
+   >       perror("failed to wait on semaphore");
+   >       exit(EXIT_FAILURE);
+   >     }
+   >     printf("hello from semaphore\n");
+   >   } else {
+   >     printf("hello from parent, waiting three seconds before release semaphore\n");
+   >     // sleep for three second
+   >     sleep(3);
+   >     struct sembuf sops[1];
+   >     sops[0].sem_num = 0; // operate on semaphore 0
+   >     sops[0].sem_op  = -1; // decrease the semaphore's value by 1
+   >     sops[0].sem_flg = 0;
+   >     if (semop(semid, sops, 1) == -1) {
+   >       perror("failed to decrease semaphore");
+   >       exit(EXIT_FAILURE);
+   >     }
+   >   }
+   >
+   >   return EXIT_SUCCESS;
+   > }
+   > ```
+   >
+   > 消息队列
+   >
+   > ```
+   > #include <unistd.h>
+   > #include <stdio.h>
+   > #include <stdlib.h>
+   > #include <string.h>
+   > #include <sys/msg.h>
+   >
+   > struct msgbuf {
+   >   long mtype;
+   >   char mtext[1];
+   > };
+   >
+   > int main(void) {
+   >   // create a new anonymous message queue, with a permission of 0600
+   >   // ref: https://man7.org/linux/man-pages/man2/msgget.2.html
+   >   int msgid = msgget(IPC_PRIVATE, IPC_CREAT | 0600);
+   >   if (msgid == -1) {
+   >     perror("failed to create message queue");
+   >     exit(EXIT_FAILURE);
+   >   }
+   >
+   >   int pid = fork();
+   >   if (pid == -1) {
+   >     perror("failed to fork");
+   >     exit(EXIT_FAILURE);
+   >   }
+   >
+   >   if (pid == 0) {
+   >     // child process receives message
+   >     struct msgbuf buf;
+   >     while (msgrcv(msgid, &buf, sizeof(buf.mtext), 1, 0) != -1) {
+   >       printf("%c", buf.mtext[0]);
+   >     }
+   >   } else {
+   >     // parent process sends message
+   >     char* msg = "hello from message queue\n";
+   >     struct msgbuf buf;
+   >     buf.mtype = 1;
+   >     for (int i = 0; i < strlen(msg); i ++) {
+   >       buf.mtext[0] = msg[i];
+   >       msgsnd(msgid, &buf, sizeof(buf.mtext), 0);
+   >     }
+   >     struct msqid_ds info;
+   >     while (msgctl(msgid, IPC_STAT, &info), info.msg_qnum > 0) {
+   >       // wait for the message queue to be fully consumed
+   >     }
+   >     // close message queue
+   >     msgctl(msgid, IPC_RMID, NULL);
+   >   }
+   >
+   >   return EXIT_SUCCESS;
+   > }
+
+3. \*\* 参考rCore Tutorial 中的shell应用程序，在Linux环境下，编写一个简单的shell应用程序，通过管道相关的系统调用，能够支持管道功能。
+
+   > ```
+   > #include <stdio.h>
+   > #include <stdlib.h>
+   > #include <string.h>
+   > #include <sys/wait.h>
+   > #include <unistd.h>
+   >
+   > int parse(char* line, char** argv) {
+   >   size_t len;
+   >   // read a line from stdin
+   >   if (getline(&line, &len, stdin) == -1)
+   >     return -1;
+   >   // remove trailing newline
+   >   line[strlen(line) - 1] = '\0';
+   >   // split line into tokens
+   >   int i = 0;
+   >   char* token = strtok(line, " ");
+   >   while (token != NULL) {
+   >     argv[i] = token;
+   >     token = strtok(NULL, " ");
+   >     i++;
+   >   }
+   >   return 0;
+   > }
+   >
+   > int concat(char** argv1, char** argv2) {
+   >     // create pipe
+   >     int pipefd[2];
+   >     if (pipe(pipefd) == -1)
+   >       return -1;
+   >
+   >     // run the first command
+   >     int pid1 = fork();
+   >     if (pid1 == -1)
+   >       return -1;
+   >     if (pid1 == 0) {
+   >       dup2(pipefd[1], STDOUT_FILENO);
+   >       close(pipefd[0]);
+   >       close(pipefd[1]);
+   >       execvp(argv1[0], argv1);
+   >     }
+   >
+   >     // run the second command
+   >     int pid2 = fork();
+   >     if (pid2 == -1)
+   >       return -1;
+   >     if (pid2 == 0) {
+   >       dup2(pipefd[0], STDIN_FILENO);
+   >       close(pipefd[0]);
+   >       close(pipefd[1]);
+   >       execvp(argv2[0], argv2);
+   >     }
+   >
+   >     // wait for them to exit
+   >     close(pipefd[0]);
+   >     close(pipefd[1]);
+   >     wait(&pid1);
+   >     wait(&pid2);
+   >     return 0;
+   > }
+   >
+   > int main(void) {
+   >   printf("[command 1]$ ");
+   >   char* line1 = NULL;
+   >   char* argv1[16] = {NULL};
+   >   if (parse(line1, argv1) == -1) {
+   >     exit(EXIT_FAILURE);
+   >   }
+   >   printf("[command 2]$ ");
+   >   char* line2 = NULL;
+   >   char* argv2[16] = {NULL};
+   >   if (parse(line2, argv2) == -1) {
+   >     exit(EXIT_FAILURE);
+   >   }
+   >   concat(argv1, argv2);
+   >   free(line1);
+   >   free(line2);
+   > }
+
+3. \*\* 比较在Linux中的无名管道（普通管道）与有名管道（FIFO）的异同。
+
+   > 同：两者都是进程间信息单向传递的通路，可以在进程之间传递一个字节流。异：普通管道不存在文件系统上对应的文件，而是仅由读写两端两个fd表示，而FIFO则是由文件系统上的一个特殊文件表示，进程打开该文件后获得对应的fd。
+
+4. \*\* 请描述Linux中的无名管道机制的特征和适用场景。
+
+   > 无名管道用于创建在进程间传递的一个字节流，适合用于流式传递大量数据，但是进程需要自己处理消息间的分割。
+
+1. 举出使用 pipe 的一个实际应用的例子。

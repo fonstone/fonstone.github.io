@@ -2,7 +2,7 @@
 title: "移除标准库依赖"
 description: "本章的目标是构建一个内核最小执行环境使得它能在 RV64GC （即实现了IMAFDC规范的 RISC-V 64位CPU）裸机上运行，在功能上它则像上一节最简单的 Rust 应用程序一样能够打印 Hello, world!..."
 date: "2026-07-12"
-order: 18
+order: 17
 tags: ["no_std", "标准库", "裸机", "Rust", "链接"]
 est_time: "25分钟"
 ---

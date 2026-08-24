@@ -2,7 +2,7 @@
 title: "附录A：Rust 系统编程入门"
 description: ""
 date: "2026-07-12"
-order: 13
+order: 12
 tags: ["附录", "Rust", "学习资源", "系统编程"]
 est_time: "15分钟"
 ---

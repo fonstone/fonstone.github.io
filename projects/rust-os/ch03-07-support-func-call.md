@@ -2,7 +2,7 @@
 title: "为内核支持函数调用"
 description: "上一节我们成功在 Qemu 上执行了内核的第一条指令，它是我们在 entry.asm 中手写汇编代码得到的。然而，我们无论如何也不想仅靠手写汇编代码的方式编写我们的内核，绝大部分功能我们都想使用 Rust 语言来实现。不..."
 date: "2026-07-12"
-order: 21
+order: 20
 tags: ["函数调用", "栈", "调用约定", "ABI", "内核"]
 est_time: "40分钟"
 ---
@@ -298,3 +298,157 @@ linker\_symbol\_addr! 宏就是为统一处理这类转换而引入的。宏参�
 > C 语言中的指针相当于 Rust 中的裸指针，它无所不能但又太过于灵活，程序员对其不谨慎的使用常常会引起很多内存不安全问题，最常见的如悬垂指针和多次回收的问题，Rust 编译器没法确认程序员对它的使用是否安全，因此将其划到 unsafe Rust 的领域。在 safe Rust 中，我们有引用 &/&mut 以及各种功能各异的智能指针 Box<T>/RefCell<T>/Rc<T> 可以使用，只要按照 Rust 的规则来使用它们便可借助编译器在编译期就解决很多潜在的内存不安全问题。
 
 本节我们介绍了函数调用和栈的背景知识，通过分配栈空间并正确设置栈指针在内核中使能了函数调用并成功将控制权转交给 Rust 代码，从此我们终于可以利用强大的 Rust 语言来编写内核的各项功能了。下一节中我们将进行构建“三叶虫”操作系统的最后一个步骤：即基于 RustSBI 提供的服务成功在屏幕上打印 Hello, world! 。
+
+---
+
+## 本节练习
+
+3. \*\* 实现一个基于rcore/ucore tutorial的应用程序C，用sleep系统调用睡眠5秒（in rcore/ucore tutorial v3: Branch ch1）
+
+   > 以使用 GCC 编译的 C 语言程序为例，使用编译参数 -fno-omit-frame-pointer 的情况下，会保存栈帧指针 fp 。
+   >
+   > fp 指向的栈位置的负偏移量处保存了两个值：
+   >
+   > - -8(fp) 是保存的 ra
+   > - -16(fp) 是保存的上一个 fp
+   >
+   > 因此我们可以像链表一样，从当前的 fp 寄存器的值开始，每次找到上一个 fp ，逐帧恢复我们的调用栈：
+   >
+   > ```
+   > #include <inttypes.h>
+   > #include <stdint.h>
+   > #include <stdio.h>
+   >
+   > // Compile with -fno-omit-frame-pointer
+   > void print_stack_trace_fp_chain() {
+   >     printf("=== Stack trace from fp chain ===\n");
+   >
+   >     uintptr_t *fp;
+   >     asm("mv %0, fp" : "=r"(fp) : : );
+   >
+   >     // When should this stop?
+   >     while (fp) {
+   >         printf("Return address: 0x%016" PRIxPTR "\n", fp[-1]);
+   >         printf("Old stack pointer: 0x%016" PRIxPTR "\n", fp[-2]);
+   >         printf("\n");
+   >
+   >         fp = (uintptr_t *) fp[-2];
+   >     }
+   >     printf("=== End ===\n\n");
+   > }
+   > ```
+   >
+   > 但是这里会遇到一个问题，因为我们的标准库并没有保存栈帧指针，所以找到调用栈到标准的库时候会打破我们对栈帧格式的假设，出现异常。
+   >
+   > 我们也可以不做关于栈帧保存方式的假设，而是明确让编译器告诉我们每个指令处的调用栈如何恢复。在编译的时候加入 -funwind-tables 会开启这个功能，将调用栈恢复的信息存入可执行文件中。
+   >
+   > 有一个叫做 [libunwind](https://www.nongnu.org/libunwind) 的库可以帮我们读取这些信息生成调用栈信息，而且它可以正确发现某些栈帧不知道怎么恢复，避免异常退出。
+   >
+   > 正确安装 libunwind 之后，我们也可以用这样的方式生成调用栈信息：
+   >
+   > ```
+   > #include <inttypes.h>
+   > #include <stdint.h>
+   > #include <stdio.h>
+   >
+   > #define UNW_LOCAL_ONLY
+   > #include <libunwind.h>
+   >
+   > // Compile with -funwind-tables -lunwind
+   > void print_stack_trace_libunwind() {
+   >     printf("=== Stack trace from libunwind ===\n");
+   >
+   >     unw_cursor_t cursor; unw_context_t uc;
+   >     unw_word_t pc, sp;
+   >
+   >     unw_getcontext(&uc);
+   >     unw_init_local(&cursor, &uc);
+   >
+   >     while (unw_step(&cursor) > 0) {
+   >         unw_get_reg(&cursor, UNW_REG_IP, &pc);
+   >         unw_get_reg(&cursor, UNW_REG_SP, &sp);
+   >
+   >         printf("Program counter: 0x%016" PRIxPTR "\n", (uintptr_t) pc);
+   >         printf("Stack pointer: 0x%016" PRIxPTR "\n", (uintptr_t) sp);
+   >         printf("\n");
+   >     }
+   >     printf("=== End ===\n\n");
+   > }
+   > ```
+
+8. \*\* 为何应用程序员编写应用时不需要建立栈空间和指定地址空间？
+
+   应用程度对内存的访问需要通过 MMU 的地址翻译完成，应用程序运行时看到的地址和实际位于内存中的地址是不同的，栈空间和地址空间需要内核进行管理和分配。应用程序的栈指针在 trap return 过程中初始化。此外，应用程序可能需要动态加载某些库的内容，也需要内核完成映射。
+
+9. \*\*\* 现代的很多编译器生成的代码，默认情况下不再严格保存/恢复栈帧指针。在这个情况下，我们只要编译器提供足够的信息，也可以完成对调用栈的恢复。
+
+   我们可以手动阅读汇编代码和栈上的数据，体验一下这个过程。例如，对如下两个互相递归调用的函数：
+
+   ```
+   void flip(unsigned n) {
+       if ((n & 1) == 0) {
+           flip(n >> 1);
+       } else if ((n & 1) == 1) {
+           flap(n >> 1);
+       }
+   }
+
+   void flap(unsigned n) {
+       if ((n & 1) == 0) {
+           flip(n >> 1);
+       } else if ((n & 1) == 1) {
+           flap(n >> 1);
+       }
+   }
+   ```
+
+   在某种编译环境下，编译器产生的代码不包括保存和恢复栈帧指针 fp 的代码。以下是 GDB 输出的本次运行的时候，这两个函数所在的地址和对应地址指令的反汇编，为了方便阅读节选了重要的控制流和栈操作（省略部分不含栈操作）：
+
+   ```
+   (gdb) disassemble flap
+   Dump of assembler code for function flap:
+      0x0000000000010730 <+0>:     addi    sp,sp,-16    // 唯一入口
+      0x0000000000010732 <+2>:     sd      ra,8(sp)
+      ...
+      0x0000000000010742 <+18>:    ld      ra,8(sp)
+      0x0000000000010744 <+20>:    addi    sp,sp,16
+      0x0000000000010746 <+22>:    ret                  // 唯一出口
+      ...
+      0x0000000000010750 <+32>:    j       0x10742 <flap+18>
+
+   (gdb) disassemble flip
+   Dump of assembler code for function flip:
+      0x0000000000010752 <+0>:     addi    sp,sp,-16    // 唯一入口
+      0x0000000000010754 <+2>:     sd      ra,8(sp)
+      ...
+      0x0000000000010764 <+18>:    ld      ra,8(sp)
+      0x0000000000010766 <+20>:    addi    sp,sp,16
+      0x0000000000010768 <+22>:    ret                  // 唯一出口
+      ...
+      0x0000000000010772 <+32>:    j       0x10764 <flip+18>
+   End of assembler dump.
+   ```
+
+   启动这个程序，在运行的时候的某个状态将其打断。此时的 pc, sp, ra 寄存器的值如下所示。此外，下面还给出了栈顶的部分内容。（为阅读方便，栈上的一些未初始化的垃圾数据用 ??? 代替。）
+
+   ```
+   (gdb) p $pc
+   $1 = (void (*)()) 0x10752 <flip>
+
+   (gdb) p $sp
+   $2 = (void *) 0x40007f1310
+
+   (gdb) p $ra
+   $3 = (void (*)()) 0x10742 <flap+18>
+
+   (gdb) x/6a $sp
+   0x40007f1310:   ???     0x10750 <flap+32>
+   0x40007f1320:   ???     0x10772 <flip+32>
+   0x40007f1330:   ???     0x10764 <flip+18>
+   ```
+
+   根据给出这些信息，调试器可以如何复原出最顶层的几个调用栈信息？假设调试器可以理解编译器生成的汇编代码 [[1]] 。
+
+   - 首先，我们当前的 pc 在 flip 函数的开头，这是我们正在运行的函数。返回给调用者处的地址在 ra 寄存器里，是 0x10742 。因为我们还没有开始操作栈指针，所以调用处的 sp 与我们相同，都是 0x40007f1310 。
+   - 0x10742 在 flap 函数内。根据 flap 函数的开头可知，这个函数的栈帧大小是 16 个字节，所以调用者处的栈指针应该是 sp + 16 = 0x40007f1320。调用 flap 的调用者返回地址保存在栈上 8(sp) ，可以读出来是 0x10750 ，还在 flap 函数内。
+   - 依次类推，只要能理解已知地址对应的函数代码，就可以完成恢复操作。

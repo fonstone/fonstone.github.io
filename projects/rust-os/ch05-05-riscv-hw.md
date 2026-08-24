@@ -2,7 +2,7 @@
 title: "附录D：RISC-V 硬件相关信息"
 description: ""
 date: "2026-07-12"
-order: 39
+order: 36
 tags: ["附录", "RISC-V", "CSR", "特权模式", "硬件"]
 est_time: "30分钟"
 ---

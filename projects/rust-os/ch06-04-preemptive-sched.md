@@ -2,7 +2,7 @@
 title: "抢占式调度实现"
 description: "有了时钟中断和计时器，抢占式调度就很容易实现了："
 date: "2026-07-12"
-order: 45
+order: 41
 tags: ["抢占式调度", "时钟中断", "trap_handler", "时间片", "实现"]
 est_time: "30分钟"
 ---

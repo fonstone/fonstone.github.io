@@ -2,7 +2,7 @@
 title: "互斥锁（rCore 实现）"
 description: "此前两节中，我们分别介绍了用户态和内核态的线程管理。相比进程模型，它们可以更加高效方便的进行协作。比如同进程下的线程共享进程的地址空间，它们可以直接通过读写内存中的共享变量来进行通信而不必进行繁琐且低效的进程间通信。然而..."
 date: "2026-07-12"
-order: 64
+order: 59
 tags: ["互斥锁", "锁", "临界区", "死锁", "实现"]
 est_time: "45分钟"
 ---
@@ -1075,3 +1075,9 @@ impl Mutex for MutexBlocking {
 - [《The SPARC Architecture Manual》 Version 9](https://cr.yp.to/2005-590/sparcv9.pdf) Page 153
 - RISC-V A Standard Extension for Atomic Instructions, Version 2.1
 - [LL/SC，来自维基百科](https://en.wikipedia.org/wiki/Load-link/store-conditional)
+
+---
+
+## 本节练习
+
+8. \*\*\* 扩展内核功能，实现多核支持下的同步互斥机制。

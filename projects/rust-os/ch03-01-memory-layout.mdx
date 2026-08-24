@@ -2,7 +2,7 @@
 title: "内存布局与链接脚本"
 description: "mps3-an536 内存地图与 Linker Script 编写"
 date: "2026-07-12"
-order: 6
+order: 15
 tags: ["链接脚本", "linker script", "内存布局", "Flash", "RAM", "BSS", "data段", "text段"]
 est_time: "45分钟"
 ---
@@ -32,6 +32,8 @@ graph LR
     end
     Flash -->|启动后拷贝| RAM
 `} />
+
+![mps3-an536 官方内存地图](/images/rust-os/diagrams/mps3-memory-map.png)
 
 
 - 理解嵌入式系统中 Flash 和 RAM 的作用和区别

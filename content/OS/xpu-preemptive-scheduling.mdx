@@ -1,0 +1,229 @@
+---
+title: "XPU 精细化调度与抢占，时间片、三级模型与微秒级拆核"
+description: "以 GPreempt、XSched、Hummingbird 三篇 2025 到 2026 年的系统论文为主干，对照 NVIDIA MPS、GPU Operator 时间片与 Drive OS 抢占类型文档，梳理 XPU 任务在并发度、抢占与执行时长三个维度上的调度现实，逐项列出各套机制的原理、代价与论文报告的数字。"
+date: "2026-08-30"
+tags: ["操作系统", "XPU", "GPU", "NPU", "抢占调度", "异构计算", "OSDI 2025", "ATC 2025"]
+---
+
+# XPU 精细化调度与抢占，时间片、三级模型与微秒级拆核
+
+Llama-8B 在 A100 上跑一次推理，最短的 kernel 只有 5 微秒，最长的 GEMM 要 7.49 毫秒，差三个数量级。高优请求到达时，低优任务的内核正在执行，GPU 上没有面向用户的接口能把它停下来。等它跑完，等待时长取决于那个内核落在 5 微秒还是 7.49 毫秒那一类。
+
+我为了给手头的异构算力调度方案找依据，把三篇论文和几份官方文档逐条对过。论文是 ATC 2025 的 GPreempt、OSDI 2025 的 XSched、2026 年 2 月的 Hummingbird 预印本。文档是 NVIDIA 的 MPS、GPU Operator 的时间片、Drive OS 的抢占类型。三篇论文加官方文档，反复敲的是同一组问题。并发度给多少，抢占能不能真正发生，单个内核要跑多久。
+
+先看这组问题值多少钱。微软的 GPU 集群利用率约 52%，阿里不到 25%，Hummingbird 论文引用了两份集群研究报告。整卡独占的分配方式下，空转是常态。共享能提利用率，但缺抢占手段，高优任务的延迟又保不住。
+
+## GPU 硬件调度的两级结构
+
+先把 GPU 硬件怎么调度任务讲清楚，后面所有机制都建在这上面。调度是两级结构。芯片级是 GigaThread 引擎，它把内核的线程块逐个分发到 SM。块必须整体驻留在一个 SM 上，块内线程要共用共享内存、靠 __syncthreads 同步，跨 SM 拆不开。SM 内部按分区各有一个 warp 调度器，每周期从自己管理的就绪 warp 里选一个发射指令。warp 是 32 个线程，A100 的每个 SM 最多驻留 64 个 warp，共 2048 个线程，这个上限写在 Ampere Tuning Guide 里。
+
+<MermaidDiagram chart={`flowchart LR
+    K["内核（网格）"] --> GT["GigaThread 引擎<br/>按 SM 资源分发块"]
+    GT --> B["线程块<br/>块内共享内存与同步"]
+    B --> S["SM<br/>寄存器文件 256KB<br/>共享内存最高 164KB"]
+    S --> W["warp 调度器 ×4"]
+    W --> P["warp 32 线程<br/>切换零开销"]
+    P --> T["64 个 warp 常驻<br/>共 2048 线程"]
+`} />
+
+warp 之间的切换零开销。寄存器文件按线程静态分配，一个 warp 的状态一直活在寄存器文件里，切走再切回来不需要保存和恢复，这是 GPU 靠大量并发线程隐藏访存延迟的前提。块以下全是零成本切换，块以上只有任务级切换，面向软件的抢占点就断在这里。CPU 的做法是抢占线程再恢复现场，GPU 的任务现场大得离谱，这是下一节的问题。
+
+## 抢占为什么搬不到 XPU 上
+
+CPU 上抢占有三层支撑，时钟中断、可保存的寄存器上下文、内核里的调度器。XPU 上三层都缺。缺接口是第一层，kernel 提交给硬件队列之后，用户拿不到 yield 或 suspend 这类原语，GPreempt 论文把现实写得很直白，内核一旦启动，用户无法让出已分配的算力。
+
+第二层是上下文体积。A100 的 GPU 上下文约 44MB，x86 线程上下文不到 1KB。切换要保存寄存器文件、刷缓存，GPreempt 实测保存 A100 上下文要 40 微秒。GCAPS 论文在 Jetson Xavier 和 Orin 上量到，Tegra 的上下文切换平均超过 200 微秒，区间从 50 到 750 微秒。一次切换吃掉最小时间片的五分之一，频繁切换谁都受不了。
+
+> **原理说明 · 44MB 上下文从哪来**。A100 白皮书的规格表把家底列得很清楚。每 SM 寄存器文件 256KB，108 个 SM 共约 27MB，这是为 warp 零开销切换准备的静态空间。共享内存每 SM 最高 164KB，全芯片约 17MB。两项相加约 44MB，与 GPreempt 报告的上下文体积对得上。任务级切换要保存的正是这一大片寄存器状态，GCAPS 论文把寄存器文件保存列为切换开销的大头，其次是缓存冲刷。CPU 线程上下文 1KB 上下，GPU 的上下文是它的四万倍。
+
+硬件调度策略写死在固件里，这一层最难改。Tegra 的 GPU 驱动按时间片组轮转，不理会 OS 层面的进程优先级，高优实时任务会被新来的低优任务拖慢。Intel NPU3720 的原生调度是 FCFS，视频任务要等语音识别跑完 0.8 秒。CUDA 的流优先级在 MPS 文档里写得很清楚，只是性能提示，不保证执行顺序。NVIDIA 硬件里其实有指令级计算抢占（CILP），Drive OS 文档把抢占类型列成了可配置项，但对普通用户是私有接口，官方给 CUDA 内核的建议反而是 Wait-For-Idle，等内核自然跑完。
+
+## 并发度，现有的三种给法
+
+先看不给并发的情况。不开 MPS 时，MPS 文档写明每个进程在整块 GPU 上拿到串行时间片，跨进程的 kernel 不会并行，多进程 MPI 作业只能排队。开 MPS 之后 Volta 起客户端上限提到 48，硬件加速的提交队列让吞吐上去，但 MPS 不提供故障隔离，一个客户端崩溃可能拖垮共享会话。
+
+时间片轮转给的是共享而非隔离。GPU Operator 的时间片方案把一个 GPU 复制成多个 replica 分给不同 pod，文档里写明没有内存隔离也没有故障隔离，所有进程均分时间。轮转对优先级无能为力，高优请求照样排队。
+
+> **原理说明 · 时间片轮转的硬件结构**。Tegra 的 GPU 驱动把每个进程的命令放进时间片组（TSG），TSG 挂在运行列表（runlist）上，驱动按固定长度的时间片轮转。GCAPS 论文指出默认时间片长度对所有 TSG 相同，这个调度只保证公平，不理会 OS 层面的进程优先级，Nsight Systems 甚至不报告上下文切换事件，用户看到的内核时长被时间片放大，误以为是内核本身跑得慢。数据中心驱动的开源版本里也藏着一套时间片分配机制，GPreempt 复用的就是它。
+
+空间切片给的是强隔离。MIG 把 SM 和显存静态切成实例，切完不能动。Hummingbird 论文指出 MIG 无法按应用的阶段变化动态重分资源，要么某个实例利用率低，要么突发流量把 SLO 击穿。
+
+流的并发是第四条路，多流并行能抬高利用率，代价是干扰不可控。Hummingbird 拿 Orion 这类空间共享方案实测，高优任务的 SLO 达标率比 REEF 低 5.4 倍，比独占运行低 8.1 倍，生成一个 token 的耗时抖动相对 REEF 放大 4.2 倍、相对独占放大 10.9 倍。根子有两个，内核分类太粗，Orion 把平均带宽利用率超过 60% 才算内存受限；流的调度不可控，低优内核的残留块会和高优块挤在一起抢带宽。
+
+XSched 给了一组统一定量。十个 XPU 上，原生硬件调度器把所有进程平等对待，前台任务 P99 尾延迟是独占运行的 1.60 到 2.19 倍。这个倍数就是原生并发下高优任务付的真实成本。
+
+## 执行时长，抢占延迟的底
+
+抢占延迟被内核执行时间钉住。等内核跑完是 wait 路线，等待上界就是那个内核的时长，而内核时长高度不均匀。Hummingbird 统计了从 CNN、LLM 到多模态模型的推理、微调和训练负载，99.999% 的线程块在 390 微秒内完成，单个块只处理一小部分工作，块时长和内核时长差了量级。
+
+REEF 走协作式驱逐，低优内核检查抢占标志自愿退出。Hummingbird 重跑 REEF 时量到，23.4% 的低优计算被驱逐后重跑浪费掉，为了限制排队深度把设备队列压到 4 个 kernel，同步开销吃掉 6.8% 的 GPU 周期。驱逐便宜，代价藏在重跑和同步里。
+
+块的粒度是天然抢占点。按块粒度把内核拆成子内核，抢占延迟就能压到微秒级，这就是 Hummingbird 的立足点，具体见后文。
+
+> **原理说明 · 抢占延迟的组成**。高优任务等一次抢占，时间由三块组成。当前低优任务还要跑多久，任务切换要花多少，队列里还有多少已提交的命令要等。GCAPS 论文给出干扰上界公式 I(ν,G) 等于 (L+θ)·ν·⌈G/L⌉，时间片长度 L、切换开销 θ、使用 GPU 的任务数 ν、任务段时长 G 四个变量相乘。三篇论文的差别就是各压一块。GPreempt 压第一块和第二块，时间片压到 200 微秒、预抢占把切换藏进数据准备。Hummingbird 把第一块压到单个子内核时长，tick 调度把队列压到 1。XSched 的 Lv2、Lv3 直接砍掉第三块和切换成本。
+
+![抢占路径上的开销与时长账本，左板为固定开销，右板为内核与块级执行的时长尺度，对数轴，单位微秒](/images/xpu-preempt/latency-account.png)
+
+*左板数值取自 GPreempt（GDRCopy 通知、上下文保存、最小时间片）、Hummingbird（同步 API、启动延迟、平均抢占延迟）与 GCAPS（Tegra 上下文切换均值），右板取自 Hummingbird 对内核与块执行时长的统计，均为论文报告值。*
+
+## 抢占的三种现实
+
+GPreempt 论文把现有抢占策略分成三类，wait 和 reset 是两条老路，switch 是它自己补的新路。
+
+| 路线 | 做法 | 代价 | 适用边界 |
+|------|------|------|---------|
+| wait | 等低优内核在边界让出（SRM、REEF 协作驱逐） | 延迟等于剩余内核时长，毫秒级 | 通用，但高优任务被拖 |
+| reset | 直接结束低优内核并重跑 | 快，但要求内核幂等 | DNN 内核可行，图计算、科学计算、CUDA Graph 不行 |
+| switch | 上下文切换，低优任务让出后恢复 | 通用，代价是上下文体积与保存时间 | 需要驱动或硬件配合 |
+
+![GPreempt 论文 Figure 1，三种抢占机制的对比与权衡，wait 在块级让出、reset 直接终止、switch 上下文切换](/images/xpu-preempt/gpreempt-fig1-mechanisms.png)
+
+*GPreempt 论文 Figure 1，通用性与效率的取舍坐标，wait-based 与 reset-based 各占一边，GPreempt 的 switch 路线试图兼得。作者 Ruwen Fan 等，USENIX ATC 2025*
+
+reset 的边界 GPreempt 论文列得很具体。BFS、SSSP、PageRank、CC 这类图计算内核执行中改变全局状态，不幂等；科学计算同理；CUDA Graph 把多个内核打包提交，维持幂等还要额外处理重放开销。wait 通用但慢，reset 快但不通用，两条路在通用性和低延迟之间撕扯，谁都不肯让。
+
+## GPreempt，借用时间片实现 yield
+
+GPreempt 的思路是把 CPU 的上下文切换搬到 GPU 上，先解决 yield 原语缺失。它翻 NVIDIA 开源驱动，找到一个没文档的内部机制，时间片分配。驱动本来就按时间片在任务之间轮转，把低优任务的时间片压到最小、高优任务的时间片拉长，硬件保证切换发生，用户代码和内核代码都不用改。但这条路的底线数字不好看，最小时间片约 200 微秒，平均要等半个时间片 100 微秒，再加上 40 微秒的上下文保存，直接用作抢占不够快。
+
+hint 预抢占把切换成本藏进数据准备阶段。GPU 计算的惯用节奏是先搬运数据、做预处理，再启动内核，这段时间 GPU 是空的。GPreempt 让高优任务提前发出预留命令，在数据准备期间注入一个抢占内核，抢占内核通过 GDRCopy 收通知，1 微秒左右就能让低优任务让出算力，高优计算内核顺着流语义在抢占内核完成后立即启动。切换的 40 微秒和等时间片的 100 微秒都被数据准备盖住，端到端看不到。
+
+> **原理说明 · 时间片为什么能当 yield 用**。时间片轮转的语义是，一个任务的时间片到期，硬件就把执行权切给下一个任务，切换由硬件保证。把低优任务的时间片压到最小，它在当前时间片结束时必然让出，效果等同于主动 yield，内核代码不用动。抢占内核利用流的串行语义，同一流里的命令按序执行，抢占内核完成后高优内核立刻跟上，用户只看到高优内核的启动延迟被藏进数据准备。通知路径用 GDRCopy，把 GPU 显存映射进 CPU 地址空间，CPU 直接读写显存地址，绕开 API 调用和内核态往返，通知延迟压到 1 微秒左右。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph CPU["主机侧"]
+        PREP["数据准备<br/>搬运与预处理"]
+        GK["抢占内核<br/>注入设备队列"]
+        HK["高优计算内核"]
+    end
+
+    subgraph GPU["GPU 侧"]
+        BE["低优任务<br/>时间片压到最小"]
+        SW["硬件切换<br/>上下文保存 40μs"]
+    end
+
+    PREP --> GK
+    GK -->|"GDRCopy 通知 1μs"| BE
+    BE --> SW
+    SW --> HK
+`} />
+
+![GPreempt 论文 Figure 3，hint 预抢占的三种时间线，(a) 不做预抢占的等待、(b) 与数据准备重叠、(c) 定时预留](/images/xpu-preempt/gpreempt-fig3-prepreempt.png)
+
+*GPreempt 论文 Figure 3，CE 为计算引擎，(b) 把抢占注入数据准备阶段，(c) 按预定时刻预留 GPU。作者 Ruwen Fan 等，USENIX ATC 2025*
+
+论文在七组负载上验证，覆盖 DNN、图计算和科学计算，NVIDIA 与 AMD 两张卡都跑了。NVIDIA 平台上抢占延迟小于 40 微秒，与只跑高优任务的基线相当。非幂等场景下，reset 路线直接失效，GPreempt 的延迟只有 wait 路线的 30%，这就是 switch 路线在通用性上的收益。实现要改驱动，论文在 GitHub 上开源了驱动补丁和用户态库。
+
+## XSched，一个 XQueue 接十种 XPU
+
+GPreempt 只解决 GPU，XSched 把问题提到 XPU 全体。它把抢占抽象成可抢占的命令队列 XQueue，语义对标 CPU 线程，每个 XQueue 承载一个任务，任务由一串命令组成，kernel、显存拷贝、张量算子都算。切换 XQueue 就是抢占。
+
+硬件能力参差，XSched 把抢占能力分成三级。Lv1 只能抢已提交未启动的命令，把命令从队列摘掉即可，所有 XPU 都做得到。Lv2 能停掉已提交、尚未执行的命令，需要 deactivate 和 reactivate 接口。Lv3 打断正在执行的命令，要硬件支持中断和恢复，抢占延迟落到微秒级。每级建立在前一级之上，硬件能实现哪级就实现哪级，能力变化时逐级升级。
+
+> **原理说明 · 三级接口的语义**。Lv1 只用到驱动本来就有的硬件队列操作。launch 异步发射命令，sync 等待完成，CUstream、hipStream、ze_command_queue、aclrtStream、cl_command_queue 全都有，抢占方式是把命令留在主机侧不发，或者从待发射队列里摘除。Lv2 的 deactivate 阻止硬件队列继续执行命令，已发射未执行的命令保留，抢占延迟从整个队列的时长缩到当前命令的执行时间。Lv3 的 interrupt 要求硬件保存运行中命令的现场并在之后恢复，只有带中断和任务切换能力的硬件做得到。三级对应的抢占延迟依次被队列长度、单条命令时长和指令粒度决定，级差一到两个数量级。
+
+<MermaidDiagram chart={`flowchart TD
+    XQ["XQueue 统一抽象<br/>submit / wait / suspend / resume"] --> L1
+    XQ --> L2
+    XQ --> L3
+
+    subgraph L1["Lv1 未启动命令"]
+        C1["摘除 pending 命令<br/>等待队列内已发射命令跑完"]
+    end
+    subgraph L2["Lv2 在途命令"]
+        C2["deactivate 停发射<br/>reactivate 恢复"]
+    end
+    subgraph L3["Lv3 运行中命令"]
+        C3["interrupt 暂停<br/>保存后恢复"]
+    end
+`} />
+
+实现是三个预加载的用户态库加一个调度守护进程。XShim 拦截应用的驱动 API 调用，把命令导入 XQueue，应用不改代码。调度策略写成一个通用模块，固定优先级和带宽切分两种策略在全部 XPU 上复用。适配范围论文列了一张表，十个设备跨七个软件平台。NVIDIA 的 GV100 和 K40m、AMD 的 MI50、Intel 的 NPU3720 与核显、昇腾 910B（表格里写作 910b）在列，Xilinx 的 VU9P FPGA、Jetson 上的 DLA 和 PVA 也在列。NPU 和 ASIC 平台上的抢占式调度，以及闭源 GPU 上最高级的抢占，论文声称是首次实现。
+
+![XSched 论文 Figure 4，XShim、XPreempt、XAL 三个用户态库与调度守护进程的架构与工作流](/images/xpu-preempt/xsched-fig4-arch.png)
+
+*XSched 论文 Figure 4，命令从应用经 XShim 进入 XQueue，XPreempt 实现接口，XAL 适配具体 XPU 驱动，XScheduler 守护进程执行策略。作者 Weihang Shen 等，OSDI 2025*
+
+结果数字分三组。固定优先级策略把高优任务 P99 最多降低 2.10 倍，十个 XPU 上从前台尾延迟 1.60 到 2.19 倍压回 1.02 到 1.30 倍。带宽切分策略按 75 比 25 分配两任务的算力，平均开销 1.5%。抢占级别直接决定调度质量，支持 Lv2、Lv3 的 GV100、K40m、NPU3720 上前台任务相对独占只退化 1.9%、3.8%、5.4%，只支持 Lv1 的 XPU 退化 7.3% 到 29.6%。
+
+![十个 XPU 上前台任务 P99 尾延迟区间，相对独占运行的倍数，越低越好](/images/xpu-preempt/xsched-p99.png)
+
+*区间来自 XSched 论文图 9 报告的前台任务 P99 倍数，独占为基线 1.00 倍，原生硬件调度器 1.60 到 2.19 倍，XSched 1.02 到 1.30 倍。*
+
+再给一组可对照的延迟数字。论文用 0.5 毫秒时长的命令、驻留阈值 8 来测，Lv1 的 P99 抢占延迟约 8 个命令时长，等于把硬件队列里已提交的命令全部等完，Lv2 降到约 1 个命令时长，Lv3 落到微秒级。Lv1 和 Lv3 之间差了两三个数量级，这就是为什么论文强调，抢占能力分级的收益能直接换算成尾延迟。
+
+案例里的数字更贴近使用。Triton 推理服务接入 XSched 只改了 10 行代码，高优 Bert-large 的 P99 推理延迟降 30.0%，与硬件特化的 Paella 方案持平。Intel NPU3720 上的视频会议案例，原生 FCFS 调度下帧延迟尖峰到 880 毫秒，是独占运行的 20.12 倍，换成松弛度策略后 P99 降到 95 毫秒，改善 9.26 倍，同时保证语音识别在 3 秒内完成。多租户云场景里，XSched 比 TGS 多收割 2.74 倍的 GPU 资源，低优任务可用算力从 7.3% 提到 20.0%。
+
+## Hummingbird，把内核拆到 77 微秒
+
+Hummingbird 不走驱动，也不走硬件，它在闭源 NVIDIA GPU 上只靠软件拆内核。低优内核按块粒度拆成子内核，块的执行时长天然在 390 微秒以内，拆完平均只有 77 微秒，高优请求到达时，最坏等一个子内核跑完。
+
+![Hummingbird 论文 Figure 6，设计总览，kernel splitter 分析内核、运行时调度器拆核与调度、内存管理做层级卸载](/images/xpu-preempt/hummingbird-fig6-overview.png)
+
+*Hummingbird 论文 Figure 6，三个组件各管一块，拆核器离线分析生成拆分日志，运行时调度器在线拆核并按气泡调度，内存管理用 NVLink 层级卸载。作者 Tiancheng Hu 等，arXiv 2601.04071*
+
+拆核的技术动作是 PTX 注入。GPU 内核的块索引由内置的 blockIdx 决定，把一个 4096 块的内核拆成四个 1024 块，局部索引范围变了，寻址语义就错。Hummingbird 在 PTX 层面给内核增加偏移参数，注入算术指令把 ctaid（PTX 里的块索引）平移，保持原寻址正确。选 PTX 层是为了通用，AOT 编译的 CUDA 库和 JIT 编译的 Triton 内核最后都落到这一层。实现约 8000 行 C++/CUDA，不依赖特定硬件指令，任何一代 GPU 都能跑。
+
+> **原理说明 · 拆核为什么不动语义**。CUDA 的执行模型保证线程块之间没有依赖。块内靠 __syncthreads 同步，块间只通过全局内存和原子操作交换数据，块的完成顺序任意。所以把一个网格按块切开、分多次发射，只要每个子网格执行的块集合不变，计算结果就不变。改动只发生在块索引的映射上，PTX 注入加偏移参数、把 ctaid 平移回原来的位置，寻址就原样恢复。跨块同步的内核（grid sync）和持久内核打破块独立性，拆核直接禁用，这两类核在 Hummingbird 论文里单独列了出来。
+
+> **原理说明 · 最优拆分尺寸怎么定**。论文的起点是块数等于 SM 数乘占用率乘每 SM 最大线程数再除每块线程数，这个块数刚好把 SM 装满，执行时间最短。占用率取决于内核的寄存器与共享内存用量。少于这个数，部分 SM 空转，执行时间不会更短。从装满的块数往下减，如果执行时间变短，说明内核受带宽限制，并发块少了争用轻了，继续减到时间稳定，就是最优尺寸。这套推导的完整公式在论文 Algorithm 里给出，实现按此离线生成拆分日志。
+
+调度器只在气泡里放低优任务。高优任务一次请求里有大量几百微秒的小气泡，主机和设备之间的内存搬运、流同步、分布式通信都是来源，Llama-8B 和 DeepSeek-16B 推理里超过 15% 的 GPU 时间花在这种气泡上，分布式下放大 1.8 倍，Llama-70B 张量并行和 GPT-oss-120B 专家并行时超过 24%。请求波动则制造秒级到分钟级的大气泡，真实 GPT 服务 trace 里最多占 23.6% 的 GPU 时间。
+
+小气泡靠主机侧 hint 检测。每个框架的气泡都有固定 API 模式，LLM 推理的迭代气泡基本以 cudaMemcpyAsync 加 cudaStreamSynchronize 开头，NCCL 通信气泡以 ncclSend 和 ncclRecv 开头。Hummingbird 在这些 API 前后插 cudaEvent 标记事件，调度器看到 start 事件就确认小气泡开始。大气泡靠周期扫描设备队列，超过阈值时间没有高优内核出现，就算作大气泡。拆核大小不是越小越好，子内核太小会浪费 SM，论文按硬件参数先算满 SM 的块数，再逐步减块观察执行时间，找到最优拆分尺寸，带宽受限的内核减块反而更快。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph HP["高优任务"]
+        HPK["计算内核"]
+        BUB["小气泡<br/>搬运 / 同步 / 通信"]
+    end
+
+    S["调度器"] -->|"检测气泡"| DET["hint 标记事件<br/>队列扫描"]
+    DET -->|"tick 发射"| SPLIT["拆核器<br/>PTX 注入 blockIdx 平移"]
+    SPLIT --> SK["子内核<br/>平均 77μs"]
+    SK -.->|"跑完即让出"| HPK
+    HPK --> BUB
+    BUB -.->|"气泡窗口"| SK
+`} />
+
+发射节奏用 kernel-tick 调度。设备队列里同时最多一个子内核，保证抢占延迟被单个子内核时长封顶，但每个子内核后面都跟一次同步就太贵，同步 API 一次约 5 微秒，启动还要追加 6 到 7 微秒。DNN 内核的执行时间高度可预测，调度器按执行时长减启动开销算出发射间隔，卡着前一个内核快结束的点发射下一个，CPU 和 GPU 连成流水线。
+
+结果数字。平均抢占延迟 139 微秒，高优任务的请求处理只慢不到 1%。SLO 达标率比空间共享的 Orion 高 9.7 倍，比时间共享的 REEF 高 3.5 倍，相对独占运行只掉不到 1%。低优任务吞吐比 REEF 高 2.4 倍，23.4% 的驱逐重跑浪费被拆核消掉。拆核加 tick 的全部开销是 1.3% 的性能损失。实验覆盖 L40s、A100、H100 三档卡，最多 16 卡的两台 DGX A100 640GB 服务器。
+
+![Hummingbird 相对空间共享与时间共享方案的提升倍数，对数轴](/images/xpu-preempt/hummingbird-results.png)
+
+*提升倍数来自 Hummingbird 论文摘要与正文，SLO 达标率对比 Orion 为 9.7 倍、对比 REEF 为 3.5 倍，低优任务吞吐对比 REEF 为 2.4 倍，高优任务相对独占运行达标率保持在 99% 以上。*
+
+## 内存维度，调度系统共同的假设
+
+XSched、GPreempt、Hummingbird 都默认显存放得下所有并发任务，上下文切换只保存最小架构状态。MSched 论文（arXiv 2512.24637）专门敲这个假设，显存超订时切换要连页面一起处理，它给 XSched 补了内存调度，预加载一个 predictor 拦截 kernel 启动 API，按离线生成的参数到内存区域的映射预测每个内核要访问的页，调度器配合驱动按页换入换出。
+
+![MSched 论文 Figure 3，离线分析生成参数到内存区域的映射，在线 Predictor 拦截内核启动并预测访问页](/images/xpu-preempt/msched-fig3-arch.png)
+
+*MSched 论文 Figure 3，Kernel Profiler 与 Memory Analyzer 离线统计，Predictor 在线拦截内核启动 API，Memory Manager 与 Switcher 配合 GPU 驱动按页迁移，arXiv 2512.24637*
+
+Hummingbird 的解法是层级卸载。它基于 HUVM 把低优任务页面按页换到 NVLink 邻居卡的显存，再退到主机 DRAM，高优任务的内存永不被驱逐。换页会抢 NVLink 带宽，论文用 ping 式探测实时测邻居卡争用，优先换到争用低的卡。TGS 的教训在它论文里也写了，走 PCIe 换页，带宽不够，低优任务等数据等到失去意义。
+
+## 三套机制放在一起
+
+时间片、命令队列、拆核，三条路对硬件的要求各不相同，落在不同代际的 XPU 上各自成立。GPreempt 依赖驱动里能改的时间片分配器，需要开源或可改的驱动。Hummingbird 依赖块粒度可预测的执行时长，纯软件，闭源卡也能跑。XSched 把抢占能力分级，让每种硬件只实现自己能做的级别，从所有 XPU 都有的 Lv1 起步。
+
+剩下没解决的还很多。闭源库拿不到 PTX，cuBLAS 和 cuDNN 的内核拆不了，Hummingbird 用等价的 CUTLASS 顶替。跨块同步的内核和持久内核直接禁用拆核。显存超订的统一方案还没有，MSched 和 Hummingbird 各走各的路。抢占延迟的数字倒是越来越好看。从等毫秒级的内核跑完，到 139 微秒，再到 40 微秒以内，中间隔着三套不同的机制设计。
+
+## 参考资料
+
+论文原文与官方文档的链接如下，正文数字均可按此核验。
+
+- GPreempt（GPU Preemptive Scheduling Made General and Efficient，USENIX ATC 2025，清华），[论文页面](https://www.usenix.org/conference/atc25/presentation/fan)，[PDF](https://www.usenix.org/system/files/atc25-fan.pdf)，[幻灯片](https://www.usenix.org/sites/default/files/conference/protected-files/atc25_slides_fan.pdf)，[代码](https://github.com/thustorage/GPreempt)
+- XSched（Preemptive Scheduling for Diverse XPUs，OSDI 2025，上海交大 IPADS），[论文页面](https://www.usenix.org/conference/osdi25/presentation/shen-weihang)，[PDF](https://ipads.se.sjtu.edu.cn/_media/publications/xsched-osdi25.pdf)，[代码](https://github.com/XpuOS/xsched)，[项目介绍](https://github.com/XpuOS/xsched/blob/main/docs/xsched-intro-2025-en.md)
+- Hummingbird（SLO-Oriented GPU Preemption at Microsecond-scale，arXiv 2601.04071，2026-02），清华 AIR 与蚂蚁、上交、北大等，[HTML](https://arxiv.org/html/2601.04071v2)
+- GCAPS（GPU Context-Aware Preemptive Priority-based Scheduling for Real-Time Tasks，ECRTS 2024），[arXiv 2406.05221](https://arxiv.org/abs/2406.05221)
+- Towards Fully-fledged GPU Multitasking via Proactive Memory Scheduling（MSched），arXiv 2512.24637（2025-12），[HTML](https://arxiv.org/html/2512.24637)
+- NVIDIA Multi-Process Service 文档（r590，2025-12），[PDF](https://docs.nvidia.com/deploy/pdf/CUDA_Multi_Process_Service_Overview.pdf)，Volta 客户端上限 48 见 [Volta Tuning Guide](https://docs.nvidia.com/cuda/volta-tuning-guide/index.html)
+- NVIDIA GPU Operator，时间片与 MIG 文档，[GPU Sharing](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/gpu-sharing.html)
+- NVIDIA Drive OS 6.0 SDK，设置抢占类型（CILP 与 Wait-For-Idle），[文档](https://developer.nvidia.com/docs/drive/drive-os/6.0.9/public/drive-os-linux-sdk/common/topics/graphics_content/SettingthePreemptionType24.html)
+- CUDA C++ Programming Guide，SIMT 执行模型、硬件多线程、块独立性与流优先级，[文档](https://docs.nvidia.com/cuda/cuda-c-programming-guide/)
+- NVIDIA Ampere GPU Architecture Tuning Guide，寄存器文件 64K 寄存器每 SM、共享内存 164KB 每 SM、64 warp 驻留上限，[文档](https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html)
+- NVIDIA A100 Tensor Core GPU Architecture 白皮书，GigaThread 引擎、全芯片寄存器文件 27648KB、L2 与共享内存规格，[PDF](https://images.nvidia.com/aem-dam/en-zz/Solutions/data-center/nvidia-ampere-architecture-whitepaper.pdf)
+
+文中图片由脚本按论文报告的数字绘制，数值来源见每张图注，非本文复现测量。

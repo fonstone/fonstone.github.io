@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="580" viewBox="0 0 860 580" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <rect width="860" height="580" fill="#ffffff"/>
+  <text x="430" y="34" text-anchor="middle" font-size="18" font-weight="600" fill="#111827">均匀量化，把连续值映射到离散格点</text>
+  <text x="430" y="58" text-anchor="middle" font-size="13" fill="#6b7280">s 是格点间距，z 是零点偏移，对称量化时 z 为 0</text>
+  <text x="430" y="84" text-anchor="middle" font-size="14" fill="#374151">x_q = round(x / s) + z，反量化 x ≈ s × (x_q - z)</text>
+
+  <text x="90" y="120" font-size="13" fill="#374151">浮点值（FP16）</text>
+  <line x1="90" y1="140" x2="790" y2="140" stroke="#9ca3af" stroke-width="2"/>
+  <text x="90" y="132" text-anchor="middle" font-size="12" fill="#6b7280">-4</text>
+  <text x="265" y="132" text-anchor="middle" font-size="12" fill="#6b7280">-2</text>
+  <text x="440" y="132" text-anchor="middle" font-size="12" fill="#6b7280">0</text>
+  <text x="615" y="132" text-anchor="middle" font-size="12" fill="#6b7280">2</text>
+  <text x="790" y="132" text-anchor="middle" font-size="12" fill="#6b7280">4</text>
+
+  <circle cx="589" cy="140" r="5" fill="#2563eb"/>
+  <circle cx="239" cy="140" r="5" fill="#2563eb"/>
+  <circle cx="475" cy="140" r="5" fill="#2563eb"/>
+  <line x1="589" y1="148" x2="690" y2="228" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="239" y1="148" x2="290" y2="228" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="475" y1="148" x2="490" y2="228" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <text x="430" y="172" text-anchor="middle" font-size="12.5" fill="#6b7280">实心点是待量化的浮点值，虚线指向四舍五入后的格点</text>
+
+  <text x="90" y="212" font-size="13" fill="#374151">整数格点（INT）</text>
+  <line x1="90" y1="240" x2="790" y2="240" stroke="#111827" stroke-width="2"/>
+  <g font-size="12" fill="#111827" text-anchor="middle">
+    <text x="90" y="262">-4</text>
+    <text x="190" y="262">-3</text>
+    <text x="290" y="262">-2</text>
+    <text x="390" y="262">-1</text>
+    <text x="490" y="262">0</text>
+    <text x="590" y="262">1</text>
+    <text x="690" y="262">2</text>
+    <text x="790" y="262">3</text>
+  </g>
+  <g stroke="#111827" stroke-width="1">
+    <line x1="90" y1="234" x2="90" y2="246"/>
+    <line x1="190" y1="234" x2="190" y2="246"/>
+    <line x1="290" y1="234" x2="290" y2="246"/>
+    <line x1="390" y1="234" x2="390" y2="246"/>
+    <line x1="490" y1="234" x2="490" y2="246"/>
+    <line x1="590" y1="234" x2="590" y2="246"/>
+    <line x1="690" y1="234" x2="690" y2="246"/>
+    <line x1="790" y1="234" x2="790" y2="246"/>
+  </g>
+  <text x="790" y="290" text-anchor="end" font-size="12" fill="#6b7280">8 个格点，对应 3bit</text>
+
+  <text x="90" y="340" font-size="16" font-weight="600" fill="#111827">分组量化，一行权重按组共享 scale</text>
+  <g fill="#93c5fd" stroke="#2563eb" stroke-width="1.5">
+    <rect x="120" y="365" width="30" height="22" rx="3"/>
+    <rect x="154" y="365" width="30" height="22" rx="3"/>
+    <rect x="188" y="365" width="30" height="22" rx="3"/>
+    <rect x="222" y="365" width="30" height="22" rx="3"/>
+    <rect x="256" y="365" width="30" height="22" rx="3"/>
+    <rect x="290" y="365" width="30" height="22" rx="3"/>
+    <rect x="324" y="365" width="30" height="22" rx="3"/>
+    <rect x="358" y="365" width="30" height="22" rx="3"/>
+    <rect x="472" y="365" width="30" height="22" rx="3"/>
+    <rect x="506" y="365" width="30" height="22" rx="3"/>
+    <rect x="540" y="365" width="30" height="22" rx="3"/>
+    <rect x="574" y="365" width="30" height="22" rx="3"/>
+    <rect x="608" y="365" width="30" height="22" rx="3"/>
+    <rect x="642" y="365" width="30" height="22" rx="3"/>
+    <rect x="676" y="365" width="30" height="22" rx="3"/>
+    <rect x="710" y="365" width="30" height="22" rx="3"/>
+  </g>
+  <line x1="120" y1="357" x2="392" y2="357" stroke="#2563eb" stroke-width="2"/>
+  <line x1="472" y1="357" x2="744" y2="357" stroke="#2563eb" stroke-width="2"/>
+  <text x="256" y="410" text-anchor="middle" font-size="13" fill="#374151">scale 1</text>
+  <text x="608" y="410" text-anchor="middle" font-size="13" fill="#374151">scale 2</text>
+  <text x="90" y="450" font-size="12.5" fill="#6b7280">组大小常见 128（GPTQ、AWQ）或 32（llama.cpp 的 GGUF）。组越小，误差越小，scale 开销越大。</text>
+  <text x="90" y="478" font-size="12.5" fill="#6b7280">示意图画成 8 个一组，只说明结构，实际组大小按上一条标注。</text>
+</svg>

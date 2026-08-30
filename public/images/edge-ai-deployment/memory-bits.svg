@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="520" viewBox="0 0 860 520" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <rect width="860" height="520" fill="#ffffff"/>
+  <text x="430" y="38" text-anchor="middle" font-size="20" font-weight="600" fill="#111827">权重位宽与相对内存体积</text>
+  <text x="430" y="62" text-anchor="middle" font-size="13" fill="#6b7280">只折算权重字节数，不含 KV cache 与激活</text>
+  <line x1="210" y1="84" x2="210" y2="452" stroke="#d1d5db" stroke-width="1"/>
+  <line x1="690" y1="84" x2="690" y2="452" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="690" y="78" text-anchor="middle" font-size="12" fill="#9ca3af">FP16 基线 100%</text>
+
+  <text x="20" y="132" font-size="15" fill="#111827">FP16 16bit 全精度</text>
+  <rect x="210" y="100" width="480" height="46" rx="4" fill="#d1d5db"/>
+  <text x="698" y="132" font-size="14" font-weight="600" fill="#111827">100%</text>
+  <text x="210" y="174" font-size="12.5" fill="#6b7280">全精度基线。7B 模型权重约 14GB。</text>
+
+  <text x="20" y="222" font-size="15" fill="#111827">INT8</text>
+  <rect x="210" y="190" width="240" height="46" rx="4" fill="#93c5fd"/>
+  <text x="458" y="222" font-size="14" font-weight="600" fill="#111827">50%</text>
+  <text x="210" y="264" font-size="12.5" fill="#6b7280">端侧常见的原生档位。</text>
+
+  <text x="20" y="312" font-size="15" fill="#111827">INT4</text>
+  <rect x="210" y="280" width="120" height="46" rx="4" fill="#60a5fa"/>
+  <text x="338" y="312" font-size="14" font-weight="600" fill="#111827">25%</text>
+  <text x="210" y="354" font-size="12.5" fill="#6b7280">生产可用，与全精度差约 1%，SignRoundV2。7B 权重压到 3.5GB。</text>
+
+  <text x="20" y="402" font-size="15" fill="#111827">INT2</text>
+  <rect x="210" y="370" width="60" height="46" rx="4" fill="#2563eb"/>
+  <text x="278" y="402" font-size="14" font-weight="600" fill="#ffffff">12.5%</text>
+  <text x="210" y="444" font-size="12.5" fill="#6b7280">内存最小，但要重训和专用算子，RCP、MatQuant、ParetoQ。</text>
+
+  <text x="20" y="490" font-size="12" fill="#9ca3af">百分比按位宽线性折算。2bit 一行的结论来自论文实验，不是线性外推。</text>
+</svg>

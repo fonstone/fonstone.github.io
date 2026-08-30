@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="470" viewBox="0 0 860 470" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <rect width="860" height="470" fill="#ffffff"/>
+  <text x="430" y="34" text-anchor="middle" font-size="18" font-weight="600" fill="#111827">算力与时延，两对近似算力的结构</text>
+
+  <text x="80" y="80" font-size="13" fill="#374151">真机时延（ms）</text>
+  <line x1="80" y1="100" x2="80" y2="420" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="80" y1="420" x2="780" y2="420" stroke="#9ca3af" stroke-width="1.5"/>
+  <g font-size="12" fill="#6b7280" text-anchor="end">
+    <text x="72" y="424">0</text>
+    <text x="72" y="344">50</text>
+    <text x="72" y="264">100</text>
+    <text x="72" y="184">150</text>
+    <text x="72" y="104">200</text>
+  </g>
+  <g font-size="12" fill="#6b7280" text-anchor="middle">
+    <text x="80" y="440">0</text>
+    <text x="313" y="440">200M</text>
+    <text x="547" y="440">400M</text>
+    <text x="780" y="440">600M</text>
+  </g>
+  <text x="430" y="438" font-size="13" fill="#374151">算力（百万乘加 MACs）</text>
+
+  <ellipse cx="745" cy="183" rx="95" ry="75" fill="none" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="560" y="128" font-size="12.5" fill="#dc2626">算力几乎相同</text>
+  <text x="560" y="148" font-size="12.5" fill="#dc2626">时延差 70ms</text>
+  <ellipse cx="437" cy="297" rx="95" ry="38" fill="none" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="545" y="338" font-size="12.5" fill="#16a34a">MobileNetV2 与 MNasNet-A1</text>
+  <text x="545" y="358" font-size="12.5" fill="#16a34a">同档时延 75ms 与 78ms</text>
+
+  <circle cx="751" cy="239" r="7" fill="#1f2937"/>
+  <text x="751" y="222" text-anchor="middle" font-size="12" fill="#111827">MobileNetV1</text>
+  <circle cx="738" cy="127" r="7" fill="#dc2626"/>
+  <text x="738" y="110" text-anchor="middle" font-size="12" fill="#111827">NASNet-A</text>
+  <circle cx="430" cy="300" r="7" fill="#16a34a"/>
+  <text x="430" y="322" text-anchor="middle" font-size="12" fill="#111827">MobileNetV2</text>
+  <circle cx="444" cy="295" r="7" fill="#2563eb"/>
+  <text x="444" y="278" text-anchor="middle" font-size="12" fill="#111827">MNasNet-A1</text>
+
+  <text x="80" y="466" font-size="12.5" fill="#6b7280">数据来自 MNasNet 论文 Table 1，Pixel 手机实测。MobileNetV1 与 NASNet 算力都在 570M MACs 上下，时延差 70ms。</text>
+</svg>

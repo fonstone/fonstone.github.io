@@ -1,0 +1,351 @@
+---
+title: "嵌入式 AI 部署的工程账：内存带宽、硬件亲和与低比特精度"
+description: "把模型部署到真实硬件的三笔账。自回归解码被内存带宽锁死，模型结构必须跟着芯片走，4bit 量化已到生产可用而 2bit 要重训。全部数字来自 SignRoundV2、QRazor、RCP、MatQuant、ParetoQ、sd.npu、Ghidorah、Lever、SCAN-Edge、MARCO、HPC2Edge 等 2025 至 2026 年的论文原文，出处统一列在文末。"
+date: "2026-08-31"
+tags: ["嵌入式AI", "端侧部署", "低比特量化", "硬件亲和", "内存带宽", "NPU", "投机解码", "HW-NAS"]
+---
+
+## 先把带宽摆出来
+
+为了写这篇，我把近两年端侧部署方向的论文按时间排了一遍，从 MobileNet 时代的 NAS 一路看到手机上的投机解码。先说一个让部署工程师头疼的数字。手机 SoC 的内存带宽在 50 到 60 GB/s 的量级，数据中心里的 A100 是 1555 GB/s，差二十多倍。自回归模型每生成一个 token，都要把全部权重从内存读一遍，生成速度的上限约等于权重体积除以带宽，算力再强也绕不开。按 3GB 的模型和 50 GB/s 的带宽粗算，读完一遍要 60ms，语音助手这类交互的端到端预算往往只有一两百毫秒。云端往返时延普遍在 50 到 500ms，自动驾驶和工业控制要求 10ms 以内响应，模型必须落在本地。这几组数字来自一篇 2026 年发表的端侧大模型部署综述，它把云到端的器件规格和时延预算列成了表，我在文末标了出处。
+
+训练侧和部署侧看的是两套指标。训练时多几亿次乘加无所谓，部署时一个不支持的算子就要改结构，一种访存模式不匹配就慢一个数量级。
+
+## 时延账
+
+解码占大头。sd.npu 论文在 OnePlus 13 上跑 Qwen2.5-1.5B，问答任务的端到端时延里解码占 90.2%，总结任务占 87.2%。prefill 在 NPU 上已经超过每秒 1000 token，瓶颈全在解码。解码一次只推进一个 token，权重照搬一遍，NPU 的利用率很低，论文原话把它叫 memory-bound，这个词准确。
+
+![端到端时延构成，解码占问答任务 90.2%、总结任务 87.2%，数据来自 sd.npu 论文，OnePlus 13 上跑 Qwen2.5-1.5B](/images/edge-ai-deployment/latency-breakdown.svg)
+
+<MermaidDiagram chart={`flowchart TD
+    A["读全部权重<br/>字节数由位宽决定"] --> B["算一个 token"]
+    B --> C["KV Cache 追加"]
+    C -->|"继续生成则循环"| A
+    D["每次循环耗时的下限<br/>约等于权重体积除以带宽"] -.-> A
+`}/>
+
+解法方向很统一，让一次权重复用摊到多个 token 上。Ghidorah 用投机解码配合异构核并行，在 Jetson NX 上把解码阶段最高提速 7.6 倍。sd.npu 把检索式投机解码整体搬上 NPU，端到端生成提速最高 3.8 倍，能耗效率提升最高 4.7 倍。模型装不进内存时又多一层麻烦，Lever 让草稿小模型常驻内存，目标模型放闪存，每次验证多产几个 token 摊薄闪存 I/O，端到端时延平均降 2.93 倍，比常规投机解码再快 1.5 倍。闪存推理每验证一步都要搬一次权重，投机树太小 I/O 摊不薄，太大验证算力又不够，Lever 还测到手机 NPU 有 21.4% 的计算浪费在最终被拒绝的 token 上。
+
+这些数字指向同一件事。解码是带宽问题，投机解码、草稿模型、闪存分层都是围绕把带宽吃满做文章。时延预算吃紧的项目，先分清 prefill 和 decode 各占多少再动手，别在已经跑满的 prefill 上花力气。
+
+多模型编排是另一笔时延账。端侧智能体经常要串好几个模型，视觉、语音、规划各一个，每个都有独立的加载和切换成本。同一篇综述给出的量级是冷启动几百毫秒到几秒，任务切换几十到几百毫秒，实时场景里这些都是预算内的固定开销，加总时容易漏算。
+
+## 硬件亲和
+
+模型结构必须跟着目标芯片走。MobileNetV3 在 219M MACs 的预算下做到 ImageNet 75.2% top-1，靠的是为手机硬件手调的结构，2019 年的论文，到现在还是基准线。MNasNet 论文里有一个更早的对照，MobileNetV1 和 NASNet 的算力几乎一样，575M 对 564M MACs，真机时延却差出 70ms，113ms 对 183ms。FLOPs 相同，时延不同，部署选型不能看算力表。SCAN-Edge 的教训更直接，搜出来的混合结构在 Cortex-A57 上 98.6ms 达到 74% 准确率，同速度的 MobileNetV2（95.5ms）只有 72.2%。
+
+![算力与时延散点，MobileNetV1 与 NASNet 算力相近但时延差 70ms，数据来自 MNasNet 论文 Table 1，Pixel 手机实测](/images/edge-ai-deployment/flops-vs-latency.svg)
+
+### NAS 的基本框架
+
+从手调结构到搜索结构，中间隔着一套 NAS 流程。2019 年 Elsken 等人发在 JMLR 的综述把 NAS 拆成三件套，搜索空间、搜索策略、性能评估。搜索空间决定能搜什么，层数、宽度、核大小、用卷积还是注意力、选什么激活。搜索策略决定怎么搜，强化学习从 NASNet 开始用 RNN 控制器生成结构，综述里这种早期搜索要花 2000 GPU 天量级，进化算法让结构像生物一样变异和选择，可微搜索把离散的选择松弛成连续权重，DARTS 用梯度下降直接搜，单张 GPU 一天内完成 CIFAR-10 的搜索。权重共享让所有候选结构共用一套参数，ENAS 起头，OFA 把它推到极致。
+
+性能评估是最后一块，也是硬件亲和的关键。早期 NAS 用代理指标代替训练，准确率用少量轮次训练估，速度用 FLOPs 估，MNasNet 的对比说明这条路走不通。MNasNet 把真机时延直接放进目标函数，在 Pixel 1 手机上实测每个候选结构，搜出的 MNasNet-A1 拿到 75.2% top-1 和 78ms 时延，同表里的 MobileNetV2 是 72.0% 和 75ms。OFA 把训练和搜索拆开，用渐进式收缩训练一个超网，能切出 10^19 量级的子网，部署时按硬件挑一个，不用重新训练，搜索成本从常规 NAS 的上万 GPU 时压到 40 GPU 时，一个超网服务多种硬件。
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph Space["搜索空间"]
+        A1["层数、宽度、核大小<br/>卷积或注意力、激活函数"]
+    end
+    subgraph Strategy["搜索策略"]
+        B1["强化学习（NASNet、MNasNet）"]
+        B2["进化（AmoebaNet）"]
+        B3["可微（DARTS）"]
+        B4["权重共享（ENAS、OFA）"]
+    end
+    subgraph Eval["性能评估"]
+        C1["代理指标（FLOPs 不可靠）"]
+        C2["真机实测时延"]
+        C3["训练后测准确率"]
+    end
+    Space --> Strategy --> Eval --> Strategy
+    H["硬件约束<br/>时延、内存、能耗"] -.-> Eval
+    Eval -->|"收敛"| Result["部署用结构"]
+`}/>
+
+### 嵌入式里的 NAS
+
+MCUNet 把 NAS 做到单片机上。单片机内存比手机还小两三个数量级，常规搜索空间直接搜不出能放下的结构。TinyNAS 先按 SRAM 和 Flash 预算压缩搜索空间，再在压缩后的空间里搜结构，配合 TinyEngine 推理引擎按整体网络拓扑调度内存，峰值内存省 3.4 倍，推理快 1.7 到 3.3 倍。MCUNet 在 STM32H743 上做到 70.7% 的 ImageNet top-1，是商业单片机第一次突破 70%，同精度的 MobileNetV2 和 ResNet-18 要占 3.5 倍 SRAM 和 5.7 倍 Flash。搜索代价也压下来了，MCUNet 论文里的对比是 MNasNet 花 4 万 GPU 时，TinyNAS 只要 300 GPU 时。TinyNAS 还给出一个反直觉的经验，搜索空间本身值得优化，空间太大反而搜不好。相关工程都在 GitHub 开源，列在文末参考资料里，其中 HW-NAS-Bench 提供了 1 万 5 千多个结构在六块真实硬件上的实测时延，拿来当基准很顺手。
+
+### 生产里可用的两个 NAS 工具
+
+论文之外，NAS 已经有两套能直接落地的开源实现，NVIDIA 的 ModelOpt 和微软的 NNI，两条路线的取舍相反。ModelOpt 是部署导向的优化库，定位是把模型压进 NVIDIA 的推理生态，NAS 只是它的一环。NNI 是通用 AutoML 框架，NAS 和超参调优、模型压缩平级，面向研究和实验。下表按四个维度对比，全部以两家官方文档为准。
+
+| 维度 | ModelOpt（NVIDIA） | NNI（Microsoft） |
+|------|------|------|
+| 搜索空间 | 从基础模型自动推导，转换 Conv、Linear、Sequential 和 Megatron 大模型，规则文件限定范围 | ModelSpace 手工搭建，LayerChoice、MutableLinear 等原语自由组合 |
+| 评估策略 | 搜索空间整体训练，搜索时按约束找最优子网，score_func 打分 | 每个候选独立训练，FunctionalEvaluator 或 Lightning 评估器，试验可分布到集群 |
+| 搜索策略 | autonas、fastnas 两种模式，离散优化找子网 | 十种策略，多试制和单试制两类，DARTS、ENAS、Proxyless 都在 |
+| 硬件亲和 | 约束为 FLOPs 与参数，目标硬件是 NVIDIA GPU，TensorRT 生态收口 | Profiler 量 FLOPs、参数与时延（nn-Meter 预测），Filter 中间件裁掉超预算候选 |
+
+ModelOpt 的 NAS 走四步，转换、训练、搜索、微调。mtn.convert 用类似 torch.fx 的方式追踪模型，自动把 Conv 层、Linear 层、Sequential 和 Megatron 的 GPT、MoE 模型换成可搜索单元，注意力头数、MoE 专家数、MLP 隐层、网络深度都能搜。规则文件可以限定范围，比如只让 backbone 的通道在 0.33 到 1 倍之间选。转换后的模型当普通 PyTorch 模型用，按原有流程训练，官方建议把训练轮数加到两到三倍，配余弦退火。搜索时 mtn.search 拿约束当硬条件，给出 flops 或 params 上限，在约束内找 score_func 打分最高的子网，训练集用来校准 BN 层，还支持断点续搜。搜完的子网按预训练流程再微调一遍就能导出，TensorRT、TensorRT-LLM、vLLM 都有接口。
+
+```python
+import torch
+import modelopt.torch.nas as mtn
+import modelopt.torch.opt as mto
+from torchvision.models import resnet50
+
+# 1. 把 ResNet50 转成搜索空间并保存
+model = mtn.convert(resnet50(), mode="autonas")
+mto.save(model, "search_space.pth")
+
+# 2. 用原有训练流程训练搜索空间，轮数加到 2 到 3 倍
+
+# 3. 在约束内搜索打分最高的子网
+def score_func(model):
+    return validate(model, val_loader)  # 自定义验证函数
+
+searched_model, search_res = mtn.search(
+    model=model,
+    constraints={"flops": 4.0e9},  # 子网 FLOPs 上限 4G
+    dummy_input=torch.randn(1, 3, 224, 224),
+    config={
+        "data_loader": train_loader,  # 校准 BN 层
+        "score_func": score_func,  # 子网评分
+        "checkpoint": "search_ckpt.pth",  # 断点续搜
+    },
+)
+
+# 4. 微调后导出到 TensorRT
+mto.save(searched_model, "searched.pth")
+```
+
+NNI 的 NAS 基于 Retiarii 框架，OSDI 2020 的论文。搜索空间用手工原语搭，ModelSpace 当基类，LayerChoice 从候选模块里选一个，MutableLinear 和 nni.choice 调宽度和超参，想搜什么结构自己写出来，自由度比 ModelOpt 的自动推导大，代价是每个新结构都要手写。搜索策略分两类，多试制让每个候选独立训练，单试制共用一个超网，DARTS、ENAS、Proxyless 这些经典算法都内置，共十种。评估器用 FunctionalEvaluator 包一个训练函数，或用 PyTorch-Lightning 的现成评估器，NasExperiment 启动后靠训练服务把试验分布到本地、远程机器或 Kubernetes。硬件约束用 Profiler 加中间件实现，FlopsProfiler 和 NumParamsProfiler 量算力与参数量，NnMeterProfiler 用 nn-Meter 预测器估时延，Filter 中间件把超预算的候选直接扔掉。
+
+```python
+import nni
+import torch.nn as nn
+import nni.nas.strategy as strategy
+from nni.nas.nn.pytorch import LayerChoice, ModelSpace, MutableLinear
+from nni.nas.evaluator import FunctionalEvaluator
+from nni.nas.experiment import NasExperiment
+
+# 1. 搜索空间，基础模型加可变原语，可选的卷积核二选一
+class MyModelSpace(ModelSpace):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 32, 3, 1)
+        self.conv2 = LayerChoice([
+            nn.Conv2d(32, 64, 3, 1),
+            nn.Conv2d(32, 64, 5, 1),
+        ], label="conv2")
+        feature = nni.choice("feature", [64, 128, 256])  # 宽度可调
+        self.fc1 = MutableLinear(9216, feature)
+        self.fc2 = MutableLinear(feature, 10)
+
+# 2. 评估器，包一个训练函数，内部 report 准确率
+evaluator = FunctionalEvaluator(evaluate_model)
+
+# 3. 选策略并启动实验
+search_strategy = strategy.RegularizedEvolution()
+exp = NasExperiment(MyModelSpace(), evaluator, search_strategy)
+exp.run(port=8081)
+```
+
+NNI 的硬件约束写法与 ModelOpt 不同，约束挂在策略的中间件上，不进搜索参数。
+
+```python
+# 4. 硬件感知，Filter 中间件裁掉 FLOPs 超标的候选
+from nni.nas.strategy.middleware import Filter, Chain
+from nni.nas.profiler.pytorch.flops import FlopsProfiler
+
+profiler = FlopsProfiler(model_space, dummy_input)
+search_strategy = Chain(
+    strategy.Random(),
+    Filter(lambda sample: profiler.profile(sample) < 300e6),
+)
+```
+
+怎么选看目标。目标是 NVIDIA GPU 上的生产部署，ModelOpt 的流程最短，搜索空间自动生成，约束直通 TensorRT。目标是探索新结构和对比搜索算法，NNI 的原语和策略更灵活。两家都开源，ModelOpt 在 github.com/NVIDIA/Model-Optimizer，NNI 在 github.com/microsoft/nni，示例都挂在各自仓库的 examples 目录。
+
+时延只能真机量。HPC2Edge 把比利时的一台边缘设备接进德国的高性能计算集群，候选结构先传到设备上实测时延，再拿数字回来指导搜索，工业质检数据集 RAISE-LPBF 上推理从 332ms 压到 52ms，快了 8.8 倍，模型质量还提升了约 1.35 倍。MARCO 走模拟器路线，用带统计保证的代理模型在搜索早期剪掉低质量候选，搜索时间降 3 到 4 倍，准确率只掉 0.3 个点，在 MAX78000 评估板上模拟器预测和实测偏差小于 5%。模拟器可靠的时候，硬件在环可以省掉。
+
+算子支持比算力更先卡人。SCAN-Edge 论文里，MobileViT、EdgeNeXt 这些在 ImageNet 上表现不错的结构，在 Intel NCS2 加速卡上直接编译不过，因为算子不在支持清单里。综述把这种现象叫工具链碎片化，同一个结构在不同芯片上的部署流程完全不同，可复现性很差。结构再好，编译器不认识，等于没有。
+
+<MermaidDiagram chart={`flowchart LR
+    A["候选结构"] --> B["目标芯片实测时延"]
+    B --> C["时延反馈给搜索器"]
+    C --> D["生成下一代候选"]
+    D --> A
+    B --> E["达标则上板部署"]
+`}/>
+
+硬件亲和设计要三样东西，实测时延、算子支持清单、内存预算，缺一样都白搜。少实测时延，搜索就退化成优化 FLOPs。算子清单不齐，搜出来的结构编译不过。内存预算记错，模型上不了板。
+
+## 低比特精度
+
+位宽直接决定每个 token 要搬运的字节数，量化是压带宽最直接的手段。
+
+### 量化是怎么工作的
+
+量化的数学很简单。给定一个 scale 和一个 zero point，浮点值 x 先除以 scale 取整，加上 zero point 就是整数表示，反量化乘回去。2021 年的量化综述把公式写全了，均匀仿射量化就是这套，对称量化时 zero point 为 0，省掉偏移。
+
+```
+x_q = clamp(round(x / s) + z)
+x ≈ s * (x_q - z)
+```
+
+scale 的粒度决定精度。整层一个 scale 叫 per-tensor，每行一个叫 per-channel，把一行切成 32 或 128 个一组、每组一个 scale 叫 per-group，GPTQ 和 AWQ 的默认分组是 128，llama.cpp 的 GGUF 按 32 个权重一组存 scale。组越小越贴合数值分布，scale 的存储开销越大。
+
+权重量化和激活量化难度不同。权重是静态的，量化误差可以离线修正，GPTQ 用二阶信息逐列修正，AWQ 观察激活值保护少数重要通道。激活是动态的，LLM.int8() 论文发现大模型的激活里有少量极端离群值，会把 8bit 整型打穿，SmoothQuant 随后把离群值从激活迁移到权重，RCP 用旋转矩阵摊平，路线一直在变。
+
+量化时机分两种。PTQ 后训练量化拿少量校准数据统计范围，不碰训练，几十分钟完成。QAT 量化感知训练把伪量化算子插进网络，带着量化误差重训若干轮，精度更高但烧 GPU 时间，Kimi K3 的 MXFP4 就是从 SFT 起做 QAT，本空间 Kimi K3 那篇写过细节。
+
+<MermaidDiagram chart={`flowchart TB
+    P["预训练权重"] --> B{"量化时机"}
+    B -->|"PTQ"| PTQ1["校准数据统计数值范围"]
+    PTQ1 --> PTQ2["计算 scale 与 zero point"]
+    PTQ2 --> OUT["量化权重与激活<br/>推理时按组反量化"]
+    B -->|"QAT"| QAT1["伪量化算子插入网络"]
+    QAT1 --> QAT2["带量化误差重训"]
+    QAT2 --> OUT
+    OUT --> H["目标芯片的 INT8 或 INT4 算子"]
+`}/>
+
+![均匀量化映射与分组量化示意](/images/edge-ai-deployment/quantize-principle.svg)
+
+### BFP，块浮点量化
+
+均匀量化用 scale 缩放整数，BFP 换了一种分配精度的方式，块内共享指数。把 16 个或 32 个数值划成一个块，块内所有值只存尾数，一个共享指数管整块的动态范围。乘法变成整数乘法，指数只加一次，硬件的乘加单元省下大量位宽逻辑。这个思路从 2018 年 Drumond 等人的训练加速工作提出，2020 年 Darvish Rouhani 等人的工作系统化，2023 年 OCP 的 MX 格式是同一个家族的另一支，本空间 Kimi K3 那篇写过的 MXFP4 就在里面。
+
+BFP 的工作流程四步。先把张量按固定大小分块，常见 16 个值一块。统计块内数值，取一个共享指数，通常对齐到块内最大绝对值，保证不溢出。每个值按共享指数归一化，只留尾数，比如 4bit，共享指数常用 5bit。反量化时指数只乘一次，整块一起放缩。两级结构再摊薄开销，llama.cpp 的 GGUF k-quants 就是这么存的。F-BFQ 论文把 Q3_K 的结构拆开，256 个权重一个超块，分成 16 块，每块 16 个权重加 6bit 块缩放因子，超块再挂 16bit 超缩放因子，平均每权重 3.5bit。Q2_K 更狠，每权重约 2.6bit。llama.cpp 从 1.5 到 8bit 的各档量化都是这套两级结构。
+
+![块浮点的共享指数结构与 GGUF 两级缩放](/images/edge-ai-deployment/bfp-principle.svg)
+
+共享指数有代价。整块对齐到最大指数，小值和中值的精度被截掉，激活里的离群值会拖累整块。BBAL 论文报告，直接把 BFP4 用在 OPT 的线性层上，困惑度涨超过 40%。应对思路各家不同。BBAL 加一个标志位区分高尾数和低尾数，小值不再牺牲，BBFP(3,1) 比 BFP4 提升 6%，同精度下能效比普通 BFP 加速器高 40%。DB-Attn 论文发现 vanilla BFP 做 Softmax 会把 LLaMA3 的零样本平均准确率拉低 33.81%，用 DBFP 加查找表把 Softmax 提速 74%。EES 论文把可扩展的指数位塞进尾数低位，不增加存储换动态范围，W4A4 下能效比 FP16 高 13.6 倍。BiE 用双指数处理离群值，发在 ICML 2024。硬件侧也有配套，F-BFQ 在 AMD 板卡上把推理平均提速 1.4 倍。
+
+![BBFP 数据格式，标志位把块内值分成高尾数和低尾数，vanilla BFP 整块对齐最大指数，来源 BBAL 论文](/images/edge-ai-deployment/bbfp-format.svg)
+
+BFP 和均匀量化各占一头。均匀量化把缩放信息存成 scale，BFP 把缩放信息放进共享指数，精度按块重分配。选哪个看硬件，GPU 上的整数乘加配 scale 是主流，块浮点需要专门的指数处理单元，CPU 上的 llama.cpp 用得起，专用加速器要按 BFP 定制，F-BFQ 就是例子。
+
+### 把量化装进 NAS
+
+量化融入 NAS 的第一步，把位宽变成搜索维度。HAQ 是这一路的起点，CVPR 2019 的口头报告，用强化学习逐层选位宽，目标函数里带硬件时延和能耗反馈，搜出混合精度模型，K-Means 权重量化和线性激活量化各有一档搜索。层对量化的敏感度差很多，逐层分配位宽比全模型一个位宽省得多，SignRoundV2 的逐层位宽分配和 HAQ 是同一个思路。
+
+位宽和结构一起搜是下一步。APQ 论文点出问题，分开搜是次优的，全精度下最优的结构量化后未必最优，三步分开走每个部署场景都要重来。APQ 把结构、剪枝、量化合成一个搜索空间，权重共享的超网解决训练成本，量化感知准确率预测器解决评估成本，预测器先在全精度数据上训练，再迁移到量化域，样本效率大幅提升。结果是在相同准确率下比 8bit ResNet34 省 8 倍 BitOps，比 MobileNetV2 加 HAQ 的流水线省 2 倍时延和 1.3 倍能耗，比 ProxylessNAS 加 AMC 加 HAQ 的分步方案高 2.3 个点，GPU 时省 600 倍。
+
+其他路线各有侧重。HQNAS 用权重共享加位共享，单路径 DARTS 加 REINFORCE，位宽只在 4、8、16 里选，CIFAR10 上 4 个 GPU 时出结果，ImageNet 上搜索成本降到传统 NAS 的十分之一，时延低 1.8 倍，准确率只掉 0.7 个点。FLIQS 做一次性搜索，混合精度的整数和浮点都能搜，不用重训，ResNet-18 在同等成本下准确率高 1.3 个点，联合结构和量化的搜索在 MobileNetV2 空间上高 2.69 个点。MARCO 走统计保证的路线，前面写过，量化代理和结构代理共享奖励信号，逐层位宽在内存和时延预算内分配。
+
+把量化和 NAS 合流的工作流程大致五步。先用权重共享的超网把结构、通道、逐层位宽装进一个模型，量化算子直接参与训练。再训练量化感知的准确率预测器，APQ 用预测器迁移，HQNAS 用位共享省数据。硬件侧建时延和能耗查找表，按真实芯片的算子成本填表。搜索器在约束内联合挑结构和位宽，进化或强化学习都行。最后对选出的混合精度模型做量化感知微调，上线部署。
+
+<MermaidDiagram chart={`flowchart TB
+    A["权重共享超网<br/>结构、通道、逐层位宽"] --> B["量化感知准确率预测器<br/>预测器迁移或位共享"]
+    B --> C["硬件时延与能耗查找表"]
+    C --> D["进化或强化学习<br/>结构与位宽联合搜索"]
+    D --> E["混合精度最优模型"]
+    E --> F["量化感知微调后部署"]
+`}/>
+
+量化融入 NAS 的收益清晰。精度上，位宽按层分配，同样的算力预算换更高的准确率。流程上，一次搜索同时拿到结构和量化策略，省掉分步优化的重复成本。代价是搜索空间成倍膨胀，预测器和查找表成了必需品，这在 APQ 和 MARCO 里都有体现。
+
+4bit 已经到生产可用的水平。SignRoundV2 用梯度敏感度结合量化偏差逐层分配位宽，4 到 5 bit 下和全精度只差约 1%，论文原话是 production-grade。QRazor 把权重、激活、KV cache 全压到 4bit，LLaMA2-7B 的零样本推理比 SmoothQuant 和 QLLM 高 12 个点以上，比 QuaRot 的 RTN 基线高 2.9 个点，全程不用微调。
+
+2bit 是另一回事。RCP 论文把原因讲清楚了，激活里的离群值会把低比特激活量化打穿，先用旋转矩阵摊平离群值，再用可学习的非均匀量化器配合重训。LLaMA2-7B 压到 W2A4KV4，WikiText2 困惑度只涨 2.84，内存体积降到 5.29 分之一，WizardCoder 的 HumanEval 从只用旋转时的 6.09% 涨到加上非均匀量化后的 23.20%，涨了 17 个点。基线方法在 2bit 下直接训不出能用的模型。
+
+位宽还能靠训练技巧找回来。MatQuant 利用整数位宽的嵌套结构，int8 的最高位里天然嵌着 int4 和 int2，一个模型同时按多个精度训练，部署时按内存压力切片，int2 模型比单独训的 int2 高最多 4 到 7 个点，多留一个位表示离群值到 2.05bit，再加 6 个点。ParetoQ 给了一个更系统的结论，2bit 和 3bit 之间有一条学习行为的分界，3bit 以上的模型微调后还留在预训练分布附近，2bit 以下的表示彻底改变，600M 参数的三元模型超过了之前最好的 3B 三元模型。
+
+![位宽与内存体积，标注各档位的论文结论](/images/edge-ai-deployment/memory-bits.svg)
+
+账算完说清谁受影响。4bit 量化把 7B 模型的权重从 14GB 压到 3.5GB，手机和 Jetson 这类平台都装得下，论文结论是生产可用。2bit 还停在论文阶段，RCP 和 MatQuant 证明精度保得住，代价是重训和专用算子，要等硬件的 2bit 指令集铺开才有工程价值。三笔账互相牵制，位宽降一档内存压力减一半，2bit 以下模型表示会变。结构贴合芯片时延能压近十倍，每个芯片要重新搜。解码优化最见效，模型一超过内存容量闪存 I/O 又变成瓶颈。上板之前，先把带宽、算子集、内存三件硬事实测出来。
+
+## 事实核查小结
+
+| 说法 | 结论 |
+|------|------|
+| 手机 SoC 带宽 50 到 60 GB/s，A100 1555 GB/s | 端侧部署综述引用的器件规格 |
+| 云端 RTT 50 到 500ms，实时场景要 10ms 以内 | 同上，综述引用的时延要求 |
+| 解码占 90.2%，prefill 超 1000 token/s | sd.npu 论文原文，OnePlus 13 加 Qwen2.5-1.5B |
+| Ghidorah 解码提速最高 7.6 倍 | Ghidorah 论文原文，Jetson NX |
+| Lever 时延平均降 2.93 倍，浪费计算 21.4% | Lever 论文原文，手机 NPU |
+| SignRoundV2 4 到 5 bit 差约 1% | SignRoundV2 论文原文 |
+| QRazor 高 12 个点与 2.9 个点 | QRazor 论文原文，LLaMA2-7B 零样本推理 |
+| RCP 困惑度涨 2.84，内存降 5.29 倍，HumanEval 23.20% | RCP 论文原文，LLaMA2-7B 与 WizardCoder |
+| MatQuant int2 高 4 到 7 个点，2.05bit 加 6 个点 | MatQuant 论文原文 |
+| ParetoQ 2 到 3bit 分界，600M 超 3B | ParetoQ 论文原文 |
+| MobileNetV3 75.2% top-1，219M MACs | Howard 等 2019 年论文 |
+| MNasNet 75.2% top-1 与 78ms，MobileNetV2 72.0% 与 75ms | MNasNet 论文原文，Pixel 手机 |
+| MobileNetV1 与 NASNet FLOPs 相近，时延 113ms 对 183ms | MNasNet 论文原文 |
+| NASNet 早期搜索 2000 GPU 天量级，DARTS 单卡一天 | NAS 综述与 DARTS 论文 |
+| OFA 搜索成本 40 GPU 时，超网 10^19 子网 | OFA 论文原文 |
+| MCUNet 70.7%，省 3.5 倍 SRAM 与 5.7 倍 Flash，300 GPU 时 | MCUNet 论文原文，STM32H743 |
+| HW-NAS-Bench 1.5 万个结构，六块硬件 | HW-NAS-Bench 论文 |
+| ModelOpt 四步流程与 mtn.convert、mtn.search API | ModelOpt 官方 NAS 指南 |
+| ModelOpt 转换支持 Megatron GPT、MoE 模型 | ModelOpt 官方文档 |
+| NNI 十种搜索策略，多试制与单试制两类 | NNI 官方文档 |
+| NNI Profiler 与 Filter 中间件的用法 | NNI 官方文档 |
+| Q3_K 约 3.5bit 每权重，Q2_K 约 2.6bit，两级缩放结构 | F-BFQ 论文整理的 GGUF 格式 |
+| BFP4 在 OPT 线性层困惑度涨超 40%，BBFP(3,1) 提升 6%，BBFP(4,2) 比 OmniQuant 低 33% | BBAL 论文原文 |
+| vanilla BFP 做 Softmax 使 LLaMA3 零样本准确率降 33.81% | DB-Attn 论文原文 |
+| EES W4A4 能效比 FP16 高 13.6 倍 | EES 论文，ACL 2025 Findings |
+| HAQ 用强化学习逐层选位宽 | HAQ 论文，CVPR 2019 |
+| APQ 省 8 倍 BitOps、2 倍时延、高 2.3 个点、GPU 时省 600 倍 | APQ 论文，CVPR 2020 |
+| HQNAS 4 个 GPU 时，时延低 1.8 倍，掉 0.7 个点 | HQNAS 论文 |
+| FLIQS 高 1.3 个点与 2.69 个点 | FLIQS 论文 |
+| 均匀量化公式、per-group 粒度 | Gholami 等 2021 年量化综述 |
+| GPTQ、AWQ 默认分组 128，GGUF 分组 32 | 对应论文与 llama.cpp 文档 |
+| LLM.int8 离群值发现、SmoothQuant 迁移离群值 | 两篇论文原文 |
+| SCAN-Edge 74% 对 72.2%，98.6ms 对 95.5ms | SCAN-Edge 论文原文，Cortex-A57 |
+| HPC2Edge 332ms 到 52ms，快 8.8 倍 | HPC2Edge 论文原文，RAISE-LPBF |
+| MARCO 搜索快 3 到 4 倍，偏差小于 5% | MARCO 论文原文，MAX78000 |
+
+## 参考资料
+
+**综述与论文**
+
+- [Optimizing Edge AI，数据模型与系统的优化综述](https://arxiv.org/abs/2501.03265)，2025。带宽与时延数据交叉自该文 v2 版本
+- [Edge AI on Constrained Devices，部署与生命周期管理综述](https://doi.org/10.1145/3827611)，ACM Computing Surveys，2026
+- [On-Device AI Models 综述](https://arxiv.org/abs/2503.06027)，ACM Computing Surveys，2025
+- [Neural Architecture Search 综述（Elsken 等）](https://arxiv.org/abs/1808.05377)，JMLR 2019。NAS 三件套框架的来源
+- [A Survey of Quantization Methods for Efficient Neural Network Inference（Gholami 等）](https://arxiv.org/abs/2103.13630)，2021。均匀量化公式与 PTQ、QAT 分类
+- [MNasNet，平台感知的移动端 NAS](https://arxiv.org/abs/1807.11626)，CVPR 2019
+- [DARTS，可微架构搜索](https://arxiv.org/abs/1808.09077)，ICLR 2019
+- [Once-for-All，一个超网多处部署](https://arxiv.org/abs/1908.09791)，ICLR 2020
+- [MCUNet，单片机上的 ImageNet 推理](https://arxiv.org/abs/2007.10319)，NeurIPS 2020
+- [GPTQ，基于二阶信息的权重量化](https://arxiv.org/abs/2210.17323)，ICLR 2023
+- [AWQ，激活感知的权重量化](https://arxiv.org/abs/2306.00978)，MLSys 2024
+- [LLM.int8()，8bit 矩阵乘与离群值分离](https://arxiv.org/abs/2208.07339)
+- [SmoothQuant，激活离群值的权重迁移](https://arxiv.org/abs/2211.10438)
+- [QLoRA，NF4 数据类型的来源](https://arxiv.org/abs/2305.14314)，NeurIPS 2023
+- [sd.npu，手机 LLM 的投机解码与 NPU 协同](https://arxiv.org/abs/2510.15312)
+- [Ghidorah，边缘 LLM 投机解码与异构核并行](https://arxiv.org/abs/2505.23219)
+- [Lever，手机闪存推理的投机解码](https://arxiv.org/abs/2605.16786)
+- [SignRoundV2，极低比特后训练量化](https://arxiv.org/abs/2512.04746)
+- [QRazor，4bit 大模型量化](https://arxiv.org/abs/2501.13331)
+- [RCP，W2A4KV4 量化](https://aclanthology.org/2025.findings-emnlp.400/)，EMNLP 2025 Findings
+- [F-BFQ，柔性块浮点量化加速器](https://arxiv.org/abs/2510.13401)，2025。GGUF 的 Q2_K、Q3_K 格式拆解
+- [BBAL，双向块浮点量化加速器](https://arxiv.org/abs/2504.15721)，2025。BFP 误差机制与 BBFP 格式
+- [DB-Attn，把 BFP 推进非线性算子](https://arxiv.org/abs/2502.00026)，AAAI 2025
+- [EES，可扩展指数的块浮点表示](https://aclanthology.org/2025.findings-acl.768/)，ACL 2025 Findings
+- [HAQ，硬件感知的自动量化](https://arxiv.org/abs/1811.08886)，CVPR 2019
+- [APQ，结构、剪枝与量化联合搜索](https://arxiv.org/abs/2006.08509)，CVPR 2020
+- [HQNAS，量化与结构联合搜索](https://arxiv.org/abs/2210.08485)
+- [FLIQS，一次性混合精度量化搜索](https://proceedings.mlr.press/v256/dotzel24a.html)
+- [MatQuant，嵌套精度量化](https://arxiv.org/abs/2502.06786)，Google DeepMind
+- [ParetoQ，极低比特量化与缩放规律](https://arxiv.org/abs/2502.02631)
+- [SCAN-Edge，端侧混合结构搜索](https://arxiv.org/abs/2408.15395)
+- [MARCO，硬件感知 NAS](https://arxiv.org/abs/2506.13755)
+- [HPC2Edge，硬件在环的高性能计算训练](https://arxiv.org/abs/2505.19995)
+- [MobileNetV3（Howard 等，2019）](https://arxiv.org/abs/1905.02244)
+
+**开源工程**
+
+- [llama.cpp（ggerganov）](https://github.com/ggerganov/llama.cpp)，GGUF 分块量化的参考实现
+- [auto-round（intel）](https://github.com/intel/auto-round)，SignRound 与 SignRoundV2 的实现
+- [gptq（IST-DASLab）](https://github.com/IST-DASLab/gptq)，GPTQ 算法
+- [llm-awq（mit-han-lab）](https://github.com/mit-han-lab/llm-awq)，AWQ 算法
+- [smoothquant（mit-han-lab）](https://github.com/mit-han-lab/smoothquant)，激活量化
+- [bitsandbytes](https://github.com/bitsandbytes-foundation/bitsandbytes)，NF4 与 QLoRA 的基础库
+- [apq（mit-han-lab）](https://github.com/mit-han-lab/apq)，结构、剪枝与量化联合搜索的实现
+- [haq（grandeep）](https://github.com/grandeep/haq)，强化学习混合精度量化搜索的实现
+- [DARTS（quovadmo）](https://github.com/quovadmo/DARTS)，可微搜索
+- [once-for-all（mit-han-lab）](https://github.com/mit-han-lab/once-for-all)，超网剪枝部署
+- [mcunet（mit-han-lab）](https://github.com/mit-han-lab/mcunet)，TinyNAS 与单片机模型
+- [tinyengine（mit-han-lab）](https://github.com/mit-han-lab/tinyengine)，单片机推理引擎
+- [HW-NAS-Bench（xiaofan-Li）](https://github.com/xiaofan-Li/HW-NAS-Bench)，六块真实硬件的时延基准
+- [Model-Optimizer（NVIDIA）](https://github.com/NVIDIA/Model-Optimizer)，NAS 与量化、剪枝一体的优化库
+- [ModelOpt NAS 指南](https://nvidia.github.io/Model-Optimizer/guides/7_nas.html)，转换、训练、搜索、微调四步流程与 API 示例
+- [nni（microsoft）](https://github.com/microsoft/nni)，AutoML 框架，NAS 基于 Retiarii
+- [NNI NAS 文档](https://nni.readthedocs.io/en/stable/nas/overview.html)，搜索空间、策略与硬件感知 NAS
+- [Retiarii 论文（OSDI 2020）](https://www.usenix.org/conference/osdi20/presentation/zhang-quanlu)，NNI NAS 的底层框架
+- [nn-Meter（microsoft）](https://github.com/microsoft/nn-Meter)，端侧时延预测器，NNI 的 NnMeterProfiler 用它
+- [MNasNet（tensorflow/tpu）](https://github.com/tensorflow/tpu/tree/master/models/official/mnasnet)，平台感知搜索的实现

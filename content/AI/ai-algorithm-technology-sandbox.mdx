@@ -1,0 +1,409 @@
+---
+title: "AI 算法技术沙盘：三层结构与四类场景全景（2026）"
+description: "一张覆盖语言大模型、Agent 场景、多模态大模型、物理AI 四类场景的 AI 算法技术沙盘，纵向三层十个子维度，含原理解释、论文引用、关键数字，配 Mermaid 架构图与九张论文原图。"
+date: "2026-09-01"
+tags: ["AI 算法", "技术沙盘", "大模型", "Agent", "多模态", "物理AI", "MoE", "量化", "投机解码", "近存计算", "RLHF", "论文综述"]
+---
+
+## 1. 这张沙盘怎么来的
+
+我手头维护着一张 AI 算法技术沙盘，给组里新入职的工程师当技术地图用。沙盘按纵向三层和横向四类场景排开，纵向是模型算法、算法与系统协同、算法与芯片协同，横向是语言大模型、Agent 场景、多模态大模型、物理AI。整理成这篇文章之前，我把要引的每篇论文都重查了发表年份和 arXiv 编号，把模型卡上的参数和几份官方技术报告重新过了一遍。
+
+公开资料不算少，倒是几处流传的说法和官方文件对不上。先说两处，后面不再重复。一处是 Mixtral 8x7B 用了滑动窗口注意力，官方 config.json 里 sliding_window 是空值，滑动窗口只在 Mistral 7B 上。另一处是 GPT-4o 是 MoE 结构，OpenAI 至今没有公布过架构细节，本文只把它放进统一多模态 Transformer，不写进 MoE 的例子。两处取舍都按官方文件走。
+
+下面是完整的沙盘矩阵，每个格子里是一类算法的入口。
+
+| 技术层级 | 技术子维度 | 语言大模型 | Agent 场景 | 多模态大模型 | 物理AI |
+| --- | --- | --- | --- | --- | --- |
+| **模型算法（核心层）** | **模型结构** | 典型模型与算法，Decoder-only Transformer（GPT-3、Llama 3、Qwen）；MoE 稀疏专家架构（Mixtral 8x7B、Gemma 3）；GQA 分组查询注意力、滑动窗口注意力。说明，以自回归解码为核心，通过 MoE 实现参数量扩容与计算效率的平衡 | 典型模型与算法，推理架构 CoT、ToT、GoT；工具调用 ReAct、Toolformer、OpenAI Functions；多智能体 MetaGPT、AutoGPT、CAMEL。说明，以推理规划加工具调用为核心，通过多智能体分工实现复杂任务拆解 | 典型模型与算法，统一 Transformer 架构（GPT-4o、Gemini 1.5）；跨模态对齐 CLIP 对比学习、Flamingo Perceiver 重采样；生成模型扩散 Stable Diffusion、Sora、DiT。说明，实现文本、图像、音频、视频的统一表征与条件生成 | 典型模型与算法，物理信息神经网络 PINN；图神经网络 GCN/GAT（分子动力学、材料仿真）；神经算子 DeepONet、FNO。说明，嵌入物理守恒定律，直接求解偏微分方程与端到端仿真 |
+| **模型算法（核心层）** | **强化学习对齐** | 典型算法，RLHF 人类反馈强化学习（ChatGPT）；直接偏好优化 DPO、ORPO、IPO；拒绝采样强化学习 RRHF。说明，通过人类偏好对齐模型输出，提升指令遵循性与安全性 | 典型算法，任务规划 PPO 近端策略优化；多智能体自博弈强化学习；RLAIF 工具使用反馈策略优化。说明，通过环境与工具反馈优化决策策略，提升任务完成率与自主迭代能力 | 典型算法，多模态 RLHF（视觉语言对齐奖励模型）；图像生成人类偏好优化（DALL·E 3、Midjourney）；视频生成时序一致性奖励。说明，对齐多模态生成质量，提升图文一致性与时序合理性 | 典型算法，连续控制 SAC、TD3（机器人、自动驾驶）；轨迹优化强化学习（运动规划）；仿真博弈寻优（流体、电磁场优化）。说明，在物理仿真环境中优化控制策略与求解精度 |
+| **模型算法（核心层）** | **以训助推迭代** | 典型算法，参数高效微调 LoRA、QLoRA、DoRA；持续预训练、增量领域预训练；知识蒸馏（大模型蒸馏垂直小模型）。说明，以极低计算成本实现模型能力迭代与垂直领域适配 | 典型算法，演示微调（少样本 ICL、行为克隆）；轨迹偏好学习（从成功轨迹中学习策略）；自动课程学习（迭代式难度升级）。说明，通过少量示范与轨迹反馈持续拓展 Agent 能力边界 | 典型算法，模态自适应预训练（文本预训练能力迁移多模态）；跨模态迁移学习（CLIP 特征迁移）；增量对齐训练（新增模态快速适配）。说明，复用语言模型主干，低成本扩展视觉与音频等模态能力 | 典型算法，仿真驱动预训练（大规模仿真数据预训练）；物理先验嵌入训练（守恒定律、边界条件嵌入）；小样本泛化训练（少样本适配新物理场景）。说明，用仿真数据降低标注成本，嵌入物理规律提升外推泛化性 |
+| **算法-系统协同（中间层）** | **量化稀疏** | 典型算法，权重量化 GPTQ、AWQ、SmoothQuant（INT4/INT8）；稀疏剪枝（结构化剪枝、非结构化 L1 剪枝、活化稀疏）；KV 缓存量化压缩。说明，压缩模型体积与显存占用，数倍提升推理吞吐量 | 典型算法，决策路径剪枝（MCTS 蒙特卡洛树剪枝）；计算图动态稀疏化（按需激活计算节点）；状态空间稀疏采样。说明，裁剪冗余决策分支，降低规划与推理的计算开销 | 典型算法，跨模态联合量化（视觉与文本统一量化）；注意力稀疏化（滑动窗口、空间稀疏注意力）；模态冗余裁剪（去除低贡献通道）。说明，压缩多模态模型体积，降低跨模态融合计算量 | 典型算法，数值计算自适应量化（浮点与定点自适应切换）；计算网格稀疏化（自适应网格加密与粗化）；边界条件裁剪与区域分解。说明，优化数值仿真网格，减少无效计算区域与求解量 |
+| **算法-系统协同（中间层）** | **调优优化** | 典型技术，算子融合 FlashAttention、FlashDecoding、Fused MLP；三并行（数据并行、张量并行、流水线并行，Megatron-LM）；显存优化（分页注意力、重计算、碎片整理）。说明，从算子到集群全栈优化，提升训练与推理效率 | 典型技术，任务流水线调度（多 Agent 优先级队列调度）；计算资源动态分配（按任务负载弹性分配算力）；推理结果缓存复用（相似任务命中直接返回）。说明，优化多 Agent 任务调度与资源利用率，降低端到端延迟 | 典型技术，模态间流水线调度（编码与解码并行执行）；异构算子融合（CNN 加 Transformer 融合算子）；多流并行优化（多模态数据流并发）。说明，协同不同模态的计算流程，提升端到端生成速度 | 典型技术，并行数值求解（多重网格法、共轭梯度法并行化）；多尺度计算调度（宏观与微观分层计算）；仿真步长自适应优化。说明，提升大规模数值仿真的求解速度与资源利用率 |
+| **算法-系统协同（中间层）** | **通信优化** | 典型技术，梯度压缩（Top-k 稀疏化、随机 k 压缩）；集合通信优化（AllReduce 与 AllGather 融合，NCCL）；计算通信重叠。说明，降低多卡多节点训练的通信开销，提升集群扩展性 | 典型技术，多智能体消息压缩（特征编码压缩）；事件驱动通信（按需触发，减少空转）；分层通信拓扑（中心调度加局部协作）。说明，减少 Agent 间通信量，降低多智能体系统交互延迟 | 典型技术，跨节点特征压缩（视觉特征降维传输）；多模态流量调度（优先级带宽分配）；模态间通信流水线。说明，降低分布式多模态推理的数据传输延迟 | 典型技术，边界数据压缩传输（区域分解法）；相邻子域仅交换边界数据；异步通信加计算重叠。说明，降低大规模并行仿真的节点间通信开销 |
+| **算法-系统协同（中间层）** | **预取与投机推理** | 典型算法，KV 缓存预取、分页 KV 缓存；投机解码 Speculative Decoding、Medusa、Eagle；推测式批量推理。说明，通过提前计算加投机验证，大幅降低自回归解码延迟 | 典型算法，工具调用预取（预判需求提前加载工具）；多路径投机执行（并行探索决策分支）；环境状态预判（提前预测下一时刻状态）。说明，通过预判减少等待延迟，提升 Agent 响应速度 | 典型算法，视觉特征预取（提前编码候选视觉块）；文本引导图像投机生成；扩散步长投机（大步长预判加小步长修正）。说明，加速多模态理解与生成的端到端速度 | 典型算法，边界条件预取（提前加载下一时步边界）；数值仿真投机步进（大步长推测加误差修正）；物理场时序预判。说明，加速瞬态仿真与时序物理问题求解 |
+| **算法-芯片协同（硬件层）** | **低精计算** | 典型技术，FP8/FP4 浮点计算引擎（NVIDIA Hopper、AMD MI300）；混合精度加速（训练 FP16/BF16，推理 INT4/FP8）；低精度张量核。说明，硬件原生支持低精度格式，数倍提升算力密度 | 典型技术，边缘端 INT8 决策推理核；策略网络低精加速（端侧 Agent 专用 NPU）；混合精度决策引擎。说明，适配端侧 Agent 低功耗、低延迟的部署需求 | 典型技术，多模态融合低精度计算（统一 NPU 低精引擎）；视觉与文本统一低精指令集；扩散模型专用低精加速核。说明，硬件配合多模态计算的精度与效率平衡 | 典型技术，FP6/FP8 科学计算核（定制化低精格式）；混合精度求解（迭代低精加修正高精）；TF32 加 INT 混合计算。说明，针对科学计算特性定制低精格式，提升仿真吞吐量 |
+| **算法-芯片协同（硬件层）** | **稀疏计算** | 典型技术，稀疏张量核（NVIDIA Ampere Sparse Tensor Core）；2 比 4 结构化稀疏硬件跳过机制；稀疏激活硬件调度。说明，硬件原生支持稀疏张量运算，自动跳过零值计算 | 典型技术，稀疏 GNN 计算核（图神经网络硬件加速）；状态跳转稀疏加速（仅计算状态变化节点）；稀疏决策树硬件引擎。说明，针对图结构与决策逻辑的稀疏性定制硬件加速 | 典型技术，稀疏注意力硬件加速（空间与窗口稀疏）；稀疏卷积张量核（CNN 视觉模型）；零值自动跳过机制。说明，适配视觉与注意力的天然稀疏性，提升计算效率 | 典型技术，稀疏网格计算核（有限元、有限差分稀疏矩阵）；非结构化物理场稀疏加速；稀疏线性求解器硬件加速。说明，针对物理仿真的稀疏矩阵与网格做硬件定制 |
+| **算法-芯片协同（硬件层）** | **近存与存内计算** | 典型技术，存内 KV 缓存计算（HBM 近存 Transformer 加速）；3D 堆叠 SRAM 近存算子；ReRAM 存内矩阵乘运算。说明，突破内存墙瓶颈，大幅减少数据搬运的功耗与延迟 | 典型技术，近存工具调用路由表（SRAM 近存查表）；存内 Agent 状态存储与更新；近存决策向量计算。说明，适配 Agent 频繁状态读写的特点，降低访存延迟 | 典型技术，近存视觉特征提取与计算；存内跨模态对齐计算；存内扩散采样加速。说明，减少多模态特征跨存储层级的搬运开销 | 典型技术，近存物理场网格计算；存内微分方程求解加速；存内稀疏矩阵运算。说明，针对物理仿真高访存特性，从架构上降低数据搬运 |
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph Core["模型算法核心层"]
+        direction LR
+        C1["语言大模型<br/>Decoder-only · MoE · GQA · 滑动窗口"]
+        C2["Agent 场景<br/>CoT / ToT / GoT · ReAct · 多智能体"]
+        C3["多模态大模型<br/>统一 Transformer · CLIP · 扩散"]
+        C4["物理AI<br/>PINN · GCN / GAT · 神经算子"]
+    end
+
+    subgraph Sys["算法-系统协同层"]
+        direction LR
+        S1["量化稀疏<br/>GPTQ / AWQ · MCTS 剪枝"]
+        S2["调优优化<br/>FlashAttention · 三并行 · 多重网格"]
+        S3["通信优化<br/>NCCL · 梯度压缩 · 边界交换"]
+        S4["预取与投机推理<br/>投机解码 · 工具预取 · 步长投机"]
+    end
+
+    subgraph Chip["算法-芯片协同层"]
+        direction LR
+        H1["低精计算<br/>FP8 · 混合精度 · MXFP4"]
+        H2["稀疏计算<br/>2比4 结构化稀疏 · 稀疏张量核"]
+        H3["近存与存内计算<br/>HBM · 3D SRAM · ReRAM"]
+    end
+
+    Core --> Sys --> Chip
+
+`}/>
+
+## 2. 模型算法核心层
+
+核心层决定计算方式。四类场景各自的结构、对齐、训练迭代，是上层所有优化的对象，算法长什么样，系统层和芯片层的优化就围着它转。
+
+### 2.1 语言大模型的结构
+
+Decoder-only Transformer 和自回归解码是这一格的骨架。Transformer（[Vaswani 等人，2017](https://arxiv.org/abs/1706.03762)）最初是编码-解码结构，[GPT-3（Brown 等人，2020）](https://arxiv.org/abs/2005.14165)之后语言模型收敛到 decoder-only，输入输出共享同一个序列，训练目标和推理目标都是预测下一个 token。自回归解码逐 token 串行，每个新 token 都要看一遍前面全部 token，注意力开销随序列长度二次增长。这一条数学性质牵出了后面大半个系统层，KV cache、投机解码、量化，都围着它转。
+
+KV cache 是自回归的第一个工程产物。推理时每个注意力头的 key 和 value 只算一次，存下来复用，避免重复计算。代价是显存随序列长度线性涨，长上下文场景里 KV cache 的显存经常超过权重本身。GQA 分组查询注意力（[Ainslie 等人，2023](https://arxiv.org/abs/2305.13245)）把查询头分组，一组头共享同一套 KV 头，KV cache 直接缩到原来的几分之一，Llama 3 的 70B 和 405B 都用了 GQA。
+
+MoE 稀疏专家架构负责参数量扩容。稀疏门控专家的想法来自 [Shazeer 等人（2017）](https://arxiv.org/abs/1701.06538)，[Mixtral 8x7B（2023 年 12 月，Apache 2.0）](https://arxiv.org/abs/2401.04088)把它带到开源模型的主流。8 个专家，每个 token 由门控路由选 2 个，总参数 46.7B，每 token 激活 12.9B，官方报告的 MT-Bench 分数 8.30。激活参数决定推理算力，总参数决定显存占用，这组数字直接解释了为什么 MoE 训练和推理都在跟通信和访存较劲。MoE 省算力不省显存，70B 稠密模型的显存账本在这里换成了一张更大的稀疏账本。[DeepSeek-V3（2024 年 12 月）](https://arxiv.org/abs/2412.19437)把稀疏度推到 671B 总参、37B 激活，[Gemma 3（2025 年 3 月）](https://arxiv.org/abs/2503.19786)用 MoE 做小尺寸模型。
+
+![Mixtral 8x7B 稀疏 MoE 层结构，来源 Mixtral of Experts 论文 Figure 1](/images/ai-algorithm-technology-sandbox/mixtral-moe-fig1.jpg)
+
+*图 1，Mixtral 8x7B 的稀疏 MoE 层。门控路由把每个输入向量分给 8 个专家中的 2 个，输出按路由权重加权求和。来源 Mixtral of Experts 论文 Figure 1。*
+
+滑动窗口注意力把注意力限制在局部窗口，窗口外加全局 token 兜底。[Longformer（Beltagy 等人，2020）](https://arxiv.org/abs/2004.05150)先提出这个组合，[Mistral 7B（2023）](https://arxiv.org/abs/2310.06825)的 SWA 用 4096 的窗口。价值在长上下文，每个 token 的注意力开销从整个序列压到窗口大小，代价是窗口外的依赖只能靠多层堆叠间接传递。
+
+<MermaidDiagram chart={`flowchart LR
+    A["输入 token 序列"] --> B["自回归解码<br/>逐 token 预测下一个"]
+    B --> C["KV Cache<br/>缓存历史 key 与 value，避免重算"]
+    B --> D{"MoE 门控路由<br/>每 token 选 2 个专家"}
+    D --> E1["专家 1"]
+    D --> E2["专家 2"]
+    D --> E3["专家 N"]
+    E1 --> F["合并输出 token"]
+    E2 --> F
+    E3 --> F
+    C -.-> G["注意力开销随序列增长<br/>引出 GQA 与滑动窗口"]
+    F -.-> G
+
+`}/>
+
+这一格的落点一句话，自回归解码是语言模型计算方式的核心，MoE 把扩容问题从算力搬到了显存和通信，GQA 和滑动窗口是注意力侧的两条省钱路线。显存和通信这两条线，在第 3、4 节还会反复出现。
+
+### 2.2 Agent 场景的结构
+
+Agent 场景的结构分三段，推理架构、工具调用、多智能体协作。
+
+推理架构解决怎么把一个问题想明白。思维链 CoT（[Wei 等人，2022](https://arxiv.org/abs/2201.11903)）让模型先把中间步骤写出来再落答案，这是后续所有推理优化的起点。思维树 ToT（[Yao 等人，2023](https://arxiv.org/abs/2305.10601)）把推理展开成树，在不同分支上搜索，适合需要多步尝试的问题。思维图 GoT（[Besta 等人，2023](https://arxiv.org/abs/2308.09687)）更进一步，允许不同推理链合并和互相引用。三者的共同代价是 token，思考的每一步都要真的生成，一个 Agent 任务的 token 消耗是单轮对话的几倍到几十倍，这决定了系统层要把缓存和调度放在什么位置。
+
+![ReAct 四种提示方法对比，来源 ReAct 论文 Figure 1](/images/ai-algorithm-technology-sandbox/react-fig1.jpg)
+
+*图 2，ReAct 对比四种提示方法。标准提示、思维链、纯行动和 ReAct 交替推理与行动，在 HotpotQA 问题上只有 ReAct 拿到了正确答案。来源 ReAct 论文 Figure 1。*
+
+工具调用解决模型够不到外部世界的问题。ReAct（[Yao 等人，2022](https://arxiv.org/abs/2210.03629)）把推理和行动交替编排，想一步做一步，这是 Agent 循环的基本骨架。Toolformer（[Schick 等人，2023](https://arxiv.org/abs/2302.04761)）在预训练数据里插 API 调用位置，让模型自己学会用工具。OpenAI Functions（2023 年中上线）把工具调用固化成结构化协议，后来的 function calling 基本都长这个形状，推理框架用参数约束和工具 schema 双重校验兜底。
+
+多智能体把单个模型的任务拆成多个角色的分工。MetaGPT（[Hong 等人，2023](https://arxiv.org/abs/2308.00352)）按软件公司的角色流水线作业，产品经理、架构师、工程师各管一段。AutoGPT（2023）是自主任务循环的早期开源代表。CAMEL（[Li 等人，2023](https://arxiv.org/abs/2303.17760)）用两个角色互相对话生成协作数据。共同点是任务拆解加消息传递，角色之间的消息就是任务的中间状态。
+
+### 2.3 多模态大模型的结构
+
+统一 Transformer 是这一格的收敛方向。GPT-4o（2024 年 5 月）把文本、图像、音频都 token 化进同一个 Transformer，输入输出都跨模态，官方口径是原生多模态。Gemini 1.5（[2024 年 2 月首发 Pro](https://arxiv.org/abs/2403.05530)）把上下文窗口推到 1M token。统一架构的意义在省掉模态之间的搬运，一份参数处理所有模态，代价是训练数据要同时覆盖所有模态组合。
+
+跨模态对齐解决不同模态怎么进同一个向量空间。[CLIP（Radford 等人，2021）](https://arxiv.org/abs/2103.00020)用对比学习把图像和文本编码进同一空间，配对样本拉近、负样本推远，这个双塔结构成了视觉语言模型的通用起点。[Flamingo（Alayrac 等人，2022）](https://arxiv.org/abs/2204.14198)的 Perceiver Resampler 把变长的视觉特征压缩成固定数量的 token，再喂给语言模型，是视觉特征怎么进语言模型的标准答案之一。[LLaVA（2023）](https://arxiv.org/abs/2304.08485)的两阶段训练沿同一条路，第一步对齐视觉编码器和语言模型主干，第二步端到端微调。
+
+![CLIP 对比预训练与零样本迁移，来源 CLIP 论文 Figure 1](/images/ai-algorithm-technology-sandbox/clip-fig1.jpg)
+
+*图 3，CLIP 的做法。左侧对比预训练把图像和文本编码进同一空间，拉近配对样本，右侧把学到的表征零样本迁移到下游分类任务。来源 CLIP 论文 Figure 1。*
+
+生成侧走扩散。[Stable Diffusion（Rombach 等人，2022）](https://arxiv.org/abs/2112.10752)在潜空间做扩散去噪，把去噪 U-Net 换成 Transformer 主干就是 [DiT（Peebles 与 Xie，2023）](https://arxiv.org/abs/2212.09748)。[Sora（2024 年 2 月）](https://openai.com/index/video-generation-models-as-world-simulators/)的技术报告明确写了 DiT 式结构，把视频当成时空 patch 序列做条件生成。2025 年 10 月发布的 Sora 2 把视频生成推到接近实拍的水平，架构细节没有公开。
+
+多模态这格的结构趋势一句话，理解侧对比对齐、生成侧扩散，两边都在往统一 Transformer 上并。
+
+### 2.4 物理AI的结构
+
+物理AI 的结构和前三类完全不同，输入输出是物理场而不是 token。
+
+[PINN（Raissi 等人，2019）](https://arxiv.org/abs/1711.10561)把偏微分方程的残差直接写进损失函数。网络输出解场，自动微分算出方程项，损失由数据、方程残差和边界条件三部分构成，训练一只网络就是解一个初边值问题。好处是网格无关，解场可以任意分辨率采样。
+
+![PINN 求解 Burgers 方程，来源 PINN 论文 Figure 1](/images/ai-algorithm-technology-sandbox/pinn-fig1.jpg)
+
+*图 4，PINN 求解 Burgers 方程。上方是预测解场和初始边界训练数据的位置，下方是绝对误差，网络输出直接覆盖整个时空域。来源 PINN 论文 Figure 1。*
+
+图网络处理离散结构。[GCN（Kipf 与 Welling，2017）](https://arxiv.org/abs/1609.02907)在图上做消息传递，聚合邻居特征。[GAT（Veličković 等人，2018）](https://arxiv.org/abs/1710.10903)给每条边加注意力权重。分子动力学和材料仿真里原子就是节点，键就是边。
+
+神经算子学的是算子本身。[DeepONet（Lu 等人，2021）](https://arxiv.org/abs/1910.03193)用 branch 和 trunk 两支网络逼近函数到函数的映射，输入整个输入场，输出任意点的解值。[FNO（Li 等人，2021）](https://arxiv.org/abs/2010.08895)在傅里叶域做卷积，卷积核在所有空间位置共享，训练一次就能在不同分辨率上推理，论文摘要里报告比传统求解器快最多三个数量级。
+
+这一格的共性一句话，把数值方法里最贵的偏微分方程求解换成网络前向。速度优势显著，代价是训练数据和泛化边界，它也是四类场景里离成熟最远的一格。
+
+### 2.5 强化学习对齐
+
+对齐这格在四类场景里的技术路线差别最大，按场景分开说。
+
+语言大模型走 RLHF 加直接偏好优化。RLHF 是 InstructGPT（[Ouyang 等人，2022](https://arxiv.org/abs/2203.02155)）定下的三段式，先 SFT，再训奖励模型，最后用 [PPO（Schulman 等人，2017）](https://arxiv.org/abs/1707.06347)优化策略，ChatGPT 2022 年 11 月上线用的就是这套。[DPO（Rafailov 等人，2023）](https://arxiv.org/abs/2305.18290)把偏好优化写成直接损失，跳过奖励模型和在线采样，训练成本大幅下降。[ORPO（2024）](https://arxiv.org/abs/2403.07691)把 SFT 和偏好优化合成一步。[IPO（Azar 等人，2023）](https://arxiv.org/abs/2310.12036)修 DPO 在重复偏好数据上的过拟合。[RRHF（Yuan 等人，2023）](https://arxiv.org/abs/2304.05302)用拒绝采样从好输出里学。这一系方法的共同目标一致，差别在用什么样的信号、几步走完。
+
+![InstructGPT 三段式 RLHF 流程，来源 InstructGPT 论文 Figure 2](/images/ai-algorithm-technology-sandbox/rlhf-fig2.jpg)
+
+*图 5，InstructGPT 的三段式。先 SFT 微调，再训奖励模型，最后用 PPO 优化策略，这是 RLHF 的标准流程。来源 InstructGPT 论文 Figure 2。*
+
+Agent 场景的对齐信号来自环境。PPO 直接做任务规划的策略优化，环境回传的奖励就是对齐信号。多智能体自博弈把对手当环境，AlphaStar（2019）在星际争霸、OpenAI Five（2019）在 Dota 2 里都打到职业水平。RLAIF（[Bai 等人，2022](https://arxiv.org/abs/2212.08073)）用模型自己生成偏好反馈替代人类标注，反馈量可以规模化。
+
+多模态对齐的是生成质量。多模态 RLHF 用视觉语言奖励模型打分，[ImageReward（2023）](https://arxiv.org/abs/2304.05977)是代表性的开源奖励模型。DALL·E 3（2023）披露用人类对图像质量的偏好排序参与训练。视频生成给时序一致性加奖励，2025 年以后各家视频模型都把它放进训练环节。
+
+物理AI 对齐的是控制策略。连续控制基本是 [SAC（Haarnoja 等人，2018）](https://arxiv.org/abs/1801.01290)和 [TD3（Fujimoto 等人，2018）](https://arxiv.org/abs/1802.09477)的后代，最大熵和双 critic 分别解决探索不足和过估计，机器人、自动驾驶的策略网络大多从这两支演化。运动规划里的轨迹优化用同一目标的不同解法。
+
+### 2.6 以训助推迭代
+
+语言大模型这一格的关键词是低成本迭代。[LoRA（Hu 等人，2021）](https://arxiv.org/abs/2106.09685)冻结原权重，只训练低秩增量，一张消费级显卡就能微调几十亿参数的模型。[QLoRA（Dettmers 等人，2023）](https://arxiv.org/abs/2305.14314)把权重压到 4bit 再训，单卡门槛进一步降低。[DoRA（2024）](https://arxiv.org/abs/2402.09353)把权重拆成幅度和方向分别更新，效果更接近全量微调。持续预训练和领域预训练解决新知识注入，知识蒸馏（[Hinton 等人，2015](https://arxiv.org/abs/1503.02531)）把大模型的能力压进小模型。
+
+![LoRA 低秩重参数化，来源 LoRA 论文 Figure 1](/images/ai-algorithm-technology-sandbox/lora-fig1.jpg)
+
+*图 6，LoRA 的重参数化。冻结原权重 W，只训练低秩矩阵 A 和 B，增量等于两者乘积，微调成本大幅下降。来源 LoRA 论文 Figure 1。*
+
+Agent 场景从演示和轨迹里学。少样本上下文学习（[GPT-3 论文](https://arxiv.org/abs/2005.14165)提出）不动权重。行为克隆直接学专家轨迹。轨迹偏好学习把成功轨迹当正样本。自动课程学习按难度递进安排训练数据。
+
+多模态复用语言模型主干。模态自适应预训练把视觉编码器接在语言模型上分阶段训练，LLaVA 是标准做法。CLIP 特征迁移把双塔学到的表征搬进下游任务。增量对齐训练在已有模型上补新模态，不用从头训。
+
+物理AI 用仿真顶替实验数据。仿真驱动预训练生成大规模合成数据，避开昂贵的实验标注。物理先验嵌入把守恒定律写进损失或网络结构。小样本泛化针对新物理场景，数据少，靠先验撑住。
+
+## 3. 算法-系统协同层
+
+这层干的事一句话，把核心层的算法在集群上跑得快、跑得起。四个子维度各对付一个瓶颈，量化稀疏对付显存，调优优化对付算力，通信优化对付带宽，预取与投机对付延迟。
+
+### 3.1 量化与稀疏
+
+语言大模型的量化是这套体系里最成熟的。[GPTQ（Frantar 等人，2022）](https://arxiv.org/abs/2210.17323)逐层最小化量化误差，把 175B 的 OPT 压到 3 到 4 bit 还能用。[AWQ（Lin 等人，2023）](https://arxiv.org/abs/2306.00978)按激活幅度保护重要通道，4bit 量化在边缘设备上跑成了主流，MLC-LLM 和 vLLM 都把它当默认选项。[SmoothQuant（Xiao 等人，2022）](https://arxiv.org/abs/2211.10438)把激活里的离群值平移一部分到权重侧，让 INT8 全量化在 175B 规模上基本无损。[LLM.int8()（Dettmers 等人，2022）](https://arxiv.org/abs/2208.07339)把离群列单独用高精度算。权重量化解决的是显存放不下，70B 模型 FP16 要 140GB，INT4 后约 35GB，单张 80GB 卡从放不下到放下，这是量化对部署最直接的一次改变。KV cache 还能再压一层，[KIVI（2024）](https://arxiv.org/abs/2402.02750)用非对称 2bit 量化 KV cache，长上下文场景的吞吐收益明显。
+
+![SmoothQuant 激活离群值问题，来源 SmoothQuant 论文 Figure 2](/images/ai-algorithm-technology-sandbox/smoothquant-fig2.jpg)
+
+*图 7，SmoothQuant 的动机。激活里的离群值把量化范围撑大，正常值只剩很少的量化档位，这就是激活难以量化的原因。来源 SmoothQuant 论文 Figure 2。*
+
+稀疏对应的是结构里的冗余。决策侧 MCTS 蒙特卡洛树搜索只在有希望的节点展开，AlphaGo（2016）和 AlphaZero（2017）的搜索效率靠它。多模态侧滑动窗口和空间稀疏注意力已经在结构里剪掉注意力矩阵的大块。物理侧自适应网格加密（Berger 与 Oliger，1984）在激波附近加密、平流区粗化，区域分解把大域切成子域，子域之间只交换边界数据，网格量直接降一个量级。
+
+### 3.2 算子与并行调优
+
+语言大模型的调优分算子、并行、显存三路。
+
+算子的代表是 [FlashAttention（Dao 等人，2022）](https://arxiv.org/abs/2205.14135)。它把注意力计算按 IO 感知分块，中间矩阵不写回显存，论文报告在 GPT-2 上比标准 PyTorch 注意力实现快约 3 倍。[FlashAttention-2（2023）](https://arxiv.org/abs/2307.08691)把并行度补齐，FlashDecoding（2023）让解码阶段跨序列并行，长序列场景收益明显。算子融合把 MLP 的多个 kernel 合成一次调用，减少 kernel 启动开销。
+
+![FlashAttention 分块策略与显存对比，来源 FlashAttention 论文 Figure 1](/images/ai-algorithm-technology-sandbox/flashattn-fig1.jpg)
+
+*图 8，FlashAttention 的分块策略。左图 tiling 把 N×N 的注意力矩阵分块计算，避免整块写回显存，右图是显存占用对比。来源 FlashAttention 论文 Figure 1。*
+
+并行是三平行的天下。[Megatron-LM（Shoeybi 等人，2019）](https://arxiv.org/abs/1909.08053)把数据并行、张量并行、流水线并行三套方案摆进同一框架，是训练百亿级模型的标准动作。[ZeRO（Rajbhandari 等人，2020）](https://arxiv.org/abs/1910.02054)把优化器状态分片到各卡，显存占用下降约 8 倍，训练侧显存瓶颈的主要解法。
+
+显存管理最出名的产物是 [PagedAttention（Kwon 等人，2023）](https://arxiv.org/abs/2309.06180)，vLLM 的核心。KV cache 按页管理，碎片和复用一起解决，论文报告吞吐提升 2 到 4 倍。重计算用算力换显存，训练时前向不存中间结果，反向再算一遍。
+
+Agent 场景的调优在调度层。任务流水线按优先级队列排多 Agent 任务，算力按负载弹性伸缩，推理结果缓存复用，相似的请求直接命中返回。Agent 的 token 消耗是单轮对话的数倍到数十倍，缓存命中率直接决定服务成本。
+
+多模态的调优在流水线。视觉编码和文本解码并行跑，CNN 和 Transformer 的算子合成一个 kernel，多条数据流并发调度。
+
+物理侧把数值算法的并行化做到极致。多重网格（Hackbusch，1985）在粗细网格间来回迭代，收敛速度几乎与网格规模无关。共轭梯度是稀疏对称正定系统的事实标准，配合预条件子做大规模并行。仿真步长自适应按误差估计动态调整，保证精度的同时省掉多余步数。
+
+### 3.3 通信优化
+
+语言大模型训练的通信账单有两笔，梯度同步和集合通信。
+
+梯度压缩把第一笔账变小。[Top-k 稀疏化（Lin 等人，2018）](https://arxiv.org/abs/1801.05873)只传绝对值最大的梯度，[QSGD（Alistarh 等人，2017）](https://arxiv.org/abs/1610.02132)给梯度加量化噪声再压缩。集合通信靠 NCCL，ring allreduce 让通信量随节点数线性扩展而不是平方扩展，AllReduce 和 AllGather 融合减少同步次数。计算通信重叠把流水线并行的气泡时间填上，通信和计算同时进行。
+
+MoE 让通信账单的结构变了。专家并行的 token 路由走 All-to-All，每个 token 都要跨卡找专家，通信量随稀疏度上升。DeepSeek-V3 的 DDP 加 All-to-All 方案和 Kimi K3 的 MoonEP 都在解决同一个问题，专家权重的分发与聚合。
+
+Agent 场景的通信在消息层。多智能体消息压缩把特征编码压了再传，事件驱动通信按需触发替代轮询，分层通信拓扑用中心调度加局部协作减少全局同步。
+
+多模态的通信在特征层。跨节点特征压缩先降维再传，多模态流量按优先级分配带宽，模态间通信走流水线。
+
+物理仿真的通信是最古老的优化对象。区域分解法只交换子域边界的少量数据，MPI 邻居通信，通信量跟界面大小成正比而不是整个网格。异步通信加计算重叠，通信的同时算别的子域。
+
+### 3.4 预取与投机推理
+
+投机解码是这一格最出名的技术。思路是用一个草稿模型快速预测一串 token，大模型并行验证，验证通过就一次接受一串，解码延迟降 2 到 3 倍。[Leviathan 等人（2022 年投稿，ICML 2023）](https://arxiv.org/abs/2211.17192)和 [Chen 等人（2023）](https://arxiv.org/abs/2308.04623)同期独立提出。[Medusa（Cai 等人，2023）](https://arxiv.org/abs/2401.10774)在大模型头上挂多个解码头，免掉草稿模型。[EAGLE（2024）](https://arxiv.org/abs/2401.15077)在特征层面做草稿，误差比 token 层面小。[EAGLE-2（2024）](https://arxiv.org/abs/2406.16858)引入动态草稿树，[EAGLE-3（2025，NeurIPS 2025）](https://arxiv.org/abs/2503.01840)用训练时测试把草稿模型的训练和推理对齐。投机解码和量化可以叠加，Kimi K3 的 MTP 层就同时做了 MXFP4 量化。
+
+![投机解码迭代过程，来源 Speculative Decoding 论文 Figure 1](/images/ai-algorithm-technology-sandbox/speculative-fig1.jpg)
+
+*图 9，投机解码的迭代过程。每一行是一轮迭代，草稿模型先预测一串候选 token，目标模型并行验证，接受一致的前缀，其余重新采样。来源 Speculative Decoding 论文 Figure 1。*
+
+KV cache 预取和分页在长上下文场景预载前缀，前缀缓存命中跳过整个 prefill 阶段，这是多轮对话和 Agent 场景延迟的大头优化。
+
+Agent 场景的预取更激进。工具调用预取预判下一步要用的工具提前加载，多路径投机执行并行探索决策分支，环境状态预判提前算下一时刻的状态。
+
+多模态的预取在视觉特征。候选视觉块提前编码，文本引导图像投机生成，扩散步长投机用大步长预判加小步长修正。
+
+物理仿真里这是成熟算法。边界条件预取提前加载下一时步的边界数据，预估校正法用大步长推测再用误差估计修正，瞬态仿真的时间步可以自适应拉长。
+
+## 4. 算法-芯片协同层
+
+这层的问题在硬件本身，芯片给算法什么格式、什么运算、什么存储，决定了上面两层优化的上限。三个子维度对应算力密度、算力利用率、数据搬运三件事。
+
+### 4.1 低精度计算
+
+低精度计算是算力密度的主要来源。混合精度训练（[Micikevicius 等人，2018](https://arxiv.org/abs/1710.03740)）用 FP16 或 BF16 做前反向，FP32 只存主权重，训练显存和算力需求同时下降。FP8 格式（[Micikevicius 等人，2022](https://arxiv.org/abs/2209.05433)）把训练精度进一步压低，Hopper 架构（H100，2022）原生支持，算力密度比 FP16 翻倍。Ampere 上的 TF32 给 FP32 数据做截断加速，三代硬件各自留下一个精度阶梯。推理侧 INT4 和 FP8 接上第 3 节的量化，Kimi K3（[2025](https://github.com/MoonshotAI/Kimi-K3/blob/main/k3_tech_report.pdf)）从 SFT 起用 MXFP4 权重加 MXFP8 激活做量化感知训练，是训练侧主动适配硬件格式的最新例证。
+
+端侧 Agent 的预算更紧。手机和车机 NPU 用 INT8 决策核，策略网络低精加速是端侧 Agent 的标配，混合精度决策引擎按任务切换精度。
+
+多模态的统一低精引擎让视觉和文本共享一套低精指令集，扩散模型专用低精加速核把去噪步的矩阵运算塞进定点计算。
+
+物理AI 对精度的需求最苛刻。FP6 和 FP8 科学计算核保留大动态范围，混合精度求解在迭代里用低精、修正用高精，迭代细化是数值线性代数的成熟做法，TF32 加 INT 混合计算覆盖不同规模的算例。
+
+### 4.2 稀疏计算
+
+稀疏计算把零值跳过变成硬件能力。Ampere（A100，2020）引入 2 比 4 结构化稀疏，每四个权重里两个为零，稀疏张量核直接跳过，吞吐翻倍，代价是剪枝必须按 2 比 4 结构来，这反过来约束算法侧。MoE 的路由结果就是天然的稀疏激活，稀疏激活硬件调度按需搬专家权重。
+
+Agent 侧的稀疏在结构和决策。稀疏 GNN 计算核利用邻接矩阵的天然稀疏，状态跳转只算状态变化的节点，稀疏决策树引擎把分支判断做成硬件查表。
+
+多模态的稀疏在注意力。窗口和块稀疏注意力在芯片上对应非零块跳过，稀疏卷积张量核处理 CNN 的稀疏化推理，零值自动跳过机制是通用方案。
+
+物理侧的稀疏是数值代数的主场。有限元刚度矩阵的稀疏度常超过 99%，直接存储非零元，稀疏矩阵计算核配合预条件共轭梯度，稀疏线性求解器硬件加速把求解循环做进芯片。
+
+### 4.3 近存与存内计算
+
+内存墙的定义来自 Wulf 与 McKee（1995），处理器算力增长远快于内存带宽，数据搬运成为瓶颈。Transformer 推理是访存密集型负载，权重和 KV cache 的反复搬运让这堵墙格外显眼。
+
+近存计算把存储搬到计算旁边。HBM 堆叠在芯片封装内，3D 堆叠 SRAM 放高频算子，KV cache 近存是这一格最实际的落点，长上下文场景 KV cache 的读写占访存大头。
+
+存内计算更进一步，直接在存储阵列里做矩阵乘。ReRAM 原型如 ISAAC（Shafiee 等人，2016）把神经网络权重存进模拟阵列，矩阵乘在存储单元内完成，省掉权重搬运。学术原型离量产还有距离，架构方向明确。
+
+Agent 侧的近存服务状态读写。近存工具调用路由表在 SRAM 里查表决定调哪个工具，存内 Agent 状态存储与更新把频繁读写留在近处，近存决策向量计算省掉中间搬运。
+
+多模态的近存服务特征提取。近存视觉特征提取把卷积输入输出放近存，存内跨模态对齐计算，存内扩散采样加速。
+
+物理仿真的访存密度最高。近存物理场网格计算把网格数据放近存，存内微分方程求解加速，存内稀疏矩阵运算和 4.2 的稀疏核配合，数据搬运和零值跳过一起解决。
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph LP["低精计算"]
+        L1["FP8 / FP4 引擎<br/>混合精度训练"]
+        L2["低精度张量核<br/>算力密度翻倍"]
+    end
+    subgraph SP["稀疏计算"]
+        S1["2比4 结构化稀疏<br/>硬件跳过零值"]
+        S2["稀疏张量核<br/>吞吐翻倍"]
+    end
+    subgraph NM["近存与存内计算"]
+        N1["HBM 近存<br/>3D 堆叠 SRAM"]
+        N2["ReRAM 存内矩阵乘<br/>省掉权重搬运"]
+    end
+    LP --> P["算力、利用率、搬运三个瓶颈"]
+    SP --> P
+    NM --> P
+`}/>
+
+## 5. 三层怎么咬合，四域差在哪
+
+### 5.1 纵向咬合
+
+三层的关系可以压缩成两句话。模型算法定义计算方式，系统层把它工程化，芯片层做原生加速。算法特性向下驱动系统与芯片设计，硬件约束向上反哺算法创新。三条具体的传导路径写在下面。
+
+第一条，算法特性向下驱动。MoE 的稀疏激活要求训练侧 All-to-All 通信和推理侧专家并行，芯片侧对应稀疏张量核和专家权重的访存调度。自回归的 KV cache 要求系统层做分页和量化，芯片侧做近存。扩散模型的多步去噪要求系统层做步长优化，芯片侧做低精加速核。
+
+第二条，硬件约束向上反哺。2 比 4 稀疏结构要求剪枝配合，低精度格式要求训练侧做量化感知训练，显存带宽上限逼出 FlashAttention 这类 IO 感知算法，算法反过来改变硬件设计。
+
+第三条，同一个问题经常横跨三层。KV cache 量化同时落在量化稀疏、调优优化和近存计算三个格子里，投机解码同时落在预取投机和低精计算两个格子里。我更新沙盘时最先动的总是这种跨格子的条目。
+
+### 5.2 横向差别
+
+四类场景的成熟度差得很远，用一张表收尾。
+
+| 场景 | 成熟度 | 核心瓶颈 | 主要依赖 |
+| --- | --- | --- | --- |
+| 语言大模型 | 最成熟，三层优化体系最完整 | 自回归解码延迟与显存容量 | 系统层全部手段，芯片层低精与稀疏 |
+| Agent 场景 | 快速发展期 | 决策效率与多智能体协作，token 成本 | 调度与缓存复用，端侧部署拉进芯片层 |
+| 多模态大模型 | 收敛期 | 跨模态对齐与异构计算调度 | 统一架构，多流并行与低精融合 |
+| 物理AI | 早期 | 物理规律嵌入与数值计算效率 | 高带宽、高精度，芯片定制刚开始 |
+
+四句话展开。语言大模型的技术最密，投机解码论文报告 2 到 3 倍的延迟下降，和量化叠加后更高，在线对话的响应时间直接从这一格受益。Agent 的 token 消耗是单轮对话的数倍到数十倍，缓存命中率直接决定服务成本。多模态的视频 token 比文本多几个数量级，序列长度是第一显存约束。物理AI 的仿真吞吐决定研发周期，网络求解的速度优势在这里兑现，对高带宽和高精度的需求也最强。
+
+## 6. 这张沙盘怎么维护
+
+维护规则只有一条，任何一格动了，先看它纵向的上方和下方。模型结构变了，系统层和芯片层跟着变，2024 年 MoE 成为开源主流之后，通信优化和稀疏计算两个格子就同时改版。相反方向的传导也常见，2 比 4 稀疏结构的芯片出来之后，算法侧才出现配套的剪枝工具。
+
+动笔前我核过的数字里，论文年份和 arXiv 编号以 arXiv 页面为准，模型卡参数以官方仓库为准，两处冲突的地方本文已经标注。您发现某个格子过时，大概率是模型卡先变的，其次是论文，最后才轮到这张图。
+
+## 参考资料
+
+按第 2 到 4 节的顺序分组，年份和 arXiv 编号动笔前重查过。
+
+**语言大模型结构**
+
+- [Attention Is All You Need（Vaswani 等人，2017）](https://arxiv.org/abs/1706.03762)
+- [Language Models are Few-Shot Learners（GPT-3，Brown 等人，2020）](https://arxiv.org/abs/2005.14165)
+- [Outrageously Large Neural Networks（Shazeer 等人，2017）](https://arxiv.org/abs/1701.06538)
+- [Mixtral of Experts（Jiang 等人，2024）](https://arxiv.org/abs/2401.04088)
+- [GQA（Ainslie 等人，2023）](https://arxiv.org/abs/2305.13245)
+- [Longformer（Beltagy 等人，2020）](https://arxiv.org/abs/2004.05150)
+- [Mistral 7B（Jiang 等人，2023）](https://arxiv.org/abs/2310.06825)
+- [The Llama 3 Herd of Models（2024）](https://arxiv.org/abs/2407.21783)
+- [DeepSeek-V3 技术报告（2024）](https://arxiv.org/abs/2412.19437)
+- [Gemma 3 技术报告（2025）](https://arxiv.org/abs/2503.19786)
+
+**Agent 与推理**
+
+- [Chain-of-Thought Prompting（Wei 等人，2022）](https://arxiv.org/abs/2201.11903)
+- [Tree of Thoughts（Yao 等人，2023）](https://arxiv.org/abs/2305.10601)
+- [Graph of Thoughts（Besta 等人，2023）](https://arxiv.org/abs/2308.09687)
+- [ReAct（Yao 等人，2022）](https://arxiv.org/abs/2210.03629)
+- [Toolformer（Schick 等人，2023）](https://arxiv.org/abs/2302.04761)
+- [MetaGPT（Hong 等人，2023）](https://arxiv.org/abs/2308.00352)
+- [CAMEL（Li 等人，2023）](https://arxiv.org/abs/2303.17760)
+- [AutoGPT 项目](https://github.com/Significant-Gravitas/AutoGPT)
+
+**多模态**
+
+- [CLIP（Radford 等人，2021）](https://arxiv.org/abs/2103.00020)
+- [Flamingo（Alayrac 等人，2022）](https://arxiv.org/abs/2204.14198)
+- [Latent Diffusion Models（Rombach 等人，2022）](https://arxiv.org/abs/2112.10752)
+- [Scalable Diffusion Models with Transformers（DiT，Peebles 与 Xie，2023）](https://arxiv.org/abs/2212.09748)
+- [Sora 技术报告（OpenAI，2024）](https://openai.com/index/video-generation-models-as-world-simulators/)
+- [Gemini 1.5 技术报告（2024）](https://arxiv.org/abs/2403.05530)
+- [LLaVA（Liu 等人，2023）](https://arxiv.org/abs/2304.08485)
+- [ImageReward（Xu 等人，2023）](https://arxiv.org/abs/2304.05977)
+
+**物理AI**
+
+- [PINN（Raissi 等人，2019）](https://arxiv.org/abs/1711.10561)
+- [GCN（Kipf 与 Welling，2017）](https://arxiv.org/abs/1609.02907)
+- [GAT（Veličković 等人，2018）](https://arxiv.org/abs/1710.10903)
+- [DeepONet（Lu 等人，2021）](https://arxiv.org/abs/1910.03193)
+- [Fourier Neural Operator（Li 等人，2021）](https://arxiv.org/abs/2010.08895)
+
+**对齐与训练迭代**
+
+- [InstructGPT（Ouyang 等人，2022）](https://arxiv.org/abs/2203.02155)
+- [PPO（Schulman 等人，2017）](https://arxiv.org/abs/1707.06347)
+- [DPO（Rafailov 等人，2023）](https://arxiv.org/abs/2305.18290)
+- [ORPO（Hong 等人，2024）](https://arxiv.org/abs/2403.07691)
+- [IPO（Azar 等人，2023）](https://arxiv.org/abs/2310.12036)
+- [RRHF（Yuan 等人，2023）](https://arxiv.org/abs/2304.05302)
+- [Constitutional AI 与 RLAIF（Bai 等人，2022）](https://arxiv.org/abs/2212.08073)
+- [AlphaStar（Vinyals 等人，2019）](https://arxiv.org/abs/1902.01724)
+- [SAC（Haarnoja 等人，2018）](https://arxiv.org/abs/1801.01290)
+- [TD3（Fujimoto 等人，2018）](https://arxiv.org/abs/1802.09477)
+- [LoRA（Hu 等人，2021）](https://arxiv.org/abs/2106.09685)
+- [QLoRA（Dettmers 等人，2023）](https://arxiv.org/abs/2305.14314)
+- [DoRA（Liu 等人，2024）](https://arxiv.org/abs/2402.09353)
+- [Distilling the Knowledge in a Neural Network（Hinton 等人，2015）](https://arxiv.org/abs/1503.02531)
+- [DeepSeek-R1 技术报告（2025）](https://arxiv.org/abs/2501.12948)
+
+**系统层**
+
+- [GPTQ（Frantar 等人，2022）](https://arxiv.org/abs/2210.17323)
+- [AWQ（Lin 等人，2023）](https://arxiv.org/abs/2306.00978)
+- [SmoothQuant（Xiao 等人，2022）](https://arxiv.org/abs/2211.10438)
+- [LLM.int8()（Dettmers 等人，2022）](https://arxiv.org/abs/2208.07339)
+- [KIVI（Liu 等人，2024）](https://arxiv.org/abs/2402.02750)
+- [FlashAttention（Dao 等人，2022）](https://arxiv.org/abs/2205.14135)
+- [FlashAttention-2（Dao 等人，2023）](https://arxiv.org/abs/2307.08691)
+- [Megatron-LM（Shoeybi 等人，2019）](https://arxiv.org/abs/1909.08053)
+- [ZeRO（Rajbhandari 等人，2020）](https://arxiv.org/abs/1910.02054)
+- [PagedAttention（Kwon 等人，2023）](https://arxiv.org/abs/2309.06180)
+- [Deep Gradient Compression（Lin 等人，2018）](https://arxiv.org/abs/1801.05873)
+- [QSGD（Alistarh 等人，2017）](https://arxiv.org/abs/1610.02132)
+- [Speculative Decoding（Leviathan 等人，2023）](https://arxiv.org/abs/2211.17192)
+- [Staged Speculative Decoding（Chen 等人，2023）](https://arxiv.org/abs/2308.04623)
+- [Medusa（Cai 等人，2023）](https://arxiv.org/abs/2401.10774)
+- [EAGLE（Li 等人，2024）](https://arxiv.org/abs/2401.15077)
+- [EAGLE-2（Li 等人，2024）](https://arxiv.org/abs/2406.16858)
+- [EAGLE-3（Li 等人，2025）](https://arxiv.org/abs/2503.01840)
+
+**芯片层**
+
+- [Mixed Precision Training（Micikevicius 等人，2018）](https://arxiv.org/abs/1710.03740)
+- [FP8 Formats for Deep Learning（Micikevicius 等人，2022）](https://arxiv.org/abs/2209.05433)
+- [Kimi K3 技术报告](https://github.com/MoonshotAI/Kimi-K3/blob/main/k3_tech_report.pdf)
+
+没有 arXiv 编号的条目在正文里已注明出处，包括内存墙（Wulf 与 McKee，1995）、ISAAC 存内计算（Shafiee 等人，2016）、自适应网格加密（Berger 与 Oliger，1984）、多重网格（Hackbusch，1985）、AlphaGo 与 AlphaZero（Nature，2016 与 2017）、OpenAI Five（OpenAI 博客，2019）、DALL·E 3（OpenAI 技术报告，2023）、AutoGPT（GitHub 项目，2023）。

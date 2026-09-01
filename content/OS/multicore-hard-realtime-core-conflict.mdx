@@ -1,0 +1,153 @@
+---
+title: "多核通用 CPU 面向硬实时系统的核心矛盾与研究主线"
+description: "从核间资源争抢、微架构非确定性与混合关键性隔离失效三个维度拆解通用多核与硬实时的根本冲突，按跨层时延建模、形式化方法、软硬件配合和资源隔离四条主线梳理研究现状，每条主线附原理、典型工作与论文原图。"
+date: "2026-09-02"
+tags: ["OS", "实时系统", "多核", "WCET", "混合关键性"]
+---
+
+写这篇之前，我把多核实时方向能找到的论文、白皮书和标准对了一遍，每个数字后面都标了出处。多核通用 CPU 正在替代专用实时处理器，Cortex-A 系列、x86、RISC-V 都在往自动驾驶、工业控制、航电这些领域里迁移。问题出在根子上，通用多核把平均性能放在第一位，硬实时系统要求最坏情况时延有界、时序行为可证，两条设计思路在共享资源上正面相撞。
+
+民航认证机构联合发的位置文件 CAST-32A 把话挑明了。2016 年 11 月发布的这份文件说，多核上多个应用同时访问共享的内存、缓存和外部接口，争用造成的延迟让应用比单独运行时慢很多，这种时间干扰直接改变 WCET，可能让安全关键软件来不及完成功能。Nowotsch 和 Paulitsch 在 2012 年的 European Dependable Computing Conference 上做了量化实验，Freescale P4080 上同样的任务，受其他核干扰时 WCET 可以比单核慢好几倍，具体倍数取决于任务怎么用内存。这两份材料把冲突的规模和方向都定住了。
+
+混合关键性系统（Mixed-Criticality Systems，MCS）要把不同安全等级的功能装进同一颗芯片，多核的时序问题就成了单芯片部署绕不过去的坎。航电有 DO-178C，汽车有 ISO 26262，两套标准都对高安全等级软件提出时序方面的强制要求，而多核共享资源让这些要求很难逐条兑现。这个方向过去十几年的论文，基本都在回答同一个问题，通用多核上怎么把可证明的时序拿回来。
+
+## 一、核心矛盾的三张面孔
+
+冲突的机理拆开是三件事，核间资源争抢、微架构非确定性、混合关键性隔离失效。Maiza 等人 2019 年在 ACM Computing Surveys 上综述多核时序验证，把共享资源干扰列为全领域最核心的障碍。
+
+### 原理
+
+三类不确定性的共同来源，是任务的时序变成了其他实体行为的函数。内存控制器把多个核的请求排进队列，一次访问的时延取决于 DRAM 的 bank 和行状态，也取决于队列里前面排了多少请求。负载越高，排队越长，每个请求等得越久，最坏情况因此没法用平均流量推算。乱序执行和投机又把局部的快慢颠倒。Lundqvist 和 Stenström 1999 年在动态调度处理器里发现，缓存未命中可能比命中执行得更快，局部慢事件改变了后续调度。Reineke 等人 2006 年给时序反常下了形式定义，图一就是论文里的调度型反常示意，任务 A 缓存命中提前完成，B 反而挡住 C 更久，整条时间线更长。缓存一致性协议最后补一刀，一个核的访存历史改写其他核看到的延迟，任务级分析的独立性假设，也就是单独分析每个任务再叠加，在共享资源上不再成立。
+
+![调度型时序反常示意，局部更快的执行反而让整条时间线更长（Reineke 2006 图 1）](/images/multicore-hard-realtime/reineke-fig1-scheduling-anomaly.jpg)
+
+### 典型工作
+
+定量刻画干扰的代表是 MemGuard。Yun 等人在 RTAS 2013 上把 SPEC2006 的前台后台任务配成对跑在双核上，量出干扰曲线，图二是论文里的 IPC 减速图，两个核并发时性能最多跌一半，而且减速幅度和内存带宽占用不成比例，说明干扰来自队列和状态依赖。Nowotsch 和 Paulitsch 2012 年在 EDCC 上把同样的应用单独跑和多核并发跑对比，Freescale P4080 上 WCET 慢好几倍，倍数取决于任务对共享内存的依赖。SMT 把干扰推到极致，Osborne 和 Anderson 在 ECRTS 2020 上写，SMT 使能时任务执行时间取决于同核另一条线程在跑什么代码，实时社区为此基本放弃对 SMT 的 WCET 分析，坚持做的代价是换更窄的分析模型。
+
+![双核并发下的 IPC 减速，前台后台任务配对实测（MemGuard 论文图 1，SPEC2006）](/images/multicore-hard-realtime/memguard-fig1-interference.jpg)
+
+第三类不确定性破坏混合关键性的隔离。低关键性任务占用共享资源，会无约束地干扰高关键性任务的执行时序。ISO 26262 把 freedom from interference 定义为两个或更多元素之间不出现级联失效，第 6 部分 7.4.10 条要求，不同 ASIL 的软件要么全部按最高等级开发，要么证明相互无干扰，附录 D 把干扰细分成空间、时间、通信三类。CAST-32A 围绕 DO-178C 提出十个目标，其中一个关键立场是，多核上允许分别确定各应用 WCET 的前提是平台提供 robust partitioning。Vestal 2007 年在 RTSS 上提出另一条线索，对任务执行时间上界的置信度要求越高，这个上界就越保守，所以可以给不同关键性配不同的执行时间保证级别。
+
+## 二、跨层时延建模
+
+第一条线从模型入手，把时延抖动拆成三层，物理层、微架构层和系统软件层。
+
+### 原理
+
+先看 WCET 上界怎么算出来。任务执行时间的分布从最短（BCET）到最长（WCET），静态分析用抽象解释从程序结构推出安全上界，测量方法只能记录观测到的最大时间，图三是 Wilhelm 2008 综述里的经典示意，上界必须覆盖所有可能执行才算数。三层模型把这条分析链往下延伸。物理层处理工艺偏差、电压噪声和温度漂移对门级时延的影响，先进制程下纯确定性时序分析撑不住，才发展出统计静态时序分析（SSTA），Blaauw 等人在 IEEE TCAD 2008 的综述里总结了这些变异源。微架构层建模乱序执行、缓存层次、互联调度和内存仲裁，是 WCET 静态分析的主战场。到了系统软件层，调度器、中断、锁和虚拟化开销都要补进去。Brandenburg 和 Anderson 2009 年在 RTSS 上用 LITMUS^RT 实测，就绪队列的数据结构、事件驱动还是量子驱动、中断怎么处理，这些实现选择对可调度性的影响和调度理论层面的取舍一样大。三层模型要靠硬件性能计数器反向校准，把抽象分析和真实芯片之间的偏差量出来。
+
+![任务执行时间分布示意，BCET 到 WCET 之间覆盖所有可能执行（Wilhelm 2008 图 1）](/images/multicore-hard-realtime/wilhelm-fig1-timing-properties.jpg)
+
+### 典型工作
+
+静态分析的代表是 aiT。Wilhelm 2008 综述里给了它的架构图，图四是组成结构，输入是编译后的可执行文件和程序结构，经过路径分析和抽象解释，输出可证明的 WCET 上界。测量这一支的代表是 MBPTA，Cucu-Grosjean 等人 2012 年在 ECRTS 上提出用极值理论从端到端测量推概率 WCET，先用统计检验确认观测独立同分布，再用分块最大值和指数尾检验判断分布形态。Davis 和 Cucu-Grosjean 2019 年在 LITES 上把静态概率、测量概率和混合三类方法统一整理。
+
+![aiT 静态 WCET 分析工具的架构（Wilhelm 2008 图 6）](/images/multicore-hard-realtime/wilhelm-fig6-ait-architecture.jpg)
+
+把系统层一起算进去的代表是 isWCET。Nowotsch 等人在 ECRTS 2014 上提出，离线分析每个应用对共享互联和主存的使用，算出干扰延迟上界，配一个运行时资源容量强制把分析假设在运行期兑现。他们在 P4080 上配合 aiT 和 PikeOS 评测，多核 WCET 上界比朴素的最大争用方法最多降低 53%。这套工作打破了黑盒式的时序分析，让硬实时系统向物理时延极限靠近，也是后面所有确定性技术的前提。
+
+## 三、形式化方法
+
+第二条线回答一个问题，在乱序、一致性和资源争抢普遍存在的前提下，怎么给出可信的时延上界，并在运行时保证不突破。
+
+### 原理
+
+形式化方法的核心，是把确定性定义成可以检验的性质。Hahn、Reineke 和 Wilhelm 在 SIGBED Review 2015 上给时间可组合性下了形式定义，区分组合性（compositionality）和可组合性（composability），图五是论文里的多核系统组合性视图。组合性要求系统总时序能用各部件时序分析结果的组合来推，可组合性要求某个部件放进更大系统后时序行为不变。他们指出多核时序分析几乎都把某种可组合性当假设，但整体上怎么实现仍是未解决问题。另一个要定义的性质是时序非干扰，两个不同安全域的任务在时间上互不产生可观测影响。
+
+![多核系统共享总线和内存的组合性视图（Hahn 2015 图 1）](/images/multicore-hard-realtime/hahn-fig1-compositionality.jpg)
+
+覆盖设计到运行时的整套分析，由三类方法拼成。静态抽象解释给安全上界但往往过悲观，测量概率方法贴近真实硬件但依赖路径覆盖，模型检验则把处理器状态空间抽象成有限状态机逐状态验证。单独哪一种方法都不够，所以研究把静态推导、测量验证和运行时监控串成一条流程，用每一环补上一环的短板。
+
+### 典型工作
+
+把时序非干扰做到门级可证的是 SurfNoC。Wassel 等人 2013 年在 ISCA 上发表了它，用静态调度把网络组织成逐跳推进的波，从门级实现证明不同域的流量周期级互不干扰。比起朴素的时分复用，空载时延与跳数的线性关系被压成只与维度和域数相关，最多省掉 85% 的开销。调度层面的典型是 EDF-VD。Vestal 2007 年允许一个任务携带多个按置信度排序的 WCET，Baruah 等人 2012 年在 ECRTS 上提出 EDF-VD，对两级隐式截止期系统证明处理器加速比 4/3 已经最优，任何非全知在线算法都做不到更好。分析层面的典型是概率方法，Cucu-Grosjean 2012 年的 MBPTA 报告，概率 WCET 估计相对静态概率分析最多悲观 15%，最多只要 650 次运行就能满足统计显著性，Davis 的 2019 年综述里总结 MBPTA 在低概率处通常比 SPTA 高 3% 到 15%。
+
+上界还要在运行时兑现。Nowotsch 的 isWCET 自带运行时资源容量强制，MemGuard 在操作系统层做内存带宽预留和回收。芯片里有硬件时间监视单元和看门狗负责盯超时，ISO 26262 的定时保护、AUTOSAR 的执行时间预算都是同一思路，超了预算就降级或报故障，动态资源重配置把空出来的资源转给其他任务。这条思路的要点是，分析时做下的假设，运行时要有人盯住，才算得上从理论证明到工程落地的完整证据链。
+
+## 四、确定性时延的软硬件配合
+
+第三条线把确定性机制拆开看，哪些适合固化进硬件，哪些留在软件里调度，在性能、功耗、确定性三者之间找平衡。
+
+### 原理
+
+软件手段只能在仲裁结果之后做补救，硬件把仲裁本身换成确定性的，才能在根上消除抖动。可预测硬件设计有两条原则。第一条把最坏情况当作第一优化目标，处理器为压低 WCET 设计，平均性能排在后头。第二条把共享资源的仲裁从吞吐优先换成时间触发或速率受限，让每次访问的时延都可分析。RISC-V 开源架构让这两条原则可以落到真实芯片上。
+
+### 典型工作
+
+把原则落到芯片的代表是 Patmos 和 T-CREST。丹麦技术大学的 Patmos 是 32 位静态调度双发射处理器，所有指令延迟在指令集层面显式可见，方法缓存和栈缓存简化指令与数据缓存分析，非缓存指令让不可分析的数据访问绕过缓存。图六是 T-CREST 平台的构成，Patmos 节点通过时分复用的 Argo 网络互联，外部 SDRAM 交给可预测内存控制器。T-CREST 论文报告了两个工业用例，航电应用里不同核上的任务 WCET 互不干扰，铁路信号处理应用用三个核把 WCET 改善 1.8 倍，十五个核达到 5.7 倍，大部分硬件以 BSD 许可开源。
+
+![T-CREST 平台构成，Patmos 节点经 NoC 互联（Patmos 论文图 1）](/images/multicore-hard-realtime/patmos-fig1-tcrest-platform.jpg)
+
+商用处理器买不到这些定制，但新芯片开始带服务质量机制。Intel 的 Cache Allocation Technology 允许按 way 给不同核划分最后一级缓存，官方白皮书的数字是，MSI 中断平均延迟从 4.53 微秒降到 1.62 微秒，降幅约 64%，最大延迟从 30.91 微秒降到 20.98 微秒，产生干扰的应用吞吐没有下降。ARM 的 MPAM 从 Armv8.4-A 起进入架构，用 16 位 PARTID 给每个访存请求打标，内存系统组件按 PARTID 分区并监控用量，覆盖缓存、互联和内存控制器。Intel 的 11 代酷睿实时调优指南给出一个量级感，系统软件层配置对 WCET 的影响可以达到数量级，电源管理的影响在几百微秒量级。
+
+内存控制器和互联里的仲裁器是另一个落点。Eindhoven 团队 2007 年在 CODES+ISSS 上提出可预测的 SDRAM 控制器 Predator。它把内存访问组织成预计算的命令组，每个命令组有已知效率和时延，再用带速率调节的静态优先级仲裁器调度，给每个请求者保证最小带宽和最大延迟界，图七是论文里的控制器架构。六端口实现跑在 200MHz，面积只有 0.042 平方毫米，确定性调度直接固化进了固件层。
+
+![Predator 可预测内存控制器的架构（Akesson 2007 图 5）](/images/multicore-hard-realtime/predator-fig5-controller.jpg)
+
+更高一层是软硬件配合的执行模型。Pellizzoni 等人在 RTAS 2011 上提出 PREM，任务被编译成可预测段和兼容段。可预测段先预取全部所需数据再执行，执行期缓存访问固定、耗时恒定，I/O 外设也在高一层和 CPU 一起调度，只有可预测段之间才放行外设流量。共享资源低层仲裁的不确定性被整体绕开，代价是编程要接受编译约束。
+
+## 五、共享资源干扰的量化与时延隔离
+
+还有一条线专门对付共享资源争抢，回答三件事，干扰有多大、怎么隔离、隔离要付多少代价。
+
+### 原理
+
+量化的思路是把共享资源的服务能力建模成曲线。内存控制器对每个核的服务可以画成一条服务曲线，核的请求画成一条请求曲线，两条曲线的距离就是延迟上界，Predator 论文用这个框架给出保证带宽和最大延迟界。缓存隔离的机制是控制地址到缓存组的映射。物理地址的中间位决定缓存组索引，页面着色让操作系统分配物理页时把任务地址空间压进指定缓存区域，图八是 Mancuso 论文里的地址结构示意。带宽隔离的原理更直接，把内存控制器服务能力按时间片或配额分给各核，每核分到的份额就是它不被打断的保证带宽。
+
+![物理地址在缓存控制器和操作系统眼中的结构，页面着色控制缓存组映射（Mancuso 2013 图 3）](/images/multicore-hard-realtime/mancuso-fig3-page-coloring.jpg)
+
+### 典型工作
+
+量化干扰的代表是 Chattopadhyay 等人 2014 年在 ACM TECS 上提出的统一多核 WCET 框架，同时建模共享缓存、共享总线和流水线分支预测之间的交互。它不假设架构无时序反常，实验里给出较紧的 WCET 上界。Maiza 的 2019 年综述把整个领域归成四类，全集成、时间隔离、把干扰计入可调度性分析、映射与分配，干扰模型属于全集成这一支。
+
+缓存这一支的代表是 Colored Lockdown。Mancuso 等人在 RTAS 2013 上把页面着色和缓存锁定组合起来，让实时任务最常访问的内存页获得确定性命中。着色有上限，替换策略不确定时自我驱逐会破坏隔离效果，最坏情况下一个任务实际只剩一个 way 可用。
+
+内存带宽这一支用 MemGuard 打底。它在操作系统层按核预留内存带宽，预留之和不超过算出的保证带宽，PC6400 DDR2 平台上实测是 1.2GB/s，图九是论文里两个核的预留示例。再用预测性回收把没用完的预算转给需要的核，超出预算的部分按 best-effort 共享。论文用 SPEC2006 实测，开启回收后后台应用的 IPC 提升 3.8 倍，前台任务只损失 3%，软预留的误差率小于 5%，这是隔离有代价、回收能补回一部分的直接证据。
+
+![MemGuard 按核预留内存带宽的示例（MemGuard 论文图 5）](/images/multicore-hard-realtime/memguard-fig5-reservation.jpg)
+
+时间维度的隔离靠时间触发式调度。T-CREST 的 Argo 网络用静态时分复用把数据包按时间槽发送，SurfNoC 是同一思路在片上网络的改进，图十是 T-CREST 论文里传统时分复用网络的传输示意。时间分区把原本要在缓存和带宽上争的资源冲突，变成一张静态的时隙表，谁在什么时间能用哪段资源，分析时就能算清楚。
+
+![传统时分复用网络的数据传输，每个跳都要等自己的时间槽（T-CREST 论文图 3）](/images/multicore-hard-realtime/tcrest-fig3-tdm-noc.jpg)
+
+隔离的边界在代价。强隔离意味着给关键任务独享资源，其余核只能等，硬件利用率和延迟保证天然冲突。Nowotsch 2014 年在 isWCET 基础上加了 QoS 扩展，满足硬保证的前提下动态重算资源配置，把空出的资源分给需要的应用，避免一隔离就全系统低利用率。CAST-32A 从认证侧给隔离定了一杆秤，robust partitioning 一旦成立，就可以分别在多核上验证各应用的 WCET，这正是混合关键性单芯片部署需要的认证通道。
+
+## 六、这个方向要去哪
+
+把四类工作放在一起看，使命是清楚的，在通用高性能多核架构上把时序确定性重新找回来。跨层建模回答时延从哪来，形式化方法负责给出可证的上界，软硬件配合和资源隔离再分别把上界落进芯片、把不同安全等级的任务分开。四者合起来，才构成一套可预测、可验证、可产业化的硬实时基础。
+
+趋势上也看得出变化。早期工作适配现成商用芯片，在软件层想尽办法压干扰，后来开始往硬件设计里加确定性，到 Patmos、T-CREST 这一代，确定性成了设计的第一优先级，最坏情况性能反过来成为优化目标。RISC-V 的开源生态让这种定制不再只属于少数团队，论文和代码都能公开拿到，这给架构级的原生确定性设计留出了空间。认证侧也在跟进，EASA 2022 年发布 AMC 20-193，FAA 2024 年发布 AC 20-193，把 CAST-32A 的位置文件升级成正式指导。公开信息里，2021 年第一个混合关键性多核实时操作系统的航电系统通过认证，走的就是 robust partitioning 加分别验证的路径。下一步的方向是把这套方法推进工业，接上汽车、工业和航电的功能安全认证流程。
+
+## 参考资料
+
+论文、标准与官方文档如下，正文所有数字均可按此核验。图片均截取自对应论文的开放获取版本，图注已标注论文和图的编号。
+
+1. Reinhard Wilhelm 等，The Worst-Case Execution-Time Problem（Overview of Methods and Survey of Tools），ACM Transactions on Embedded Computing Systems 7(3)，2008，[DOI](https://doi.org/10.1145/1347375.1347389)
+2. Jan Nowotsch，Michael Paulitsch，Leveraging Multi-core Computing Architectures in Avionics，European Dependable Computing Conference（EDCC），2012，[DOI](https://doi.org/10.1109/EDCC.2012.27)
+3. Thomas Lundqvist，Per Stenström，Timing Anomalies in Dynamically Scheduled Microprocessors，IEEE Real-Time Systems Symposium（RTSS），1999
+4. Jan Reineke 等，A Definition and Classification of Timing Anomalies，WCET Workshop，2006
+5. Claire Maiza 等，A Survey of Timing Verification Techniques for Multi-Core Real-Time Systems，ACM Computing Surveys 52(3)，2019，[DOI](https://doi.org/10.1145/3323212)
+6. Heechul Yun 等，MemGuard（Memory Bandwidth Reservation System for Efficient Performance Isolation in Multi-core Platforms），IEEE RTAS，2013，[DOI](https://doi.org/10.1109/RTAS.2013.6531079)
+7. Sims Hill Osborne，James H. Anderson，Simultaneous Multithreading and Hard Real Time（Can It Be Safe?），ECRTS，2020，[DOI](https://doi.org/10.4230/LIPIcs.ECRTS.2020.14)
+8. Steve Vestal，Preemptive Scheduling of Multi-Criticality Systems with Varying Degrees of Execution Time Assurance，IEEE RTSS，2007
+9. Sanjoy Baruah 等，The Preemptive Uniprocessor Scheduling of Mixed-Criticality Implicit-Deadline Sporadic Task Systems，ECRTS，2012
+10. Liliana Cucu-Grosjean 等，Measurement-Based Probabilistic Timing Analysis for Multi-Path Programs，ECRTS，2012，[DOI](https://doi.org/10.1109/ECRTS.2012.31)
+11. Robert I. Davis，Liliana Cucu-Grosjean，A Survey of Probabilistic Timing Analysis Techniques for Real-Time Systems，LITES 6(1)，2019，[DOI](https://doi.org/10.4230/LITES-v006-i001-a003)
+12. Sebastian Hahn，Jan Reineke，Reinhard Wilhelm，Towards Compositionality in Execution Time Analysis，ACM SIGBED Review 12(1)，2015，[DOI](https://doi.org/10.1145/2752801.2752805)
+13. Hassan Wassel 等，SurfNoC（A Low Latency and Provably Non-Interfering Approach to Secure Networks-on-Chip），ISCA，2013，[DOI](https://doi.org/10.1145/2485922.2485972)
+14. Martin Schoeberl 等，Patmos（A Time-Predictable Microprocessor），Real-Time Systems 54(2)，2018，[DOI](https://doi.org/10.1007/s11241-018-9300-4)
+15. Martin Schoeberl 等，T-CREST（Time-Predictable Multi-core Architecture for Embedded Systems），Journal of Systems Architecture 61(9)，2015，[DOI](https://doi.org/10.1016/j.sysarc.2015.04.002)
+16. Benny Akesson，Kees Goossens，Markus Ringhofer，Predator（A Predictable SDRAM Memory Controller），CODES+ISSS，2007，[DOI](https://doi.org/10.1145/1289816.1289877)
+17. Rodolfo Pellizzoni 等，A Predictable Execution Model for COTS-Based Embedded Systems，RTAS，2011，[DOI](https://doi.org/10.1109/RTAS.2011.33)
+18. Sudipta Chattopadhyay 等，A Unified WCET Analysis Framework for Multicore Platforms，ACM Transactions on Embedded Computing Systems 13(4s)，2014，[DOI](https://doi.org/10.1145/2584654)
+19. Renato Mancuso 等，Real-Time Cache Management Framework for Multi-core Architectures，RTAS，2013，[DOI](https://doi.org/10.1109/RTAS.2013.6531054)
+20. Björn B. Brandenburg，James H. Anderson，On the Implementation of Global Real-Time Schedulers，IEEE RTSS，2009
+21. David Blaauw 等，Statistical Timing Analysis（From Basic Principles to State of the Art），IEEE Transactions on Computer-Aided Design 27(4)，2008，[DOI](https://doi.org/10.1109/TCAD.2007.907047)
+22. Jan Nowotsch 等，Multi-core Interference-Sensitive WCET Analysis Leveraging Runtime Resource Capacity Enforcement，ECRTS，2014，[DOI](https://doi.org/10.1109/ECRTS.2014.20)
+23. Martin Schoeberl 等，A Statically Scheduled Time-Division-Multiplexed Network-on-Chip for Real-Time Systems，NOCS，2012
+24. Intel，Improving Real-Time Performance by Utilizing Cache Allocation Technology，白皮书，2015，[PDF](https://www.intel.com/content/dam/www/public/us/en/documents/white-papers/cache-allocation-technology-white-paper.pdf)
+25. Intel，11th Gen Intel Core Processors Real-Time Tuning Guide（TCC），2021，[PDF](https://webdls.ieiworld.com/data/_prod-detail-feature/DRPC-DEV-KIT/Real-Time-Tuning-Guide-11th-Gen-Intel-Core-Processors-1.4.pdf)
+26. Arm，Memory System Resource Partitioning and Monitoring（MPAM）System Component Specification，IHI 0099，以及 Arm Architecture Reference Manual for A-profile（DDI 0487）
+27. Certification Authorities Software Team，Position Paper CAST-32A（Multi-core Processors），2016 年 11 月，[PDF](https://cast32a.com/files/cast-32a.pdf)
+28. ISO 26262 系列标准，第 1 部分（术语与定义）与第 6 部分 7.4.10 条和附录 D（软件层面 freedom from interference）

@@ -128,11 +128,11 @@ NOMINALIZATION_PATTERNS = (
 
 PLACEHOLDER_PATTERNS = (
     re.compile(
-        r"\[(?:TBD|TODO|FIXME|XXX|citation needed|待核验|待确认|待补充|待验证|待核实|需核实|需确认|需要补充|需要核实)[^\]]{0,24}\]",
+        r"\[(?:TBD|TODO|FIXME|XXX|citation needed|待核验|待确认|待补充|待验证|待核实|需核实|需确认|需要补充|需要核实)(?:\s*[:：]\s*[^\]\n]{0,12})?\]",
         re.IGNORECASE,
     ),
     re.compile(
-        r"[（(](?:待核验|待确认|待补充|待验证|待核实|需核实|需确认|需要补充|需要核实|TBD|TODO|citation needed)[^）)]{0,24}[）)]",
+        r"[（(](?:TBD|TODO|FIXME|XXX|citation needed|待核验|待确认|待补充|待验证|待核实|需核实|需确认|需要补充|需要核实)(?:\s*[:：]\s*[^）)\n]{0,12})?[）)]",
         re.IGNORECASE,
     ),
 )

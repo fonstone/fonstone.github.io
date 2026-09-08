@@ -126,6 +126,61 @@ NOMINALIZATION_PATTERNS = (
     re.compile(r"具有[^。，！？\n]{0,10}(?:意义|价值)"),
 )
 
+PLACEHOLDER_PATTERNS = (
+    re.compile(
+        r"\[(?:TBD|TODO|FIXME|XXX|citation needed|待核验|待确认|待补充|待验证|待核实|需核实|需确认|需要补充|需要核实)(?:\s*[:：]\s*[^\]\n]{0,12})?\]",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"[（(](?:TBD|TODO|FIXME|XXX|citation needed|待核验|待确认|待补充|待验证|待核实|需核实|需确认|需要补充|需要核实)(?:\s*[:：]\s*[^）)\n]{0,12})?[）)]",
+        re.IGNORECASE,
+    ),
+)
+
+OVERCLAIM_WORDS = (
+    "首次提出",
+    "首次实现",
+    "首次发布",
+    "首创",
+    "最先进",
+    "最领先",
+    "业界领先",
+    "世界领先",
+    "行业领先",
+    "显著提升",
+    "显著提高",
+    "大幅提升",
+    "大幅提高",
+    "巨大提升",
+    "革命性",
+    "突破性",
+    "颠覆性",
+    "里程碑式",
+    "彻底解决",
+    "完全解决",
+    "遥遥领先",
+)
+
+REAL_STATE_MARKERS = (
+    "已实现",
+    "已发布",
+    "已开放",
+    "已上线",
+    "已完成",
+    "已支持",
+    "实测",
+)
+
+PLAN_STATE_MARKERS = (
+    "将提供",
+    "将发布",
+    "将上线",
+    "预计",
+    "即将",
+    "规划中",
+    "计划中",
+)
+
 CONJUNCTIONS = (
     "因为",
     "所以",
@@ -337,6 +392,21 @@ def prose_paragraphs(text: str) -> list[Paragraph]:
         sentences = max(1, len(re.findall(r"[。！？!?]", clean)))
         paragraphs.append(Paragraph(position, clean, count, sentences))
     return paragraphs
+
+
+def state_mixing_paragraphs(text: str):
+    """同一段里真实状态词与计划状态词并存，可能把计划写成了事实。"""
+
+    matches = []
+    cursor = 0
+    for block in re.split(r"\n\s*\n", text):
+        position = text.find(block, cursor)
+        cursor = max(position + len(block), cursor)
+        real = [term for term in REAL_STATE_MARKERS if term in block]
+        plan = [term for term in PLAN_STATE_MARKERS if term in block]
+        if real and plan:
+            matches.append((position, block, real, plan))
+    return matches
 
 
 def metaphor_cluster(text: str, distance: int = 800):
@@ -574,6 +644,33 @@ def main() -> int:
             f"有 {len(dense_de)} 个长句包含四个以上的“的”，可能要先交代人和动作。{samples}"
         )
 
+    placeholder_matches = all_matches(prose, PLACEHOLDER_PATTERNS)
+    for match in placeholder_matches:
+        failures.append(
+            f"占位标记，第 {line_number(text, match.start())} 行，"
+            f"“{excerpt(match.group())}”。无来源声明先检索，找不到就改写或删除，绝不打标签。"
+        )
+
+    overclaim_matches = non_overlapping_terms(prose, OVERCLAIM_WORDS)
+    if overclaim_matches:
+        samples = "、".join(dict.fromkeys(phrase for _, phrase in overclaim_matches))
+        lines = "、".join(
+            dict.fromkeys(
+                str(line_number(text, position)) for position, _ in overclaim_matches[:8]
+            )
+        )
+        warnings.append(
+            f"有 {len(overclaim_matches)} 处过度声称词。第 {lines} 行出现 {samples}。"
+            "声称强度不超过证据强度，强词只配 L1 证据，拿不准就降级措辞。"
+        )
+
+    state_mixes = state_mixing_paragraphs(prose)
+    for position, block, real, plan in state_mixes[:4]:
+        warnings.append(
+            f"同一段出现真实状态词（{'、'.join(real)}）与计划状态词（{'、'.join(plan)}），"
+            f"第 {line_number(text, position)} 行附近。检查是否把计划写成了事实，或把事实写成了计划。"
+        )
+
     paragraphs = prose_paragraphs(prose)
     if len(paragraphs) >= 10:
         one_sentence = sum(paragraph.sentences <= 1 for paragraph in paragraphs)
@@ -616,7 +713,9 @@ def main() -> int:
         f"黑话 {len(jargon_matches)}，硬停词 {len(stop_matches)}，"
         f"模型路标 {len(road_signs)}，需辨语境词 {len(context_jargon_matches)}，"
         f"抒情词 {len(lyric_matches)}，洞察路标 {len(marker_matches)}，"
-        f"长前置成分 {len(left_branches)}，重定语句 {len(dense_de)}"
+        f"长前置成分 {len(left_branches)}，重定语句 {len(dense_de)}，"
+        f"占位标记 {len(placeholder_matches)}，过度声称 {len(overclaim_matches)}，"
+        f"状态混写段落 {len(state_mixes)}"
     )
 
     if failures:

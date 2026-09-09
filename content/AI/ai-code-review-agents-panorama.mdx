@@ -1,0 +1,225 @@
+---
+title: "AI 代码检视 Agent 全景：五层技术栈与五类落地场景"
+date: "2026-09-10"
+description: "以官方文档、arXiv 论文和开源仓库为底稿，盘点 2026 年的 AI 代码检视 Agent 生态。技术栈分五层，从 diff 输入、仓库理解、agent 编排、确定性工程到学习记忆。典型应用分五类，PR 门禁、提交前自查、安全专项、检视 agent 产出的代码、团队规则落地。第三方评估、实证效果与选型边界一并给出，厂商自报数字单独标注。"
+tags: ["AI", "Code Review", "Agent", "LLM", "技术栈", "工程实践"]
+---
+
+> 本文以官方文档、论文和开源仓库为底稿，盘点 2026 年的 AI 代码检视 Agent 生态。技术栈拆成五层，落地场景归纳为五类，数字都标得出来源，厂商自报的单独标注。
+
+## 一、先盘点，再谈原理
+
+2026 年，越来越多仓库的 PR 列表里能看到机器评论。CodeRabbit 把仓库整个克隆进沙箱再开始看，Greptile 的文档写着约 3 分钟把发现贴回 PR，GitHub 把 Copilot 直接做进了 Reviewers 栏。它们看着在做同一件事，工程形态差别很大。写这篇之前，我把能公开查到的官方文档、arXiv 论文和开源仓库逐条对了一遍，厂商自报的数字会单独标注。
+
+以下是目前能查到官方材料的主要玩家，机制列的是官方文档里的说法。
+
+| 工具 | 形态 | 官方文档里我能核到的机制 |
+| --- | --- | --- |
+| GitHub Copilot code review | GitHub 内置 | 约 30 秒出评审，默认只留 Comment，严重度分三级 |
+| CodeRabbit | 商业 SaaS | 沙箱克隆仓库，50 多个静态分析器，并行专用 agent |
+| Greptile | 商业 SaaS | 仓库图索引，约 3 分钟出评审，从 👍👎 反馈学习 |
+| Qodo | 商业加开源 | AST 分块，图库加向量库，judge agent 过滤低置信 |
+| 阿里 OpenCodeReview | 开源 | 确定性工程加 LLM agent，行号由文本匹配计算 |
+| PR-Agent | 开源 | 单工具单次 LLM 调用，PR 压缩，可自托管 |
+| Amazon Q Developer | 云厂商集成 | 规则型 detector 加生成式模型，覆盖 SAST、密钥、IaC |
+| 学术与基准 | 论文 | c-CRAB、CRScore、SWR-Bench 等，用来评估检视工具本身 |
+
+## 二、技术栈五层
+
+数据流从 git 事件开始，经过变更聚焦、仓库理解、agent 编排和确定性工程，最后靠学习记忆反向修正。每一层都能在下面的产品和论文里找到实例。
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph L1["输入与变更聚焦"]
+        D1["git diff 解析"]
+        D2["hunk 级切片"]
+        D3["行号确定性定位"]
+    end
+    subgraph L2["仓库理解"]
+        C1["代码依赖图"]
+        C2["语义索引"]
+        C3["PR 与 commit 历史"]
+        C4["规则与 AGENTS.md"]
+    end
+    subgraph L3["Agent 编排"]
+        A1["并行专用 agent"]
+        A2["judge 合并过滤"]
+        A3["self reflection"]
+    end
+    subgraph L4["确定性工程"]
+        S1["沙箱执行脚本"]
+        S2["静态分析融合"]
+        S3["token 预算控制"]
+    end
+    subgraph L5["学习与记忆"]
+        M1["反馈学习"]
+        M2["团队偏好记忆"]
+    end
+    L1 --> L2
+    L2 --> L3
+    L3 --> L4
+    L5 -.->|反哺| L2
+`} />
+
+### 1. 输入层，diff 与变更聚焦
+
+所有检视 agent 的第一份输入都是 git diff。Amazon Q 官方文档写明，变更范围由 git diff 的输出判定，diff 不存在才退回整个文件。
+
+hunk 级切片有实证背书。Sun 等人对 GitHub Actions 里的 16 个 AI review 动作做了研究，覆盖 178 个仓库、22326 条评论，发现 hunk 级检视工具产出的评论更容易变成真实的代码改动。
+
+行号是经典难题。OpenCodeReview 不信任模型输出的行号，让模型交回现有代码片段，再用确定性文本匹配反推行号。这个机制在仓库内已有文章里逐文件拆过，这里只复用结论。
+
+PR-Agent 对超大 PR 做压缩，把 diff 缩到能塞进单次调用的程度，官方 README 把这条列为核心能力。
+
+### 2. 上下文层，从 diff 到仓库理解
+
+CodeRabbit 每次评审都重建代码依赖图，顺带读历史 PR 的标题、描述和 commit 范围。官方博客把这套做法叫 context engineering，目标是给模型配够上下文。
+
+Greptile 的文档把做法写成建图。解析每个文件，抽出目录、文件、函数、类和变量，连上调用与依赖，评审时按图查询改动波及的相关代码。
+
+Qodo 的文档更细。用 AST 把代码切成保持函数和类边界的块，存进图库和向量库，再叠加 PR 与 commit 历史。
+
+规则和约定也放在这一层。PR-Agent 默认把仓库根目录的 AGENTS.md 注入提示词，GitHub Copilot 读仓库自定义指令和 AGENTS.md，CodeRabbit 支持按 glob 路径匹配的检视规则，Greptile 允许把团队规范写成自然语言规则。规则喂得越全，评审越接近团队的写法。
+
+### 3. 编排层，agent 怎么分工
+
+2026 年的产品早过了单个 prompt 的阶段。CodeRabbit 架构文档写它并行跑 Review、Verification、Chat、Pre-Merge Checks 几个专用 agent。
+
+Qodo 文档把专用 agent 按质量维度拆开。critical issue、breaking changes、ticket compliance、duplicated logic、rules 各管一摊，最后 judge agent 合并去重，过滤掉低置信的发现。
+
+Greptile 主页说评审由一组并行 agent 完成，先看改动，再评估 diff 之外的影响面。
+
+学术侧结构类似。一篇面向缺陷检视的论文把流程拆成代码切片、多角色评审、冗余评论过滤、行号定位四步，验证用的数据来自历史故障报告对应的真实 merge request，涉及四个仓库、4090 位开发者。
+
+反思是另一类编排。OpenCodeReview 在确定性定位失败时让 LLM 重新生成代码片段再试一次，PR-Agent 文档里的 self-reflection 让模型给自己的建议打分、重排、滤掉不相关的项。
+
+这些做法的共同出口是一道过滤闸，评审意见在见人之前先被过滤一遍，目的都是压低噪音。
+
+### 4. 确定性工程与工具执行
+
+仓库克隆进沙箱是商业产品的基础设施。CodeRabbit 架构文档写 sandboxed cloud execution，完整克隆后隔离分析。官方博客补充了细节，评审过程中 agent 会生成 shell 脚本，用 cat、grep、ast-grep 甚至临时 Python 去搜代码。
+
+静态分析与模型判断合流。CodeRabbit 说融合 50 多个静态分析器、linter 和 SAST，Amazon Q 的检视一半靠规则型 detector，一半靠生成式模型，GitHub 官方文档里也有 ruleset 合并门禁的说明。
+
+确定性还管成本。OpenCodeReview 用 token 计数而非估算管预算，README 自报同样的模型比通用 agent 省到约九分之一。省下的预算直接变成更频繁的评审。
+
+沙箱执行有代价。CodeRabbit 借 Cloud Run 的短时环境跑完就销毁，隔离换安全，代价是每次评审都要重新拉仓库。
+
+### 5. 学习与记忆
+
+CodeRabbit 文档里的 living memory 从聊天、PR、issue 和 coding guidelines 里学评审偏好，下次自动应用。
+
+Greptile 把 👍👎 反馈喂给学习系统，文档说两到三周后它开始停掉团队不关心的评论。
+
+Qodo 用 PR 历史给发现排序。跟团队以前修过的类似问题优先，被反复忽略的压音量。
+
+反馈回路的作用在实证里也有回声。Alami 和 Ernst 访谈了 20 位工程师，结论是 LLM 反馈的采纳受信任和上下文缺失约束，把偏好教给系统的过程本身在补信任。
+
+## 三、五类落地场景
+
+### 1. PR 阶段自动评审与合并门禁
+
+最成熟的场景。GitHub Copilot 在 Reviewers 栏里直接请求，官方文档说通常不到 30 秒出结果，评论带 High、Medium、Low 三级严重度。
+
+默认行为值得注意。Copilot 只留 Comment 型评审，不 Approve，也不算进 required approvals，官方文档写明合并决策留在人手里。
+
+CodeRabbit 提供全自动评审、pre-merge checks 和 request changes 工作流。Greptile 文档写约 3 分钟把发现贴回 PR。
+
+Amazon Q 在 GitHub 的集成标了 preview，PR 创建或重新打开时自动评审，输出摘要和线程化 finding。
+
+合并门禁要分清归属。merge gating 挂在 GitHub Code Quality 的 ruleset 上，拦的是未解决的规则发现和覆盖率不达标，跟 Copilot 的评审评论是两回事。
+
+### 2. 提交前自查与 IDE 评审
+
+Copilot 在 VS Code、Visual Studio、JetBrains、Xcode 里都能评审，写代码的过程中随时能要反馈。
+
+Amazon Q 在 IDE 的 /review 默认只审 diff 里的改动，没 diff 才看整文件。auto-review 只在 Pro 订阅下开放。
+
+CodeRabbit 有 CLI 和 IDE 扩展，把评审提前到 push 之前。Greptile 的 CLI 和 MCP 可以把评论上下文喂给其他编码 agent。
+
+这类场景把评审从合入门禁提前到提交防线，问题发现得越早，改动的代价越小。
+
+### 3. 安全与合规专项
+
+Amazon Q 的检视明确覆盖安全。SAST 扫注入和资源泄漏类漏洞，密钥检测找硬编码密码，IaC 查配置与合规问题。
+
+CodeRabbit 把安全做成了独立产品线，文档里有 security blast radius 概念，评估一个 PR 会波及哪些下游、测试和敏感路径。
+
+Copilot 的严重度标注把安全类发现排在前列，ruleset 门禁能拦下未解决的规则发现。
+
+这类场景的检视 agent 更像把静态分析结论翻译成人话，判断权仍然在安全团队手里。
+
+### 4. 检视 agent 自己写的代码
+
+agent 提交的 PR 已经多到可以统计。MSR 2026 的实证研究看了 11048 个已关闭的 agent 写 PR，筛出 9799 个人类评审过的，手动检查 717 个代表案例后得出一个结论，被拒的 PR 里只有 35.7% 能归为明确的 agent 失败，31.2% 是工作流约束，33.1% 找不到可见的决策理由。拒绝率会高估 agent 的真实犯错率。
+
+检视工具正在往这个场景长。CodeRabbit 的定位直接写着 review agent-generated changes，Greptile 的评论带 Fix with your Agent 按钮，把发现连同建议代码送回编码 agent。
+
+GitHub 官方对 Copilot 写的 PR 有一整页说明，要求当普通贡献一样过完整评审，Copilot PR 的审批不能算进 required approvals，得另有人工 reviewer。
+
+这样检视就转成了一个循环。agent 写代码，检视 agent 看，发现的问题再交回给 agent 改，人在两头把关。
+
+### 5. 团队规则与标准的落地
+
+CodeRabbit 支持按路径和按 AST 结构的检视规则。Qodo 的 Rule Miner 从团队自己的 PR 历史里挖重复出现的模式，转成强制执行的新规则。
+
+PR-Agent 把 AGENTS.md 一类仓库指令直接喂给 review 工具，模型一进来就带上项目约定。
+
+实证给出了可操作的信号。Sun 等人的研究里，短评论、含代码片段、手动触发的评审更容易变成真实改动。规则要真正落到代码里，先得满足这些形式条件。
+
+## 四、评估与已知边界
+
+### 基准与取舍
+
+跨产品评测刚起步。c-CRAB 基准把人类评审反馈转成可执行测试，用它评估 PR-Agent、Devin Review、Claude Code 和 Codex，结论是这些现存 agent 合起来只能解决约 40% 的任务。剩下的六成留给谁，答案是人。
+
+CRScore 是 reference-free 指标，评评论的简洁、全面和相关性，grounding 建立在模型和静态分析发现的声明上。
+
+SWR-Bench 用 1000 个带完整项目上下文的真实 PR 做基准。
+
+OpenCodeReview 的基准是 50 个开源仓库、200 个真实 PR、10 种语言、80 多位工程师标注的 1505 条 ground truth。README 自报与 Claude Code 同模型对比，Precision 和 F1 更高、Recall 更低、token 约九分之一。Recall 低是主动取舍，先把精度守住，减少误报淹没真实问题的风险。选择这套取舍的团队，漏报要由人工评审兜底。
+
+### 实证效果
+
+效果差异很大。Sun 等人的研究把范围限定在 GitHub Actions 生态，发现采纳率受评论形态影响。短、带代码片段、手动触发、hunk 级，都比模型强弱更能预测改动落地，模型型号在 36 个特征里排不进前几。这条结论只覆盖 GitHub Actions 的动作市场，不能直接推广到全行业。
+
+工程形态比模型强弱更影响评论能不能落地，这是目前实证里比较一致的方向。
+
+### 人的位置与信任
+
+Alami 和 Ernst 的 20 人访谈里，工程师对 LLM 反馈的采纳受信任和上下文缺失约束。LLM 反馈细节过多时认知负荷反而更高，好处是不用对模型做情绪管理。
+
+GitHub 官方负责使用文档直接写，Copilot 评审存在幻觉风险，可能标出不存在的问题，评论要仔细看过再动手。
+
+CodeRabbit 官方博客说低价值评论会被自动过滤，帮它清掉大部分幻觉。这句是厂商自报。
+
+### 成本与选型
+
+成本有官方数字。Copilot 官方估算单次评审 Lite effort 约 0.05 到 1 美元，Balanced 约 0.25 到 5 美元的 AI credits，随 PR 大小和仓库自定义指令变化。这条线直接决定付费团队的每月账单。
+
+开源路线把控制权还给你。PR-Agent 是 MIT 协议，能本地跑，能接 GitHub、GitLab、Bitbucket、Azure DevOps，模型经 LiteLLM 接 OpenAI、Claude、Gemini、DeepSeek。每个工具单次 LLM 调用，官方说约 30 秒、低成本，大 PR 靠压缩策略扛。
+
+OpenCodeReview 同样开源，确定性部分把 token 花在刀刃上。
+
+选型时把厂商自报和第三方实证分开看。跨家对比目前没有统一基准，c-CRAB 这类才刚起步。
+
+## 结语
+
+GitHub 官方对 Copilot 评审的定位写得很清楚。默认只留 Comment，不 Approve，不算 required approvals。这行字把机器给意见、人做决定的分工写进了产品默认行为。检视 agent 的技术栈还在快速分化，这条分工线是多数产品默认行为里共同保留的位置。
+
+---
+
+## 来源列表
+
+只列对结论重要的少数来源。厂商自报数字都标在正文里。
+
+- GitHub Copilot code review 官方文档，docs.github.com
+- CodeRabbit 架构文档与 context engineering 官方博客，docs.coderabbit.ai、www.coderabbit.ai
+- Greptile 官方文档，greptile.com/docs
+- Qodo 平台架构文档与 PR-Agent README，docs.qodo.ai、github.com/The-PR-Agent/pr-agent
+- Amazon Q Developer 用户指南，docs.aws.amazon.com
+- Sun 等，Does AI Code Review Lead to Code Changes，arXiv 2508.18771
+- Alami 与 Ernst，Human and Machine，arXiv 2501.02092
+- c-CRAB，Code Review Agent Benchmark，arXiv 2603.23448
+- Peralta 等，Why Are Agentic Pull Requests Merged or Rejected，arXiv 2605.22534
+- alibaba/open-code-review README，github.com/alibaba/open-code-review
+- 仓库内已有拆解，OpenCodeReview 架构深度剖析

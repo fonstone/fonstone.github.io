@@ -54,6 +54,10 @@ RT-Gang++ 解决的是另一类问题。SLAM 这类负载由多个线程组成�
 
 RT-Gang 最早是 Ali 和 Yun 在 RTAS 2019 提出的，RT-Gang++ 是期刊扩展版，加了两件事。一是分区化 gang 调度，允许不同优先级的多个 gang 同时运行。二是 LLC 和集成 GPU 的带宽节流，防止邻居把共享资源吃光。论文里的配置是三个核给 SLAM gang，一个核加 iGPU 给 DNN gang，L2 用 PALLOC 做页着色，SLAM 拿两个分区，其余任务共享另外两个分区。
 
+![分区化 gang 调度，t1 和 t2 组成一个 gang，t3 占另外两个核，t4 作为后台任务填充剩余时间（RT-Gang++ 论文图 1）](/images/ultra-low-latency/rtgang-partitioned.png)
+
+<p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">分区化 gang 调度，t1 和 t2 组成一个 gang，t3 占另外两个核，t4 作为后台任务填充剩余时间（RT-Gang++ 论文图 1）</p>
+
 <MermaidDiagram chart={`graph TB
     subgraph G1["SLAM gang 优先级 2"]
         T1["跟踪线程"]
@@ -77,6 +81,10 @@ RT-Gang 最早是 Ali 和 Yun 在 RTAS 2019 提出的，RT-Gang++ 是期刊扩�
 
 效果分三组看。论文报告，开启 RT-Gang++ 后 SLAM 恢复生成完整轨迹，20Hz 的帧率要求得到满足。MH04 场景的绝对轨迹误差中位数，不开 iGPU 节流是 2.86 米，两个节流全开降到 0.29 米。DNN 平均推理延迟从单独运行的 34.23 毫秒升到共跑时的 36.32 毫秒，再加节流是 48.69 毫秒，仍然在 50 毫秒预算内。换到 Raspberry Pi 4 上，中位误差降到约 0.05 米，单独运行是 0.04 米。
 
+![干扰下的帧处理率，Solo、+DoS 和 +DNN 都在 97% 以上，+DNN&DoS 掉到约 26%（RT-Gang++ 论文图 6）](/images/ultra-low-latency/rtgang-frames-dropped.png)
+
+<p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">干扰下的帧处理率，Solo、+DoS 和 +DNN 都在 97% 以上，+DNN&DoS 掉到约 26%（RT-Gang++ 论文图 6）</p>
+
 这套结果说明一件事。确定性的做法，是在干扰存在时保住截止时间，把代价压在预算内。DNN 慢了 42%，SLAM 的截止时间保住了，整机仍然满足 20Hz。工程上要接受这种交换，前提是知道每个任务的预算和优先级。
 
 gang 调度不是免费的。组内线程要同进同出，最慢的线程决定整组的进度，快线程要等。组与组之间按优先级分区，核数固定，能同时跑的组数受核数限制。Virtual gang 在 DATE 2021 上把多个任务打包成一个调度实体，组内任务同周期、同步释放，用固定组合缓解核数限制。RT-Gang++ 的分区化是在这个基础上的工程折中，先保证关键组有专属核，再用节流保护共享资源。
@@ -88,6 +96,10 @@ RT-Gang++ 的资源划分是人工定的。任务集一变，三个核给 SLAM�
 他们先把任务的最坏执行时间写成带宽和缓存分区的函数，记作 Ci(b,k)。b 是分给任务的访存带宽，k 是分到的缓存分区数。然后在抢占式 EDF 下做任务和资源的联合分配，目标是最小化带宽占用和缓存分区占用，可调度性作为硬约束。求解分两步，0-1 线性规划给精确解，多目标启发式给大规模任务集的近似解，输出一组 Pareto 非支配解，让设计者按场景挑。
 
 实验平台是 AMD UltraScale+ ZCU102，四个 Cortex-A53 共享 1MB LLC，Jailhouse 做缓存集分区，MemGuard 做带宽调节，基准用 SD-VBS 和 PARSEC。论文报告，在 SD-VBS 上比当时的 SOTA 算法 CaM 多找出 62.67% 的可调度任务集，在 PARSEC 上多 50.34%。
+
+![内存带宽和缓存分区对 mser-qcif 减速的影响，b=1、k=1 时减速 25.3 倍，资源充足时回到 1 到 2 倍（ECRTS 2025 MMO 论文图 1）](/images/ultra-low-latency/mmo-slowdown.png)
+
+<p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">内存带宽和缓存分区对 mser-qcif 减速的影响，b=1、k=1 时减速 25.3 倍，资源充足时回到 1 到 2 倍（ECRTS 2025 MMO 论文图 1）</p>
 
 这组数字要按条件读。任务集的可调度性由实测的 slowdown profile 驱动，Ci(b,k) 依赖目标板实测，解析模型给不出这个关系。换平台、换基准，百分比会变。论文的贡献在于把带宽和缓存放进同一个分配问题，避免先分缓存再补带宽这种次优顺序。
 
@@ -102,6 +114,10 @@ RT-Gang++ 的资源划分是人工定的。任务集一变，三个核给 SLAM�
 Sullivan 和 Yun 所在的团队在 RTAS 2026 上把方法推到 DRAM。论文的论点是，DRAM 干扰属于 bank 级现象。保证带宽可以写成 64 除以 tRC，tRC 是行周期时间，跨代 DRAM 大致在 45 到 65 纳秒。总带宽上界是每 bank 保证带宽乘以 bank 数。单 bank 被打满时，per-bank 调节给出的隔离保证和全 bank 调节相同，其余情况下吞吐更高。
 
 实验在 FireSim 加 Xilinx VCU118 上做，调节周期 1 毫秒，预算 53MB/s。best-effort 负载平均吞吐比 bank-oblivious 方法高 5.74 倍，八个 bank 时到 7.74 倍。单 bank 写攻击下，受害者被限制在单独运行的 1.1 倍以内。
+
+![per-bank 调节的吞吐随 bank 数扩展，6 个 bank 为 5.74 倍，8 个 bank 为 7.74 倍（RTAS 2026 论文图 7）](/images/ultra-low-latency/perbank-scaling.png)
+
+<p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">per-bank 调节的吞吐随 bank 数扩展，6 个 bank 为 5.74 倍，8 个 bank 为 7.74 倍（RTAS 2026 论文图 7）</p>
 
 控制器层的仲裁也可以动态切换。Lawand 和 Pellizzoni 在 ECRTS 2025 上提出 DAMA 双仲裁机制，平时走吞吐优先的仲裁，接近时序保证边界时切到实时仲裁。论文报告，实时请求的累计延迟界只增加不到 1.5%，平均性能与纯高性能仲裁相当。这个思路适合混合关键系统，关键任务不需要一直占着实时通道，只要在需要时能切过去。
 
@@ -170,7 +186,7 @@ echo $$ > /sys/fs/resctrl/hi/tasks
 
 一个可操作的判断标准是，如果最坏共跑场景下的执行时间不超过单独运行的 1.5 倍，现有隔离手段基本够用；超过 2 倍，就要检查 MSHR 和 bank 这两层；超过 5 倍，说明共享数据路径上有结构性冲突，靠调参数救不回来，得改任务划分或换平台。
 
-这个方向属于超低时延系列，系列索引和材料核验说明见 [研究地图](/knowledge/os/ultra-low-latency-research-map)。
+这个方向属于超低时延系列，系列索引和材料核验说明见 [研究地图](/knowledge/os/ultra-low-latency-research-map)。文中插图来自对应论文的公开版本，图注标注了论文和图号。
 
 ## 参考资料
 

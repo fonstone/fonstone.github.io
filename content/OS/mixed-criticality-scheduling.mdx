@@ -42,6 +42,10 @@ Mendes、Souto 和 Diniz 在 2024 年 11 月挂出一篇预印本，用深度强
 
 结果方面，论文摘要写的是预算超支至少降低 50%。这个表述要拆开看。论文表格里，改善比率的分布很宽，中位数很大，最差的一组任务集是 1.5 倍，折算下来约 33%。摘要的原话是 at least up to 50%，带了 hedge。高关键任务的截止时间保证成立，前提是任务不超预算，这一点和 AMC 一致。论文没有正式发表，引用时标预印本。
 
+![DQN 开启前后的模式切换次数改善倍数，150 和 250 个 runnable 两组任务集（DRL-AMC 论文图 4）](/images/ultra-low-latency/drl-mode-changes.png)
+
+<p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">DQN 开启前后的模式切换次数改善倍数，150 和 250 个 runnable 两组任务集（DRL-AMC 论文图 4）</p>
+
 这项工作的价值在于把预算从静态配置变成运行时反馈。它没有改变 AMC 的保证结构，只是在保证允许的范围内找更好的预算。工程上要落地，还需要解决训练数据和实际负载分布的偏差，以及智能体本身失效时的兜底。
 
 预算设定有三种常见做法，各有各的假设。第一种用静态 WCET 分析，预算是可证明的上界，最安全，也最保守。第二种用执行时间分布的分位数，比如 95 分位或者 99 分位，预算更接近实际，但分位数之外的情况没有保证。第三种是混合做法，高关键任务用静态上界，低关键任务用分位数，模式切换时按静态上界重新分配。三种做法对认证材料的友好程度依次下降。强化学习调预算属于第四种，预算在运行时变化，需要额外的机制证明变化过程不破坏保证。
@@ -52,7 +56,15 @@ Versal AI Engine 是 AMD 的自适应计算平台，片上有一阵列向量计�
 
 AIE 的结构值得展开一点。每个 tile 有自己的向量单元、标量单元和本地内存，tile 之间通过片上网络和共享内存通信。数据流图把计算节点映射到 tile，边映射到缓冲区或者网络通路。静态映射的好处是时序可预测，坏处是资源利用率低，一个任务占着 tile 不用，别的任务也进不来。动态分发的难点在于，改变映射要动数据通路，而数据通路的配置不是随便就能改的。论文的做法是保留静态数据流图，只在任务级别做分配，tile 内部的配置不变。
 
+![Versal AI Engine 阵列，每个 tile 包含 AI Engine、内存和互连，下面是与 PL 和 NoC 的接口（Versal AIE 论文图 1）](/images/ultra-low-latency/versal-aie-array.png)
+
+<p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">Versal AI Engine 阵列，每个 tile 包含 AI Engine、内存和互连，下面是与 PL 和 NoC 的接口（Versal AIE 论文图 1）</p>
+
 Sprave、Wilhelm、Passaretti、Garcia-Ortiz 和 Pionteck 在 2026 年 4 月挂出一篇预印本，给 AIE 加了一层动态任务分发。三个 tile 分工不同，第一个只跑高关键任务，第二个由高关键和低关键共享，第三个留给低关键任务。分发器在运行时按截止时间和空闲状态分配任务，高关键任务优先，低关键任务填剩余空间。
+
+![动态任务分发基础设施，高优先级和低优先级队列经 dispatcher 分配到三个 compute tile（Versal AIE 论文图 2）](/images/ultra-low-latency/versal-dispatcher.png)
+
+<p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">动态任务分发基础设施，高优先级和低优先级队列经 dispatcher 分配到三个 compute tile（Versal AIE 论文图 2）</p>
 
 案例研究用自动驾驶负载，高关键任务是粒子滤波，最坏执行时间 25 毫秒，典型执行时间 15 毫秒，截止时间 45 毫秒；低关键任务是 FFT，执行时间 0.1 毫秒，截止时间 0.15 毫秒。高关键任务超过典型执行时间的概率设为 20%。跑 9 秒的分布，和静态映射对比。
 
@@ -63,6 +75,10 @@ Sprave、Wilhelm、Passaretti、Garcia-Ortiz 和 Pionteck 在 2026 年 4 月挂�
 ## 四、数据新鲜度，另一条约束
 
 传感器融合系统里，任务按时完成不代表结果有用。一帧十毫秒前的摄像头图像，在高速场景下可能已经过期。Shaik 在 2026 年 4 月的一篇期刊论文里提出新鲜度驱动调度，把数据时效性写进调度决策。任务的价值随数据年龄衰减，调度器优先处理价值高的作业，过期的作业直接丢弃。
+
+![数据新鲜度悖论，摄像头在 t=0 采集、t=100 毫秒完成，截止时间满足但数据已经过期（FDS 论文图 1）](/images/ultra-low-latency/fds-stale-data.png)
+
+<p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">数据新鲜度悖论，摄像头在 t=0 采集、t=100 毫秒完成，截止时间满足但数据已经过期（FDS 论文图 1）</p>
 
 论文用 FreeRTOS 实现，负载是摄像头、雷达、激光雷达、IMU 和融合任务，15 秒观察窗。测试了 303.6% 和 415.6% 两种高负载场景。相对传统固定优先级调度，平均传感器价值和时间一致性指标改善 42% 到 381%，ASIL-D 任务零截止时间丢失，准入率 89.3%，对比基线平均 69.8%。
 
@@ -138,7 +154,7 @@ Sprave、Wilhelm、Passaretti、Garcia-Ortiz 和 Pionteck 在 2026 年 4 月挂�
 
 一个可操作的判断是，如果高关键任务的实测最坏执行时间超过保守预算的 80%，系统已经处在危险边缘。这个时候加低关键任务，或者调低预算，都会让模式切换变得频繁。先把余量做厚，再谈利用率。
 
-这个方向属于超低时延系列，系列索引和材料核验说明见 [研究地图](/knowledge/os/ultra-low-latency-research-map)。
+这个方向属于超低时延系列，系列索引和材料核验说明见 [研究地图](/knowledge/os/ultra-low-latency-research-map)。文中插图来自对应论文的公开版本，图注标注了论文和图号。
 
 ## 参考资料
 

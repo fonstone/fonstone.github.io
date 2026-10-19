@@ -47,6 +47,10 @@ MSHR 的作用是让缓存可以同时处理多个未完成的缺失。请求发
 
 Valsan 的论文把实验做到了极限。平台包括 Intel Xeon W3553、Odroid-XU4 的 Cortex-A15 和 Cortex-A7、Odroid-U3 的 Cortex-A9。LLC 按核四等分，目标任务的工作集控制在一个分区以内，共跑任务的工作集是 LLC 的两倍，故意制造大量缺失。结果是，读方向的共跑任务在 Cortex-A15 上让目标变慢 10.6 倍，写方向的共跑任务让目标变慢 21.4 倍。论文摘要给的总口径是最高 21 倍。
 
+![缓存分区之后，1 到 3 个共跑任务仍把目标执行时间放大，Cortex-A15 上读方向 10.6 倍，写方向 21.4 倍（Valsan RTAS 2016 图 2）](/images/ultra-low-latency/valsan-mshr-slowdown.png)
+
+<p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">缓存分区之后，1 到 3 个共跑任务仍把目标执行时间放大，Cortex-A15 上读方向 10.6 倍，写方向 21.4 倍（Valsan RTAS 2016 图 2）</p>
+
 写方向更严重，论文的解释是写回流量会延迟缓存行的填充，进一步加剧 MSHR 短缺。这个解释把根因从缓存容量转到了请求流水线，改变了隔离的设计方向。
 
 修复方案是软硬件配合。硬件在每核 L1 加两个寄存器，一个由操作系统设置每核最多能用多少 MSHR，一个由硬件报告当前占用。软件改 Linux 3.14 的调度器，在任务切换时做全局规划，硬实时任务运行时预留表项，非实时任务共享剩下的。论文报告，EEMBC 基准上最坏任务的 WCET 相对纯缓存分区基线最多降低 19%，平均 13%，吞吐损失约 3%，预留回收的误差率平均 4%。仿真实验里，把 LLC 的 MSHR 从 12 个增加到 24 个，争用基本消失，反过来印证了根因。
@@ -57,7 +61,15 @@ Valsan 的论文把实验做到了极限。平台包括 Intel Xeon W3553、Odroi
 
 缓存银行是 LLC 内部的分区，地址位决定请求落到哪个 bank。Cortex-A72 的 L2 有两个 tag bank，每个 tag bank 下四个 data bank，地址位 4、5、6 参与索引。这三位都在 4KB 页内，普通进程不需要特权就能控制。
 
+![Cortex-A72 的 L2 组织，两个 tag bank 各带四个 data bank，地址位 6 选择 tag bank（RTSS 2024 per-bank 论文图 1）](/images/ultra-low-latency/perbank-a72-l2.png)
+
+<p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">Cortex-A72 的 L2 组织，两个 tag bank 各带四个 data bank，地址位 6 选择 tag bank（RTSS 2024 per-bank 论文图 1）</p>
+
 Bechtel 和 Yun 在 RTAS 2023 上利用这一点做了缓存银行级拒绝服务攻击。攻击流量只命中 LLC，不消耗 DRAM 带宽，因此 DRAM 侧的节流看不到它。在 Raspberry Pi 4 和 Jetson Nano 上，合成负载最多慢 9.7 倍，真实负载慢 2.3 倍，而且是在 LLC 分区和 DRAM 带宽节流都开启的情况下。
+
+![攻击者访问不同 data bank 时的受害者减速，落在同一个 tag bank 组时接近 9.7 倍，换到另一组后回到 1 倍附近（Cache Bank-Aware DoS 论文图 5）](/images/ultra-low-latency/cachebank-dos.png)
+
+<p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">攻击者访问不同 data bank 时的受害者减速，落在同一个 tag bank 组时接近 9.7 倍，换到另一组后回到 1 倍附近（Cache Bank-Aware DoS 论文图 5）</p>
 
 防御分两个层次。缓存侧，per-bank 带宽调节给每个 bank 单独设预算。RTSS 2024 的论文报告，同一 bank 被打满时受害者相对单独运行慢 3.52 倍，全 bank 节流为了压住攻击会把良性任务拖慢 5.47 倍，per-bank 节流只拖慢 2.94 倍。论文还在两 bank 和四 bank 的场景里做了对比，全 bank 节流把良性任务拖慢 5.47 倍和 5.49 倍，per-bank 只拖慢 2.94 倍和 1.50 倍，良性 best-effort 任务相对 bank-oblivious 方法最多提升 3.66 倍吞吐。
 
@@ -147,7 +159,7 @@ MSHR 还有一个现实困难，多数商用 CPU 不暴露 MSHR 占用计数。�
 
 一个可操作的判断是，如果做完缓存分区和带宽预留，最坏执行时间仍然超过单独运行的 2 倍，优先检查 MSHR 和缓存银行。这两个地方的干扰不会出现在命中率和平均带宽里，却能把尾延迟推高一个数量级。
 
-这个方向属于超低时延系列，系列索引和材料核验说明见 [研究地图](/knowledge/os/ultra-low-latency-research-map)。
+这个方向属于超低时延系列，系列索引和材料核验说明见 [研究地图](/knowledge/os/ultra-low-latency-research-map)。文中插图来自对应论文的公开版本，图注标注了论文和图号。
 
 ## 参考资料
 

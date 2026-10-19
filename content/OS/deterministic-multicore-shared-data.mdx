@@ -1,0 +1,188 @@
+---
+title: "多核并行与共享数据访问，确定性被什么吃掉"
+description: "从 RT-Gang++ 的工业 AR-HUD 案例出发，拆解共享数据路径上的 MSHR、LLC 分区、缓存银行和内存带宽争抢，覆盖 ECRTS 2025 联合分配模型、RTSS 2024 与 RTAS 2026 的 per-bank 调节，附实测放大倍数与工程取舍。"
+date: "2026-10-18"
+tags: ["OS", "超低时延", "多核", "实时系统", "缓存"]
+---
+
+ARM 工业挑战赛 2022 的 AR-HUD 负载，在一台 Jetson Nano 上跑三个 SLAM 线程加一个轻量 DNN，要求 20Hz，单帧 50 毫秒。单独跑的时候，97% 以上的输入帧能按时处理完。旁边再放一个访存干扰任务，按时处理的比例掉到 26%，SLAM 的绝对轨迹误差中位数从厘米级跳到 2.86 米。这是 Bechtel 和 Yun 在 IEEE Transactions on Computers 2024 年那篇工业案例研究里的数据，也是 RT-Gang++ 这套框架的出发点。
+
+多核并行的账面收益按核数算，实际收益按共享数据路径算。四个核同时读同一份数据，缓存一致性协议要维护副本；同时写相邻字段，缓存行来回搬家；同时访存，内存控制器排队。平均吞吐可能还在涨，最坏时延已经开始翻倍。这篇文章沿着共享数据这条路，把 2024 到 2026 年能落到实处的机制拆开，重点看三件事，干扰从哪里来，隔离做到哪一级，代价由谁承担。
+
+## 一、共享数据路径上的排队点
+
+一颗四核 SoC 里，一次加载要过好几道关。核内的 L1 先查，缺失了进 L2，再缺失进共享 LLC，最后到内存控制器和 DRAM。每一道关都有队列，队列长度随邻居核的行为变化。平均带宽只能描述队列的平均长度，描述不了最坏情况下的等待。
+
+第一道关是私有缓存和共享缓存之间的在途请求。非阻塞缓存用 MSHR 跟踪还没回来的缺失，表项满了，后续请求连命中都要排队。Valsan、Yun 和 Farshchi 在 RTAS 2016 上测到，缓存分区做足、命中率接近百分之百，目标任务的最坏执行时间仍然能放大 21 倍。这个问题在第四篇里展开，这里先记住，缓存路划分管不到 MSHR。
+
+第二道关是 LLC 的组和路。物理地址的中间位决定缓存组，组内用哪一路由替换策略决定。两个核的数据映射到同一组，就会互相驱逐。页着色把任务的物理页压到指定组，Intel CAT 和 ARM MPAM 按路划分，都是在这一层做隔离。隔离的粒度是路，一路通常占 LLC 容量的几十分之一，粗粒度会浪费容量。
+
+第三道关是缓存银行。LLC 不是一块均匀的存储，它分成多个 bank，地址位决定落点。Cortex-A72 的 L2 由两个 tag bank 和每个 tag bank 下四个 data bank 组成，地址位 4、5、6 参与索引，这三位都在 4KB 页内。Bechtel 和 Yun 在 RTAS 2023 上利用这一点构造了缓存银行级拒绝服务攻击，只用命中 LLC 的写流量就能让受害者变慢，缓存分区和 DRAM 带宽节流都挡不住。合成负载最多慢 9.7 倍，真实负载 2.3 倍。
+
+第四道关是内存控制器和 DRAM bank。多个核的请求在控制器里排队，DRAM 的 bank 和行状态决定服务时间。请求落进同一个 bank，行冲突会让延迟进一步拉长。Kim 等人在 RTAS 2014 上用 Intel i7-2600 加 DDR3-1333 测过，缓存分区做完，一个共跑任务把目标执行时间最多放大 5.5 倍，两个 8.4 倍，三个 12 倍。
+
+还有一类问题不在这四道关里，却经常被误判成缓存容量不足，那就是伪共享。两个核写同一个缓存行里的不同字段，MESI 协议让整行在核间迁移。写者要拿独占权，另一核的副本失效，下一次读又要重新取。字段在逻辑上无关，缓存行把它们绑在一起。下面的写法把两个计数器放到不同的缓存行，用 64 字节对齐，x86 和多数 Arm 核的缓存行都是这个宽度。
+
+```c
+struct padded_counter {
+    _Alignas(64) unsigned long value;
+    char pad[64 - sizeof(unsigned long)];
+};
+```
+
+填充的代价是内存占用。计数器多的时候，填充会让工作集变大，反而增加容量缺失。FSDetect 的思路是先检测再修，检测按缓存块统计一致性 miss 的频率，修复在 LLC 做字节级合并。论文报告平均提升 1.39 倍，RC 基准上最高 3.9 倍。先测再填，比盲目填充划算。
+
+<MermaidDiagram chart={`graph LR
+    C0["核 0"] --> L1["私有 L1 与 MSHR"]
+    C1["核 1"] --> L1b["私有 L1 与 MSHR"]
+    L1 --> LLC["共享 LLC 的路与 bank"]
+    L1b --> LLC
+    LLC --> MC["内存控制器队列"]
+    MC --> B0["DRAM bank 0"]
+    MC --> B1["DRAM bank 1"]
+    MC --> B2["DRAM bank n"]
+    X["页着色与 CAT"] -.-> LLC
+    Y["per-bank 带宽调节"] -.-> MC
+    Z["MSHR 配额"] -.-> L1
+`} />
+
+这张图里的四个排队点，对应的隔离手段完全不同。页着色和 CAT 管路，per-bank 调节管 bank 和控制器，MSHR 配额管在途请求，调度器管谁在什么时候能用核。工程上常见的错误是只做一层，然后拿平均吞吐的改善证明隔离有效。
+
+## 二、Gang 调度把并行任务当成一个单位
+
+RT-Gang++ 解决的是另一类问题。SLAM 这类负载由多个线程组成，线程之间有同步和共享数据，单独给每个线程分配核，线程之间的相对进度不受控。gang 调度把一组线程绑成一个帮派，同时上核、同时让出，组内线程的进度差被压住。
+
+RT-Gang 最早是 Ali 和 Yun 在 RTAS 2019 提出的，RT-Gang++ 是期刊扩展版，加了两件事。一是分区化 gang 调度，允许不同优先级的多个 gang 同时运行。二是 LLC 和集成 GPU 的带宽节流，防止邻居把共享资源吃光。论文里的配置是三个核给 SLAM gang，一个核加 iGPU 给 DNN gang，L2 用 PALLOC 做页着色，SLAM 拿两个分区，其余任务共享另外两个分区。
+
+<MermaidDiagram chart={`graph TB
+    subgraph G1["SLAM gang 优先级 2"]
+        T1["跟踪线程"]
+        T2["局部建图线程"]
+        T3["回环检测线程"]
+    end
+    subgraph G2["DNN gang 优先级 1"]
+        T4["推理线程"]
+        T5["iGPU"]
+    end
+    CPU["4 核 CPU 与 2MB 共享 L2"]
+    TH["LLC 节流 100MB/s 周期 1ms"]
+    IG["iGPU 节流级别 20"]
+    G1 --> CPU
+    G2 --> CPU
+    TH -.-> G2
+    IG -.-> T5
+`} />
+
+节流参数值得抄下来。LLC 侧用 L1D_CACHE_REFILL 计数器统计访存，阈值取 100MB/s，调节周期 1 毫秒，实现基于 MemGuard。iGPU 侧利用 Tegra X1 内存控制器的 32 级节流，选第 20 级。论文的解释是，第 31 级最大节流会把推理延迟拉到约 73 毫秒，比不节流慢一倍，第 20 级是还能保住 20Hz 的最大档位。
+
+效果分三组看。论文报告，开启 RT-Gang++ 后 SLAM 恢复生成完整轨迹，20Hz 的帧率要求得到满足。MH04 场景的绝对轨迹误差中位数，不开 iGPU 节流是 2.86 米，两个节流全开降到 0.29 米。DNN 平均推理延迟从单独运行的 34.23 毫秒升到共跑时的 36.32 毫秒，再加节流是 48.69 毫秒，仍然在 50 毫秒预算内。换到 Raspberry Pi 4 上，中位误差降到约 0.05 米，单独运行是 0.04 米。
+
+这套结果说明一件事。确定性的做法，是在干扰存在时保住截止时间，把代价压在预算内。DNN 慢了 42%，SLAM 的截止时间保住了，整机仍然满足 20Hz。工程上要接受这种交换，前提是知道每个任务的预算和优先级。
+
+gang 调度不是免费的。组内线程要同进同出，最慢的线程决定整组的进度，快线程要等。组与组之间按优先级分区，核数固定，能同时跑的组数受核数限制。Virtual gang 在 DATE 2021 上把多个任务打包成一个调度实体，组内任务同周期、同步释放，用固定组合缓解核数限制。RT-Gang++ 的分区化是在这个基础上的工程折中，先保证关键组有专属核，再用节流保护共享资源。
+
+## 三、带宽和缓存一起分配
+
+RT-Gang++ 的资源划分是人工定的。任务集一变，三个核给 SLAM、一个核给 DNN 这种配置就不一定合适。ECRTS 2025 的论文把这件事做成优化问题，作者是 Sun、Wei、Bastoni、Roy、Theile、Kloda、Pellizzoni 和 Caccamo。
+
+他们先把任务的最坏执行时间写成带宽和缓存分区的函数，记作 Ci(b,k)。b 是分给任务的访存带宽，k 是分到的缓存分区数。然后在抢占式 EDF 下做任务和资源的联合分配，目标是最小化带宽占用和缓存分区占用，可调度性作为硬约束。求解分两步，0-1 线性规划给精确解，多目标启发式给大规模任务集的近似解，输出一组 Pareto 非支配解，让设计者按场景挑。
+
+实验平台是 AMD UltraScale+ ZCU102，四个 Cortex-A53 共享 1MB LLC，Jailhouse 做缓存集分区，MemGuard 做带宽调节，基准用 SD-VBS 和 PARSEC。论文报告，在 SD-VBS 上比当时的 SOTA 算法 CaM 多找出 62.67% 的可调度任务集，在 PARSEC 上多 50.34%。
+
+这组数字要按条件读。任务集的可调度性由实测的 slowdown profile 驱动，Ci(b,k) 依赖目标板实测，解析模型给不出这个关系。换平台、换基准，百分比会变。论文的贡献在于把带宽和缓存放进同一个分配问题，避免先分缓存再补带宽这种次优顺序。
+
+带宽预算怎么定，MemGuard 给过一个可以直接复用的流程。先在目标平台测物理访存峰值，再按核分配预留，预留之和不超过保证带宽。PC6400 DDR2 平台上，论文实测的保证带宽是 1.2GB/s。用预测性回收把没用完的预算转给需要的核，SPEC2006 后台应用的 IPC 提升 3.8 倍，前台任务只损失 3%，软预留的误差小于 5%。这组数字说明预留不必做死，回收能补回一部分利用率，前提是回收策略本身可分析。
+
+## 四、把调节粒度压到 bank
+
+带宽调节器通常按核或按 VM 记账，周期在毫秒级。问题在于，内存干扰很多时候集中在少数 bank 上，整体限流会误伤没抢那些 bank 的任务。Sullivan、Manley、Alian 和 Yun 在 RTSS 2024 上做了 per-bank 的 LLC 带宽调节，思路是给每个 bank 单独设预算，而不是给整个 LLC 设一个总预算。
+
+效果用一个对比说明。同一 bank 被写攻击打满时，受害者相对单独运行慢 3.52 倍。全 bank 节流为了压住这个攻击，会把良性任务一起拖慢 5.47 倍。per-bank 节流只拖慢 2.94 倍，受害者的隔离保证不变。论文摘要给的数字是，良性 best-effort 任务相对 bank-oblivious 节流最多提升 3.66 倍吞吐。
+
+Sullivan 和 Yun 所在的团队在 RTAS 2026 上把方法推到 DRAM。论文的论点是，DRAM 干扰属于 bank 级现象。保证带宽可以写成 64 除以 tRC，tRC 是行周期时间，跨代 DRAM 大致在 45 到 65 纳秒。总带宽上界是每 bank 保证带宽乘以 bank 数。单 bank 被打满时，per-bank 调节给出的隔离保证和全 bank 调节相同，其余情况下吞吐更高。
+
+实验在 FireSim 加 Xilinx VCU118 上做，调节周期 1 毫秒，预算 53MB/s。best-effort 负载平均吞吐比 bank-oblivious 方法高 5.74 倍，八个 bank 时到 7.74 倍。单 bank 写攻击下，受害者被限制在单独运行的 1.1 倍以内。
+
+控制器层的仲裁也可以动态切换。Lawand 和 Pellizzoni 在 ECRTS 2025 上提出 DAMA 双仲裁机制，平时走吞吐优先的仲裁，接近时序保证边界时切到实时仲裁。论文报告，实时请求的累计延迟界只增加不到 1.5%，平均性能与纯高性能仲裁相当。这个思路适合混合关键系统，关键任务不需要一直占着实时通道，只要在需要时能切过去。
+
+隔离机制本身的成本也要复核。2026 年 9 月的一篇复现报告指出，MemPol 论文里 MemGuard 最高 1.79 倍的减速，来自旧版配置把被测基准钉在了负责全局定时器中断的 master core 上。换成现代的去中心化实现，开销与 MemPol 相当。这个例子说明，隔离方案的对比要在同一配置基线上做，否则测到的是实现缺陷，不是机制成本。
+
+<MermaidDiagram chart={`flowchart TD
+    A["任务集与截止时间"] --> B["在目标板测 Ci 随带宽与缓存分区变化"]
+    B --> C["建立 0-1 线性规划"]
+    C --> D["EDF 可调度性约束"]
+    D --> E["Pareto 解集"]
+    E --> F{"负载是否集中在少数 bank"}
+    F -->|是| G["per-bank 预算"]
+    F -->|否| H["按核或按 VM 预算"]
+    G --> I["运行时 PMU 计数与节流"]
+    H --> I
+    I --> J["复测最坏共跑场景"]
+`} />
+
+## 五、共享缓存的另一种思路
+
+前面讲的隔离都假设缓存分区之间不共享数据。实时任务如果真有一份跨核共享的数据，严格分区会禁止它进 LLC，每次访问都落到内存，时延反而更差。DAC 2022 上 Wu 和 Patel 提出了一种可预测的 LLC 分区共享机制，用 1S-TDM 让每个核在每个周期只占一个时隙，再配一个硬件 set sequencer 降低最坏情况延迟。
+
+论文报告，四核加 16 路 LLC 的配置下，最坏情况延迟比朴素共享低 2048 倍。两核 4096 字节分区的配置下，set sequencer 平均带来 1.34 倍加速，8192 字节时 2.13 倍。这些数字来自合成 trace 的模拟器实验，工作负载故意让每个核访问不相交的地址，规避了真实共享数据。论文把相干数据共享作为动机，评测里没有实测。
+
+这个边界要说清楚。可预测共享在理论上成立，工程上还没有看到大规模的真实负载验证。做方案设计时可以把它当一条备选路线，不要当成熟件。
+
+共享数据还有一类问题是伪共享。两个核写同一个缓存行里的不同字段，MESI 协议把整行来回搬。FSDetect 和 FSLite 在 MICRO 2024 上用一致性 miss 频率识别有害伪共享，检测到之后在 LLC 做字节级合并，平均带来 1.39 倍性能提升。这类工具适合放在开发阶段，先把布局问题找出来。
+
+## 六、工程落地的顺序
+
+把上面几层拼成一条可执行的路径，顺序大致如下。
+
+1. 先测单独运行的最坏执行时间，再测最坏共跑场景。共跑任务要按真实部署里最坏的一组配，不要用平均负载。
+2. 判断干扰主要落在哪一层。缓存缺失率飙升看 LLC 和着色，命中率正常但延迟高看 MSHR 和 bank，带宽计数器打满看内存控制器。
+3. 能分区就先分区。页着色和 CAT 的成本最低，先拿到容量隔离，再谈共享。
+4. 分区之后仍然超预算，再上带宽调节。调节周期从毫秒起步，需要更细粒度时看 MemPol 这类微秒级方案。
+5. 负载集中在少数 bank 时，把预算拆到 bank。拆之前先确认平台的 bank 映射，地址位不清楚就先用 PMU 实测。
+6. 多线程任务考虑 gang 调度。线程间的进度差本身就是一种共享数据争用，绑成帮派能把这种争用变成可控的调度单位。
+7. 最后用真实应用复测，不要只看微基准。RT-Gang++ 的帧处理率和轨迹误差，比任何单项计数器都更能说明问题。
+
+这套顺序先粗后细。分区能解决的不要上调节，调节能解决的不要改调度。每加一层，配置复杂度和验证成本都上一个台阶。
+
+测量环节可以用三条命令起步。第一组看 LLC 缺失和指令数，第二组看缓存行争用，第三组把分区配置写进 resctrl。每组都要固定负载和绑核，否则数据没有可比性。
+
+```bash
+perf stat -e LLC-load-misses,LLC-store-misses,cycles,instructions -r 5 ./task
+perf c2c record -g --all-user ./task
+perf c2c report -NN --stdio -g total
+mount -t resctrl resctrl /sys/fs/resctrl
+```
+
+```bash
+mkdir -p /sys/fs/resctrl/hi
+echo "L3:0=0xffff;MB:0=70" > /sys/fs/resctrl/hi/schemata
+echo 0-1 > /sys/fs/resctrl/hi/cpus
+echo $$ > /sys/fs/resctrl/hi/tasks
+```
+
+这是 Intel RDT 的接口，AMD 和 Arm 平台的字段名不同，思路一样。配额写进去之后要用计数器确认真的生效了，配置成功不等于硬件按预期执行。
+
+## 七、判断与边界
+
+多核确定性这条线，2024 到 2026 年的进展集中在两个方向。一个是从整机案例反推资源配置，RT-Gang++ 证明了在商用嵌入式平台上，gang 调度加两层节流可以把一个真实 AR 负载从崩溃边缘拉回来。另一个是把资源分配做成可求解的问题，ECRTS 2025 的模型把带宽和缓存放进同一个框架，per-bank 的一系列工作把调节粒度压到硬件银行。
+
+还没解决的是验证成本。Ci(b,k) 要在目标板上逐任务测，任务集一大，测量时间就失控。per-bank 调节需要知道 bank 映射，商用 SoC 的文档经常不写。可预测共享缓存还停留在合成 trace 阶段。工程团队能用的，仍然是分区加节流这套组合，外加一个按最坏共跑场景设定的预算。
+
+一个可操作的判断标准是，如果最坏共跑场景下的执行时间不超过单独运行的 1.5 倍，现有隔离手段基本够用；超过 2 倍，就要检查 MSHR 和 bank 这两层；超过 5 倍，说明共享数据路径上有结构性冲突，靠调参数救不回来，得改任务划分或换平台。
+
+这个方向属于超低时延系列，系列索引和材料核验说明见 [研究地图](/knowledge/os/ultra-low-latency-research-map)。
+
+## 参考资料
+
+1. Michael Bechtel, Heechul Yun. Analysis and Mitigation of Shared Resource Contention on Heterogeneous Multicore, An Industrial Case Study. IEEE Transactions on Computers 73, 2024. https://arxiv.org/abs/2304.13110
+2. Waqar Ali, Heechul Yun. RT-Gang, Real-Time Gang Scheduling Framework for Safety-Critical Systems. IEEE RTAS 2019. https://arxiv.org/abs/1903.00999
+3. Binqi Sun, Zhihang Wei, Andrea Bastoni, Debayan Roy, Mirco Theile, Tomasz Kloda, Rodolfo Pellizzoni, Marco Caccamo. Multi-Objective Memory Bandwidth Regulation and Cache Partitioning for Multicore Real-Time Systems. ECRTS 2025. https://doi.org/10.4230/LIPIcs.ECRTS.2025.2
+4. Connor Sullivan, Alex Manley, Mohammad Alian, Heechul Yun. Per-Bank Bandwidth Regulation of Shared Last-Level Cache for Real-Time Systems. IEEE RTSS 2024. https://arxiv.org/abs/2410.14003
+5. Connor Sullivan, Amin Mamandipoor, Cole Strickler, Heechul Yun. Per-Bank Memory Bandwidth Regulation for Predictable and Performant Real-Time Systems. IEEE RTAS 2026. https://arxiv.org/abs/2603.26054
+6. Michael Bechtel, Heechul Yun. Cache Bank-Aware Denial-of-Service Attacks on Multicore ARM Processors. IEEE RTAS 2023. https://ittc.ku.edu/~heechul/papers/cachebank-rtas2023-camera.pdf
+7. Hyoseung Kim, Dionisio de Niz, Björn Andersson, Mark H. Klein, Onur Mutlu, Ragunathan Rajkumar. Bounding Memory Interference Delay in COTS-based Multi-Core Systems. IEEE RTAS 2014. https://doi.org/10.1109/RTAS.2014.6925998
+8. Zhuanhao Wu, Hiren Patel. Predictable Sharing of Last-level Cache Partitions for Multi-core Safety-critical Systems. DAC 2022. https://arxiv.org/abs/2204.01679
+9. Vipin Patel, Swarnendu Biswas, Mainak Chaudhuri. Leveraging Cache Coherence to Detect and Repair False Sharing On-the-Fly. MICRO 2024. https://www.cse.iitk.ac.in/users/swarnendu/files/papers/micro24.pdf
+10. Heechul Yun, Gang Yao, Rodolfo Pellizzoni, Marco Caccamo, Lui Sha. MemGuard, Memory Bandwidth Reservation System for Efficient Performance Isolation in Multi-core Platforms. IEEE RTAS 2013. https://doi.org/10.1109/RTAS.2013.6531079
+11. Heechul Yun, Renato Mancuso, Zheng-Pei Wu, Rodolfo Pellizzoni. PALLOC, DRAM Bank-Aware Memory Allocator for Performance Isolation on Multicore Platforms. IEEE RTAS 2014. https://doi.org/10.1109/RTAS.2014.6925999
+12. Wafic Lawand, Rodolfo Pellizzoni. DAMA, A Dual Arbitration Mechanism for Mixed-Criticality Applications. ECRTS 2025. https://doi.org/10.4230/LIPIcs.ECRTS.2025.9

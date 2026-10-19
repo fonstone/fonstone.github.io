@@ -1,0 +1,157 @@
+---
+title: "混合关键系统调度，从 AMC 到强化学习和 AI 引擎"
+description: "把不同安全等级的任务装进同一颗芯片，调度器要同时保住高关键任务的截止时间和低关键任务的利用率。覆盖 AMC 与 EDF-VD 的保证、DQN 调预算的实测、Versal AI 引擎的动态分发、数据新鲜度调度和能耗约束，附各结果的实验条件与来源级别。"
+date: "2026-10-18"
+tags: ["OS", "超低时延", "混合关键系统", "实时调度", "功能安全"]
+---
+
+一颗车载 SoC 上同时跑 ASIL-D 的制动控制和 QM 的娱乐系统，这是混合关键系统最典型的场景。高关键任务必须按时完成，低关键任务在资源紧张时可以让路。调度器要回答两个问题，平时怎么让低关键任务尽量多跑，出问题的时候怎么保证高关键任务不受影响。
+
+Vestal 在 2007 年 RTSS 上给出了这套问题的形式化模型。每个任务不只带一个最坏执行时间，而是带一组按置信度排序的执行时间上界。置信度要求越高，上界越保守。调度器按关键级分配资源，高关键任务用保守上界，低关键任务用乐观上界。这个模型后来演化出 AMC、EDF-VD 等一批算法，也把认证和调度绑在了一起。
+
+这篇文章按时间线拆。先看经典模型给什么保证，再看 2024 到 2026 年的三类新工作，强化学习调预算、AI 加速器上的动态分发、数据新鲜度和能耗约束。每项工作都标清楚来源级别，预印本、期刊论文、工业报告分开写。
+
+## 一、经典模型给的是什么保证
+
+Vestal 的模型里，一个任务可以写成四元组，周期、截止时间、低关键级执行时间、高关键级执行时间。系统有两个模式，低关键模式和高关键模式。低关键模式下所有任务按乐观预算运行，高关键任务一旦超过乐观预算，系统切到高关键模式，低关键任务降级或者被丢弃，资源让给高关键任务。
+
+AMC 是 Baruah、Burns 和 Davis 在 RTSS 2011 上提出的自适应混合关键调度算法。它分两步做可调度性分析。低关键模式下，所有任务按乐观预算做响应时间分析；高关键模式下，只保留高关键任务，按保守预算分析。切换时，低关键任务要么被丢弃，要么以降级版本继续运行。AMC-rtb 是它的响应时间分析版本，把两种模式的最坏情况都算进去。
+
+EDF-VD 走的是另一条路。它给低关键任务一个虚拟截止时间，把低关键任务的截止时间按比例缩短，让它们在低关键模式下更早完成，给高关键任务留出切换空间。Baruah 等人在 ESA 2011 提出，ECRTS 2012 给出会议版本，JACM 2015 给出期刊完整版。论文给出 4/3 的处理器加速比，并讨论了这个界限在两级隐式截止期系统下的最优性。
+
+这些保证有一个共同前提，高关键任务的执行时间不超过它的保守预算。超过之后，任何算法都保不住。所以混合关键系统的认证材料里，预算的推导过程和运行时监控同样重要。
+
+Burns 和 Davis 在 2026 年 2 月发布了混合关键系统综述的第 14 版，也是最后一版。文档 114 页，参考文献编号到 844，覆盖 2022 到 2025 年的新工作。做文献调研时，这份综述比散着找论文高效得多。
+
+<MermaidDiagram chart={`flowchart LR
+    A["低关键模式 全部任务按乐观预算"] -->|高关键任务超预算| B["高关键模式 低关键任务降级或丢弃"]
+    B -->|周期结束且资源恢复| A
+    A --> C["响应时间分析 全部任务"]
+    B --> D["响应时间分析 仅高关键任务"]
+    C --> E["预算与准入控制"]
+    D --> E
+`} />
+
+## 二、AMC 的预算难题与强化学习
+
+AMC 的工程难点在预算怎么定。低关键任务的预算定高了，高关键模式下的余量不够；定低了，平时利用率上不去。传统做法是按执行时间分布取一个高分位，比如 95 分位或者 99 分位，再用离线分析验证。这个方法简单，但对负载变化不敏感。
+
+Mendes、Souto 和 Diniz 在 2024 年 11 月挂出一篇预印本，用深度强化学习调低关键模式的预算。DQN 智能体观察任务集的运行状态，每次动作把一个任务的预算加 10%，同时把另外两个任务各减 5%。调整要经过设计期导出的不等式校验，确保 AMC 的保证仍然成立。智能体本身以最低优先级的任务形式运行，不占预算。
+
+论文的实验是事件驱动仿真，负载取自汽车领域的 Real World Automotive 基准，100 个任务集，每组 150 或 250 个 runnable，每个任务集仿真 1000 秒。低关键预算按执行时间分布的分位采样，模拟真实部署里的不确定性。智能体在 Raspberry Pi 4 上实测运行时间。
+
+结果方面，论文摘要写的是预算超支至少降低 50%。这个表述要拆开看。论文表格里，改善比率的分布很宽，中位数很大，最差的一组任务集是 1.5 倍，折算下来约 33%。摘要的原话是 at least up to 50%，带了 hedge。高关键任务的截止时间保证成立，前提是任务不超预算，这一点和 AMC 一致。论文没有正式发表，引用时标预印本。
+
+这项工作的价值在于把预算从静态配置变成运行时反馈。它没有改变 AMC 的保证结构，只是在保证允许的范围内找更好的预算。工程上要落地，还需要解决训练数据和实际负载分布的偏差，以及智能体本身失效时的兜底。
+
+预算设定有三种常见做法，各有各的假设。第一种用静态 WCET 分析，预算是可证明的上界，最安全，也最保守。第二种用执行时间分布的分位数，比如 95 分位或者 99 分位，预算更接近实际，但分位数之外的情况没有保证。第三种是混合做法，高关键任务用静态上界，低关键任务用分位数，模式切换时按静态上界重新分配。三种做法对认证材料的友好程度依次下降。强化学习调预算属于第四种，预算在运行时变化，需要额外的机制证明变化过程不破坏保证。
+
+## 三、AI 引擎上的混合关键分发
+
+Versal AI Engine 是 AMD 的自适应计算平台，片上有一阵列向量计算 tile，适合跑滤波、FFT、矩阵运算这类固定数据流的负载。它的编程模型是静态数据流图，编译时确定 tile 的分配和数据通路。这个模型对确定性友好，对混合关键不友好，因为低关键任务无法在运行时挤进空闲 tile。
+
+AIE 的结构值得展开一点。每个 tile 有自己的向量单元、标量单元和本地内存，tile 之间通过片上网络和共享内存通信。数据流图把计算节点映射到 tile，边映射到缓冲区或者网络通路。静态映射的好处是时序可预测，坏处是资源利用率低，一个任务占着 tile 不用，别的任务也进不来。动态分发的难点在于，改变映射要动数据通路，而数据通路的配置不是随便就能改的。论文的做法是保留静态数据流图，只在任务级别做分配，tile 内部的配置不变。
+
+Sprave、Wilhelm、Passaretti、Garcia-Ortiz 和 Pionteck 在 2026 年 4 月挂出一篇预印本，给 AIE 加了一层动态任务分发。三个 tile 分工不同，第一个只跑高关键任务，第二个由高关键和低关键共享，第三个留给低关键任务。分发器在运行时按截止时间和空闲状态分配任务，高关键任务优先，低关键任务填剩余空间。
+
+案例研究用自动驾驶负载，高关键任务是粒子滤波，最坏执行时间 25 毫秒，典型执行时间 15 毫秒，截止时间 45 毫秒；低关键任务是 FFT，执行时间 0.1 毫秒，截止时间 0.15 毫秒。高关键任务超过典型执行时间的概率设为 20%。跑 9 秒的分布，和静态映射对比。
+
+结果是 tile 空闲时间减少 65.5%，低关键任务吞吐翻倍，调度开销 0.02 毫秒，占低关键任务典型执行时间的不到 0.002%，所有高关键截止时间都满足。论文明确说不用抢占，也不用动态部分重构，靠的是任务级分发和 tile 的空间划分。
+
+这组数字的实验条件很窄，三个 tile、两个任务、一个负载。它能说明动态分发在 AIE 上可行，不能说明任意任务集都能拿到同样收益。预印本状态，引用时标清楚。
+
+## 四、数据新鲜度，另一条约束
+
+传感器融合系统里，任务按时完成不代表结果有用。一帧十毫秒前的摄像头图像，在高速场景下可能已经过期。Shaik 在 2026 年 4 月的一篇期刊论文里提出新鲜度驱动调度，把数据时效性写进调度决策。任务的价值随数据年龄衰减，调度器优先处理价值高的作业，过期的作业直接丢弃。
+
+论文用 FreeRTOS 实现，负载是摄像头、雷达、激光雷达、IMU 和融合任务，15 秒观察窗。测试了 303.6% 和 415.6% 两种高负载场景。相对传统固定优先级调度，平均传感器价值和时间一致性指标改善 42% 到 381%，ASIL-D 任务零截止时间丢失，准入率 89.3%，对比基线平均 69.8%。
+
+这组结果的说服力要打折。论文发在 SSRG International Journal of Computer Science and Engineering，不在主流索引和 DBLP 收录范围内，作者是单人工，实验平台和代码没有公开。数字和声明对得上，但证据级别低于 IEEE 或 ACM 的会议论文。可以把它当工业界的实践线索，不要当通用做法依据。
+
+新鲜度这个维度本身值得重视。混合关键系统过去只关心截止时间，传感器融合、自动驾驶、工业控制这些场景还要关心数据年龄。把年龄写进任务模型，会让调度问题变复杂，但更接近真实需求。
+
+## 五、能耗、可靠性与精确判定
+
+混合关键系统不只跑在插电设备上。无人机、穿戴设备、车载边缘节点都有功耗约束。Zhang 和 Zheng 在 IEEE Transactions on Computers 2025 年第 5 期提出 EASRC 算法，在可靠性约束下做能耗优化。任务模型是不精确混合关键，允许任务在超预算时输出降级结果；容错模型用半先知和检查点，先确定可容忍的故障数，再做可调度性判定。
+
+算法分离线和在线两个阶段。离线阶段回收静态松弛时间，确定处理器频率；在线阶段回收动态松弛时间，进一步降频。论文报告，相比现有方法平均节省 9.67% 能耗。实验是仿真，具体参数在正文，摘要只给了平均值。
+
+精确判定这条线也有进展。Picard、Paolillo、Geeraerts 和 Goossens 在 RTNS 2024 上用语自动机和 antichain 技术做混合关键系统的精确可调度性判定，论文报告搜索空间最多减少 99.998%，实际可处理到 8 个任务或者最大周期 350。精确判定的价值在于给出充要条件，避免保守分析把可调度任务集误判为不可调度。
+
+工业落地这边，Bosch 研究院的 Gualtieri、Juette 和 Dasari 在 ECRTS 2025 上用归纳逻辑编程做任务到处理器的分配，论文报告找到的解在最优解 10% 以内，系统测试次数比随机搜索少一个数量级。这个方法适合任务集大、拓扑复杂的车载网络。
+
+质量维度也有新工作。q-AMC 在 ETFA 2025 上把质量降级引入任务模型，任务在低关键模式下除了降频或者丢弃，还可以输出质量较低的结果。这个思路适合感知和媒体处理，画面分辨率降低、检测频率下降，功能还在，价值下降。论文没有给出统一的性能数字，因为质量模型因应用而异。
+
+网络侧，混合关键调度正在向时间敏感网络扩展。2026 年的一篇预印本把同源、同宿、谐波周期的关键帧和非关键帧聚合，动态重组不可调度的聚合帧，论文报告关键流和非关键流的接受率分别提升 4.78% 和 8.58%，带宽利用率最多降低 11.88%。车载和航电的混合关键流量越来越多地跑在以太网上，这条线会和端系统调度合流。
+
+| 方法 | 保证类型 | 运行时开销 | 适用场景 | 证据级别 |
+| --- | --- | --- | --- | --- |
+| AMC | 硬保证，依赖预算 | 模式切换 | 通用单核或多核 | 会议论文 |
+| EDF-VD | 硬保证，4/3 加速比最优 | 虚拟截止时间 | 两级隐式截止期 | 会议与期刊 |
+| DQN 调预算 | 继承 AMC 保证 | 智能体运行时间 | 负载波动大的系统 | 预印本 |
+| AIE 动态分发 | 高关键截止时间 | 0.02 毫秒 | 固定数据流加速器 | 预印本 |
+| 新鲜度调度 | 价值与时效 | 作业丢弃 | 传感器融合 | 低索引期刊 |
+| EASRC | 可靠性约束下的能耗 | 频率切换 | 电池供电设备 | 期刊论文 |
+
+## 六、认证看什么
+
+混合关键系统的认证材料，要证明不同关键级任务之间的干扰可控。ISO 26262 第 6 部分要求不同 ASIL 等级的软件要么全部按最高等级开发，要么证明相互无干扰。DO-178C 的语境里，CAST-32A 在 2016 年 11 月发布，提出多核上分别确定各应用 WCET 的前提是平台提供 robust partitioning。EASA 和 FAA 随后把这个位置文件升级成正式指导。
+
+认证机构关心三件事。预算怎么来的，运行时怎么保证不超，超了之后系统怎么降级。AMC 类的算法能给出前两件的数学证明，第三件要靠运行时监控和故障处理设计。强化学习调预算的方法，目前很难回答第一件，因为智能体的决策过程不是可穷举的证明。
+
+模式切换本身也有成本。切换要保存低关键任务的状态，重新分配资源，更新调度队列。切换太频繁，开销会吃掉利用率；切换太慢，高关键任务已经错过了截止时间。工程上通常给切换设一个最短间隔，或者用滞后机制避免在边界附近来回跳。这些细节不在调度论文的模型里，却决定了实际系统能不能稳定运行。
+
+工程上的做法通常是把学习类方法放在低关键任务侧，高关键任务仍然用静态分析和固定预算。这样既能拿到利用率的收益，又不破坏认证证据链。
+
+## 七、设计流程
+
+把任务建模、调度选择、预算设定和运行时监控串起来，流程大致如下。
+
+1. 给每个任务标关键级、周期、截止时间、执行时间分布。执行时间分布要来自目标板实测，不要用厂商给的典型值。
+2. 选调度框架。任务集小、关键级少，AMC 或 EDF-VD 就够；任务集大、拓扑复杂，考虑精确判定或者分配优化。
+3. 定预算。高关键任务用保守上界，低关键任务用分位预算，预算之和要留出模式切换的余量。
+4. 做可调度性分析。两种模式都要分析，切换过程也要分析。
+5. 加运行时监控。预算计数器、截止时间监控、模式切换日志，一个都不能少。
+6. 设计降级策略。低关键任务是丢弃、降频还是输出降级结果，要在设计阶段定好。
+7. 用真实负载验证。仿真通过不代表目标板通过，缓存和内存干扰会把预算吃掉。
+
+<MermaidDiagram chart={`flowchart TD
+    A["任务建模与关键级划分"] --> B["目标板实测执行时间分布"]
+    B --> C["选择调度框架"]
+    C --> D["设定双模式预算"]
+    D --> E["可调度性分析"]
+    E --> F{"是否通过"}
+    F -->|否| C
+    F -->|是| G["运行时预算与截止时间监控"]
+    G --> H{"是否超预算"}
+    H -->|否| I["记录并继续"]
+    H -->|是| J["切换模式并降级低关键任务"]
+    J --> K["采集数据校准预算"]
+    K --> D
+`} />
+
+## 八、判断
+
+混合关键系统这条线，经典理论已经稳定。AMC 和 EDF-VD 的保证、EDF-VD 的 4/3 加速比最优性，十年没有被动摇。新工作集中在三个地方，预算的自适应、加速器上的动态分发、以及截止时间之外的约束，比如数据新鲜度和能耗。
+
+我的判断是，短期内能进量产的是预算监控和降级策略的工程化，强化学习和新鲜度调度还需要更多真实负载验证。AI 加速器上的混合关键分发是一个值得跟的方向，Versal 的案例证明了可行性，下一步要看多任务、多 tile、带抢占的场景。
+
+一个可操作的判断是，如果高关键任务的实测最坏执行时间超过保守预算的 80%，系统已经处在危险边缘。这个时候加低关键任务，或者调低预算，都会让模式切换变得频繁。先把余量做厚，再谈利用率。
+
+这个方向属于超低时延系列，系列索引和材料核验说明见 [研究地图](/knowledge/os/ultra-low-latency-research-map)。
+
+## 参考资料
+
+1. Steve Vestal. Preemptive Scheduling of Multi-criticality Systems with Varying Degrees of Execution Time Assurance. IEEE RTSS 2007. https://doi.org/10.1109/RTSS.2007.47
+2. Sanjoy K. Baruah, Alan Burns, Robert I. Davis. Response-Time Analysis for Mixed Criticality Systems. IEEE RTSS 2011. https://doi.org/10.1109/RTSS.2011.12
+3. Sanjoy Baruah, Vincenzo Bonifaci, Gianlorenzo D'Angelo, Haohan Li, Alberto Marchetti-Spaccamela, Suzanne van der Ster, Leen Stougie. The Preemptive Uniprocessor Scheduling of Mixed-Criticality Implicit-Deadline Sporadic Task Systems. ECRTS 2012. https://doi.org/10.1109/ECRTS.2012.42
+4. Sanjoy Baruah, Vincenzo Bonifaci, Gianlorenzo D'Angelo, Haohan Li, Alberto Marchetti-Spaccamela, Suzanne van der Ster, Leen Stougie. Preemptive Uniprocessor Scheduling of Mixed-Criticality Sporadic Task Systems. Journal of the ACM 62(2), 2015. https://doi.org/10.1145/2699435
+5. Alan Burns, Robert I. Davis. A Survey of Research into Mixed Criticality Systems. ACM Computing Surveys 50(6), 2017. https://doi.org/10.1145/3131347
+6. Alan Burns, Robert I. Davis. Mixed Criticality Systems, A Review, 14th and Final Edition. University of York, 2026. https://www-users.york.ac.uk/~rd17/papers/MCReview2026.pdf
+7. Bruno Mendes, Pedro F. Souto, Pedro C. Diniz. Enhancing Adaptive Mixed-Criticality Scheduling with Deep Reinforcement Learning. arXiv 2411.00572, 2024. https://arxiv.org/abs/2411.00572
+8. Vincent Sprave, Martin Wilhelm, Daniele Passaretti, Alberto Garcia-Ortiz, Thilo Pionteck. Enabling Mixed Criticality Applications for the Versal AI-Engines. arXiv 2604.21124, 2026. https://arxiv.org/abs/2604.21124
+9. Azad Mohammed Shaik. Freshness-Driven Scheduling, A Value-Aware Real-Time Framework for Sensor Fusion in Safety-Critical Systems. SSRG International Journal of Computer Science and Engineering 13(4), 2026. https://doi.org/10.14445/23488387/IJCSE-V13I4P103
+10. Yi-Wen Zhang, Hui Zheng. Slack Time Management for Imprecise Mixed-Criticality Systems With Reliability Constraints. IEEE Transactions on Computers 74(5), 2025. https://doi.org/10.1109/TC.2025.3533100
+11. S. Picard, A. Paolillo, G. Geeraerts, J. Goossens. Exact Schedulability Test for Sporadic Mixed-Criticality Real-Time Systems Using Antichains and Oracles. RTNS 2024. https://arxiv.org/abs/2410.18308
+12. M. Gualtieri, C. Juette, D. Dasari. Task-To-Processor Assignment for Real-Time Mixed-Critical Networked Systems Using Inductive Logic Programming. ECRTS 2025. https://doi.org/10.4230/LIPIcs.ECRTS.2025.14
+13. Certification Authorities Software Team. CAST-32A, Multi-core Processors. Position Paper, 2016. https://www.cast32a.com/files/cast-32a.pdf

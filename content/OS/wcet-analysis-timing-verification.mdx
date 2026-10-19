@@ -1,0 +1,161 @@
+---
+title: "WCET 分析与时序验证，静态上界、轨迹校准和运行时兜底"
+description: "拆解最坏执行时间从静态抽象解释到测量概率、硬件轨迹校准和运行时验证的完整链条，覆盖 GEM5 相关性 0.98 的多核分析、MBPTA 的 650 次运行、aiT 与 TimeWeaver 的校准路径，附工具地图和三条常见误区。"
+date: "2026-10-18"
+tags: ["OS", "超低时延", "WCET", "时序验证", "实时系统"]
+---
+
+先更正一个年份。中文资料里有一篇被反复引用的多核 WCET 分析论文，常被标成 2025 或 2026 年的新成果。它实际发表在《计算机研究与发展》2023 年第 60 卷第 1 期，作者是朱怡安、史先琛、姚烨、李联、任鹏远、董威振、李佳钰。论文提出多级一致性域，用 MESI 协议建立缓存状态更新函数，实验结果是分析值与 GEM5 仿真值的相关性系数不低于 0.98，平均过估计率 1.30，比当时的代表性方法低 0.78。
+
+这篇论文值得认真看，因为它把多核 WCET 分析的难点摆得很清楚。单核时代，上界主要取决于程序路径和流水线；多核时代，缓存一致性让一个核的访存历史改变另一个核看到的状态，任务级分析的独立性假设失效。这篇文章从这个难点出发，把静态分析、测量概率、轨迹校准和运行时验证四条线串起来，最后说明哪些结论能写进认证材料，哪些只能当工程参考。
+
+## 一、上界是怎么算出来的
+
+WCET 分析要回答的问题是，一个任务在所有可能输入和执行环境下，最长能跑多久。答案必须覆盖所有执行，不能只覆盖观测到的执行。
+
+静态分析的第一步是把程序变成控制流图，找出所有可能的路径。第二步用抽象解释计算每条路径上的缓存状态、流水线状态和分支结果。第三步用整数线性规划或者基于路径的方法，把基本块的执行时间加起来，求最大值。Wilhelm 等人在 2008 年的 ACM TECS 综述里把这套流程拆得很细，工具链、抽象域、路径分析各有一节。Maiza 等人在 2019 年的 ACM Computing Surveys 综述里把多核时序验证的方法分成四类，共享资源干扰被列为全领域最核心的障碍。
+
+抽象解释的代价是保守。分析器不知道循环的实际次数，就按上界算；不知道分支走哪边，就把两边都算上；不知道缓存替换策略的未来行为，就假设最坏情况。每一处保守都会让上界变大。上界变大不致命，致命的是上界大到任务集不可调度，系统被迫过设计。
+
+还有一类更麻烦的现象，时序反常。Reineke 等人在 2006 年的 WCET 研讨会上给出形式定义，局部更快的执行可能让整体更慢。缓存命中让一个任务提前完成，它占用的资源提前释放，反而让另一个任务等得更久。乱序执行和投机让这种现象更常见。分析器如果不能处理时序反常，算出来的上界就不可信。
+
+缓存分析本身分几类，每类的结论用途不同。
+
+| 分析类型 | 回答的问题 | 结论的用法 |
+| --- | --- | --- |
+| must 分析 | 哪些访问一定命中 | 可以安全地按命中计时 |
+| may 分析 | 哪些访问可能命中 | 最坏情况按缺失计时 |
+| persistence 分析 | 哪些缓存行会长期驻留 | 用于锁定和共享缓存分析 |
+| 定量分析 | 命中与缺失各有多少次 | 给出更紧的计数上界 |
+
+must 分析保守，may 分析更保守，persistence 分析用来证明某些行不会被驱逐。三类分析组合起来，才能给出一条既安全又不太松的路径。Kahlen 和 Reineke 在 RTAS 2025 上把非 LRU 缓存的定量分析统一起来，针对的就是 may 分析在 FIFO 和 MRU 上过于悲观的问题。
+
+## 二、多核干扰怎么进模型
+
+多核 WCET 分析的核心问题是如何建模共享缓存。最直接的做法是把 LLC 当成一个黑盒，假设目标任务每次访问都可能缺失。这样算出来的上界很安全，也很松。
+
+朱怡安等人的做法是把一致性协议纳入模型。他们把缓存层次分成多个一致性域，域内共享，域间通过协议同步。每个域有自己的状态机，MESI 协议的四态转换写成状态更新函数。分析时先算任务在每个域内的缓存行为，再算跨域的同步开销，最后合成最坏执行时间。
+
+实验用 GEM5 全系统仿真做对照。改变缓存配置参数，分析值和仿真值的变化趋势一致，相关性系数不低于 0.98。平均过估计率 1.30，比代表性方法低 0.78。这里要说明两点。0.98 只出现在中文摘要里，英文摘要写的是显著相关，没有给具体数值。1.30 是比率型指标，可以读成估计值约为对照值的 1.3 倍，也就是平均高估约 30%。摘要没有点名基线方法，也没有列基准程序，精确口径要查全文。
+
+近年的工作在这个方向上继续收紧。Zhao 等人在 RTSS 2025 上提出按程序区域做核间缓存争用分析，用动态规划求最大未命中数，集成进 LLVM-TA。论文在 TACLeBench 的 36 个任务上评估，核间缓存干扰和 WCET 估计平均降低 52.31% 和 8.94%；会发生 L2 驱逐的 26 个任务，WCET 估计平均降低 12.38%，同组任务的核间干扰平均降低 72.43%；单个任务 radio_control_task 的干扰降低 87.1%。Fischer 和 Falk 在 Real-Time Systems 2024 年的一篇论文里用到达曲线分析非抢占调度下的共享缓存干扰，双核系统平均 WCET 降低最多 23.3%，四核系统最多 8.5%，实验的共享缓存不超过 64KB。
+
+这些数字的共同点是条件写得很具体。基准、编译选项、缓存大小、干扰任务数量都给了。脱离这些条件引用百分比，等于把别人的实验条件搬到自己头上。
+
+Maiza 的综述把多核时序验证分成四类，这个分类对选型很有帮助。全集成把共享资源干扰直接算进每个任务的 WCET，最保守，也最依赖硬件模型。时间隔离给任务分配独立的时间窗口或者资源份额，落地最容易，代价是利用率。干扰感知调度把干扰计入可调度性分析，灵活性最好，分析复杂度也最高。映射与分配在设计阶段决定任务和资源怎么配，适合任务集固定的系统。四条路线可以组合，工程上常见的是时间隔离加干扰感知调度，先拿到资源隔离，再把剩余干扰算进响应时间。
+
+还要注意相关性不等于精度。0.98 说明分析值和仿真值的变化趋势一致，不说明上界紧。换一个缓存配置，相关性可能仍然很高，绝对误差却可能变大。判断一个分析方法好不好，要看两个指标，趋势相关性和平均过估计率，最好再看最坏情况下的过估计率。论文只报了平均值，最坏值要查全文。
+
+<MermaidDiagram chart={`flowchart LR
+    A["源码与编译产物"] --> B["控制流图与流事实"]
+    B --> C["抽象解释 缓存与流水线"]
+    C --> D["路径分析与整数线性规划"]
+    D --> E["WCET 上界"]
+    E --> F{"是否可调度"}
+    F -->|否| G["优化代码或调整任务集"]
+    G --> A
+    F -->|是| H["部署时验证"]
+    H --> I["运行时监控"]
+    I --> J["测量数据回流"]
+    J --> C
+`} />
+
+## 三、测量概率方法，用统计语言给上界
+
+静态分析给的是硬上界，测量方法给的是概率上界。MBPTA 的思路是用极值统计从端到端测量里估计执行时间分布的右尾，取一个极小的分位作为 pWCET，满足超过概率不超过 ε。
+
+Cucu-Grosjean 等人在 ECRTS 2012 上给出多路径程序的 MBPTA 方法。论文报告，pWCET 估计相对任意概率时序分析能达到的最紧边界，悲观不超过 15%；论文用到的基准上，得出结果所需的运行次数少于 650 次。PROARTIS 项目在 ACM TECS 2013 上把这套方法体系化，Cazorla 等人把执行时间分布拆成硬件相关的右尾和软件相关的路径变化，用极值统计估计右尾。Davis 和 Cucu-Grosjean 在 LITES 2019 的综述里把静态概率、测量概率和混合方法统一整理。
+
+测量方法的前提比静态方法更苛刻。样本要满足独立同分布，执行环境要稳定，缓存状态要可重复。ECRTS 2025 的一篇论文指出，整样本的平稳性检验抓不到低密度混合分布，尾部如果存在混合，极值统计给出的 pWCET 可能偏悲观，也可能偏乐观。RTSS 2024 的论文专门讨论测量样本的代表性和适用边界。这些工作提醒一件事，测量不是插上计数器跑几轮就完事，样本设计本身是一门学问。
+
+MBPTA 的流程可以拆成五步。先采集足够多的端到端执行时间样本；再用统计检验确认样本独立同分布，常见的做法是看自相关和趋势；然后分块取最大值，或者取超过阈值的峰值；接着用极值分布拟合尾部，GEV 或者 Gumbel 都是常用模型；最后按目标失效概率反推分位数，得到 pWCET。任何一步不成立，结果都要打折扣。论文的基准在 650 次运行以内就能得出结果，真实系统的样本量要按自己的分布单独设计。
+
+概率方法适合什么样的系统。任务执行时间分布稳定、失效后果可以用概率接受、认证标准允许概率上界的场景。航空和汽车的高安全等级场景仍然偏好硬上界，概率方法更多用在非关键任务或者设计阶段的风险评估。
+
+## 四、用硬件轨迹校准模型
+
+静态模型再细，也会和真实芯片有偏差。校准的思路是用硬件追踪记录真实执行，把记录和模型对表，找出偏差来源。
+
+Arm 的 CoreSight 和 Intel 的 Processor Trace 是两条主要路径。CoreSight 的 ETM 记录指令轨迹，通过 ETB 或 TMC 输出；Intel PT 把压缩后的控制流写到内存。分析工具把轨迹还原成执行路径，和静态分析的最坏路径比较，偏差大的地方回去改模型。
+
+TimeWeaver 是这条路径上的代表工具。它用 ETM 或 Nexus 轨迹做非侵入式测量，再和静态路径分析结合。厂商公布的数据是，NXP T1040 上航空任务的偏差 18.4%，汽车任务 6.4% 到 10.6%，对比对象是最大观测端到端时间。这些是厂商材料，不是同行评议论文，引用时要标注来源。
+
+工具链本身也在更新。AbsInt 的 aiT 26.04 发布说明里有三项与本文相关，RISC-V 的混合 WCET 分析、AURIX TC48x 的静态 WCET 分析、多核轨迹提取的改进。混合分析把静态和测量结合起来，先用静态分析定骨架，再用测量补细节。这个方向比纯静态或纯测量都更接近工程现实。
+
+有意思的是，追踪硬件开始承担运行时控制。ETM2 在 RTAS 2026 上把 ETM 复用成内存带宽调节器，说明同一条硬件路径既能用于事后校准，也能用于事中控制。这个变化会让 WCET 分析和运行时监控的边界变得模糊。
+
+## 五、运行时验证，给上界加一道保险
+
+设计时算出上界，部署时验证，运行时监控，三段合起来才算完整。运行时这一段过去靠看门狗和预算计数器，近年开始有更正式的方法。
+
+SlackCheck 发表在 ECRTS 2024，作者是 Castrovilli 和 Bini。它把运行时验证引擎放进 Linux 内核，在每次调度决策时做一个常数时间的检查，验证任务调度是否满足给定的时序性质。常数时间很关键，检查本身不能引入新的抖动。论文的定位是让运行时验证从离线分析变成在线性质检查。
+
+工程上更常见的是执行时间预算。AUTOSAR 的执行时间预算、ISO 26262 的定时保护、航电的任务超时监控，本质都是给任务设一个上界，超了就降级、隔离或者重启分区。这些机制的优点是简单，缺点是只能发现超时，不能解释超时。要把监控数据用起来，还需要把超时事件和 PMU 计数、追踪记录关联起来，回到分析模型里找原因。
+
+<MermaidDiagram chart={`flowchart TD
+    A["设计时静态分析"] --> B["部署时测量验证"]
+    B --> C["运行时预算监控"]
+    C --> D{"是否超预算"}
+    D -->|否| E["继续运行并记录"]
+    D -->|是| F["降级或隔离分区"]
+    F --> G["采集 PMU 与轨迹"]
+    G --> H["校准分析模型"]
+    H --> A
+    E --> H
+`} />
+
+## 六、工具地图
+
+把常用工具按输入、输出和能力排一张表，选型会清楚很多。
+
+| 工具 | 输入 | 输出 | 特点 |
+| --- | --- | --- | --- |
+| aiT | 可执行文件与硬件模型 | 硬 WCET 上界与最坏路径 | 商用，支持多架构，26.04 增加 RISC-V 混合分析 |
+| OTAWA | 二进制与平台描述 | WCET 上界 | 开源研究平台，可扩展 |
+| Heptane | 源码或中间表示 | WCET 上界 | 开源，缓存分析模块化 |
+| LLVMTA | LLVM IR | WCET 上界 | 基于 LLVM，适合研究新方法 |
+| Platin | 源码与注解 | WCET 上界 | 支持 Patmos、ARMv7-M、ARMv6-M、RISC-V、AVR |
+| LLTA | LLVM IR 与 ELF | WCET 上界 | 开源，面向 ESP32-C6 和 MSP430 |
+| chronovise | 测量样本 | pWCET | 开源，支持极值统计和 MBPTA |
+| TimeWeaver | 轨迹与静态模型 | 校准后的 WCET | 商用，依赖 ETM 或 Nexus |
+
+工具之外，还有两件事决定结果质量。一是流事实，循环边界、分支条件、指针范围，这些信息给不准，分析器只能按最坏情况假设。二是硬件模型，缓存替换策略、流水线时序、总线仲裁，模型错一处，上界就偏一片。工程上常见的做法是先用工具跑一个基线，再用实测数据校准，最后把校准过程写成文档，认证时一起交。
+
+## 七、三个容易踩的坑
+
+第一个坑是把 P99 当 WCET。P99 是观测到的分位数，WCET 是理论上界。对一个 1 毫秒的任务，P99 和 WCET 之间通常还差一截。用 P99 做设计，等于假设最坏情况不会发生。概率方法可以用分位数，但那个分位数要小到 10 的负 9 次方量级，样本量和统计假设都要配套。
+
+第二个坑是忽略冷启动。工程上常先跑一千次预热再测，这个做法对硬实时不成立。真实系统在启动、模式切换、休眠唤醒时都处于冷态，冷启动时间必须纳入上界。预热之后的稳态数据只能描述稳态。
+
+第三个坑是把过估计当成安全。上界保守确实安全，但保守会让任务集不可调度，逼着系统降频、减功能或者加硬件。过估计率 1.30 意味着 30% 的余量被浪费，在资源紧张的嵌入式系统里，这 30% 可能就是能不能装下下一个功能的分界线。
+
+还有两条在中文资料里流传的说法需要澄清。一条说 LLVM 在 IR 层给最坏路径指令打元数据标签，实现 WCET 结果的代码级追溯。我查了 LLVM 文档、WCET 会议目录和主要工具论文，没有找到这样的完整工作。最接近的是 WCC 的 back-annotation，把基本块是否位于最坏路径的信息回填给编译器；RTNS 2014 的 WCETInfo 把流信息附着到 IR；LLVMTA 会输出最坏路径文件。三者都不是 IR 元数据标注。另一条说有一个模块化的 Cache 行为分析框架，能快速适配不同硬件。最接近的是 Heptane 的模块化架构和 Kahlen 与 Reineke 在 RTAS 2025 的统一定量分析框架，后者统一了非 LRU 缓存的竞争力分析，但没有宣称快速适配任意架构。
+
+## 八、判断
+
+WCET 分析这条线，2024 到 2026 年的进展集中在把设计、部署、运行时三段接起来。静态分析在收紧，Zhao 的争用分析和 Kahlen 的非 LRU 框架都在提高精度。测量方法在补假设，低密度混合分布和样本代表性成为专门的研究对象。轨迹校准在工具链里落地，aiT 的混合分析和 TimeWeaver 的产品化说明这条路能走通。运行时验证开始进入内核，SlackCheck 把性质检查的成本压到常数时间。
+
+工程上的现实选择，是按安全等级分层。最高安全等级的任务用静态分析加轨迹校准，给出硬上界；次高等级用测量概率，给出足够小的失效概率；低等级用运行时监控兜底。三层各用各的方法，不要拿一层的结果去证明另一层。
+
+一个可操作的判断是，如果静态上界和实测最坏值的比值超过 1.5，先检查流事实和硬件模型，再考虑换工具。比值在 1.1 到 1.3 之间，说明模型基本可信，可以把精力放到优化代码上。比值小于 1，说明上界被突破，分析假设有错，必须回去查。
+
+这个方向属于超低时延系列，系列索引和材料核验说明见 [研究地图](/knowledge/os/ultra-low-latency-research-map)。
+
+## 参考资料
+
+1. 朱怡安, 史先琛, 姚烨, 李联, 任鹏远, 董威振, 李佳钰. 基于多级一致性协议的多核处理器 WCET 分析方法. 计算机研究与发展 60(1), 2023. https://doi.org/10.7544/issn1000-1239.202111244
+2. Reinhard Wilhelm, Jakob Engblom, Andreas Ermedahl, Niklas Holsti, Stephan Thesing, David Whalley, Guillem Bernat, Christian Ferdinand, Reinhold Heckmann, Tulika Mitra, Frank Mueller, Isabelle Puaut, Peter Puschner, Jan Staschulat, Per Stenström. The Worst-Case Execution-Time Problem, Overview of Methods and Survey of Tools. ACM TECS 7(3), 2008. https://doi.org/10.1145/1347375.1347389
+3. Claire Maiza, Hamza Rihani, Juan M. Rivas, Joël Goossens, Sebastian Altmeyer, Robert I. Davis. A Survey of Timing Verification Techniques for Multi-Core Real-Time Systems. ACM Computing Surveys 52(3), 2019. https://doi.org/10.1145/3323212
+4. Jan Reineke, Björn Wachter, Stephan Thesing, Reinhard Wilhelm, Ilia Polian, Jochen Eisinger, Bernd Becker. A Definition and Classification of Timing Anomalies. WCET 2006. https://doi.org/10.4230/OASIcs.WCET.2006.671
+5. Shuai Zhao, Jieyu Jiang, Shenlin Cai, Yaowei Liang, Chen Jie, Yinjie Fang, Wei Zhang, Guoquan Zhang, Yaoyao Gu, Xiang Xiao, Wei Qin, Xiangzhen Ouyang, Wanli Chang. Tight Cache Contention Analysis for WCET Estimation on Multicore Systems. IEEE RTSS 2025. https://arxiv.org/abs/2508.13863
+6. Thilo L. Fischer, Heiko Falk. Timing-aware Analysis of Shared Cache Interference for Non-preemptive Scheduling. Real-Time Systems 60, 2024. https://doi.org/10.1007/s11241-024-09430-8
+7. Liliana Cucu-Grosjean, Luca Santinelli, Michael Houston, Code Lo, Tullio Vardanega, Leonidas Kosmidis, Jaume Abella, Enrico Mezzetti, Eduardo Quiñones, Francisco J. Cazorla. Measurement-Based Probabilistic Timing Analysis for Multi-path Programs. ECRTS 2012. https://doi.org/10.1109/ECRTS.2012.31
+8. Francisco J. Cazorla, Eduardo Quiñones, Tullio Vardanega, Liliana Cucu, Benoit Triquet, Guillem Bernat, Emery Berger, Jaume Abella, Franck Wartel, Michael Houston, Luca Santinelli, Leonidas Kosmidis, Code Lo, Dorin Maxim. PROARTIS, Probabilistically Analyzable Real-Time Systems. ACM TECS 12(2s), 2013. https://doi.org/10.1145/2465787.2465796
+9. Robert I. Davis, Liliana Cucu-Grosjean. A Survey of Probabilistic Timing Analysis Techniques for Real-Time Systems. LITES 6(1), 2019. https://doi.org/10.4230/LITES-v006-i001-a003
+10. B. Manau, S. Vilardell, I. Serra, E. Mezzetti, J. Abella, F. J. Cazorla. Detecting Low-Density Mixtures in High-Quantile Tails for pWCET Estimation. ECRTS 2025. https://doi.org/10.4230/LIPIcs.ECRTS.2025.20
+11. Michele Castrovilli, Enrico Bini. SlackCheck, A Linux Kernel Module to Verify Temporal Properties of a Task Schedule. ECRTS 2024. https://doi.org/10.4230/LIPIcs.ECRTS.2024.2
+12. Sophie Kahlen, Jan Reineke. A Unified Framework for Quantitative Cache Analysis. IEEE RTAS 2025. https://arxiv.org/abs/2503.16588
+13. AbsInt. aiT 26.04 Release Notes. https://www.absint.com/releasenotes/index.htm
+14. AbsInt. TimeWeaver. https://www.absint.com/timeweaver/index.htm
+15. E. J. Maroun, E. Dengler, C. Dietrich, S. Hepp, H. Herzog, B. Huber, J. Knoop, D. Wiltsche-Prokesch, P. Puschner, P. Raffeck, M. Schoeberl, S. Schuster, P. Wägemann. The Platin Multi-Target Worst-Case Analysis Tool. WCET 2024. https://doi.org/10.4230/OASIcs.WCET.2024.2
+16. N. Hölscher, K. Heider, J.-J. Chen. LLTA, A Simplicity-Oriented Open-Source WCET Analyser. arXiv 2609.40141, 2026. https://arxiv.org/abs/2609.40141

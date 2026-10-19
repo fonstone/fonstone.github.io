@@ -1,0 +1,167 @@
+---
+title: "共享资源争抢的干扰建模与隔离，从 MSHR 到内存银行"
+description: "把多核干扰拆到 MSHR、缓存银行、内存带宽和内存控制器四层，覆盖 Valsan 的 21 倍放大、缓存银行拒绝服务、per-bank 调节和 H-MBR 的虚拟机级预留，附各机制的实测效果、配置条件与建模盲区。"
+date: "2026-10-18"
+tags: ["OS", "超低时延", "资源隔离", "多核", "内存带宽"]
+---
+
+Valsan、Yun 和 Farshchi 在 RTAS 2016 的论文里描述了一个让人不太舒服的实验结果。目标任务独占一个核，LLC 用 PALLOC 按核分区，几乎每次访问都命中自己的分区，系统里也没有开 SMT。按常规理解，隔离已经做足了。可是只要邻居核发起大量并发缺失，目标任务的 WCET 仍然能放大到单独运行的 21 倍。
+
+这个结果把共享资源隔离的问题暴露得很彻底。缓存路划分只解决容量问题，在途请求的表项它管不到。带宽节流按平均流量记账，瞬间的队列它看不见。调度器决定谁上核，核里的访存流水线不归它管。每一层隔离都有自己看不到的角落。这篇文章按资源把干扰拆开，逐层看机制、数据和边界，最后给一套可执行的隔离设计顺序。
+
+## 一、干扰的四个来源
+
+多核干扰可以按资源分成四类，每类的排队规律不同。
+
+第一类是缓存容量。多个核的数据映射到同一个缓存组，互相驱逐。隔离手段是页着色、CAT、MPAM 这类按组或按路划分的方法。它的效果容易测量，命中率能直接反映。
+
+第二类是在途请求。非阻塞缓存用 MSHR 记录还没完成的缺失，表项数量固定。邻居核的缺失占满表项，本核的请求就要排队，连命中都可能被挡住。这一类最容易被忽略，因为它不在缓存容量和带宽的统计口径里。
+
+第三类是缓存银行。LLC 由多个 bank 组成，地址位决定请求落到哪个 bank。攻击者把流量集中到一个 bank，就能在总带宽没打满的情况下拖慢受害者。缓存分区和带宽节流都可能失效。
+
+第四类是内存控制器和 DRAM。请求在控制器队列里排队，DRAM 的 bank 和行状态决定服务时间。隔离手段是带宽预留、优先级仲裁、per-bank 调节。
+
+<MermaidDiagram chart={`graph TB
+    subgraph CORE["处理器核"]
+        L1["L1 与 MSHR"]
+        L2["私有 L2"]
+    end
+    subgraph SHARED["共享资源"]
+        LLC["LLC 路与组"]
+        BANK["LLC bank"]
+        MC["内存控制器队列"]
+        DRAM["DRAM bank 与行"]
+    end
+    L1 --> L2 --> LLC --> BANK --> MC --> DRAM
+    A["页着色与 CAT 管路"] -.-> LLC
+    B["MSHR 配额管在途"] -.-> L1
+    C["per-bank 预算管银行"] -.-> BANK
+    D["带宽预留管控制器"] -.-> MC
+`} />
+
+Pellizzoni 等人在 DATE 2010 上给出一个分析框架。每个核的访存需求写成到达曲线，内存控制器的服务能力写成服务曲线，两条曲线之间的距离就是延迟上界。这个框架适合控制器和 DRAM 这一段，对 MSHR 和缓存银行解释力有限。后来的工作基本是在这个框架上补洞。
+
+## 二、MSHR，缓存分区管不到的角落
+
+MSHR 的作用是让缓存可以同时处理多个未完成的缺失。请求发出后先占一个表项，数据回来再释放。表项满了，新的缺失进不来，命中请求也可能被堵住。这个资源位于私有缓存和共享缓存的交界处，既不属于 LLC 的路，也不属于内存带宽。
+
+Valsan 的论文把实验做到了极限。平台包括 Intel Xeon W3553、Odroid-XU4 的 Cortex-A15 和 Cortex-A7、Odroid-U3 的 Cortex-A9。LLC 按核四等分，目标任务的工作集控制在一个分区以内，共跑任务的工作集是 LLC 的两倍，故意制造大量缺失。结果是，读方向的共跑任务在 Cortex-A15 上让目标变慢 10.6 倍，写方向的共跑任务让目标变慢 21.4 倍。论文摘要给的总口径是最高 21 倍。
+
+写方向更严重，论文的解释是写回流量会延迟缓存行的填充，进一步加剧 MSHR 短缺。这个解释把根因从缓存容量转到了请求流水线，改变了隔离的设计方向。
+
+修复方案是软硬件配合。硬件在每核 L1 加两个寄存器，一个由操作系统设置每核最多能用多少 MSHR，一个由硬件报告当前占用。软件改 Linux 3.14 的调度器，在任务切换时做全局规划，硬实时任务运行时预留表项，非实时任务共享剩下的。论文报告，EEMBC 基准上最坏任务的 WCET 相对纯缓存分区基线最多降低 19%，平均 13%，吞吐损失约 3%，预留回收的误差率平均 4%。仿真实验里，把 LLC 的 MSHR 从 12 个增加到 24 个，争用基本消失，反过来印证了根因。
+
+这里有一个数字需要更正。中文资料里常见 21.3 倍这个值，论文正文、作者 slides 和后续引用里都没有 21.3。论文摘要写的是最高 21 倍，作者 slides 给的写方向精确值是 21.4 倍。写设计文档时用 21 倍或 21.4 倍都可以，21.3 没有出处。
+
+## 三、缓存银行，总带宽没满也会被拖慢
+
+缓存银行是 LLC 内部的分区，地址位决定请求落到哪个 bank。Cortex-A72 的 L2 有两个 tag bank，每个 tag bank 下四个 data bank，地址位 4、5、6 参与索引。这三位都在 4KB 页内，普通进程不需要特权就能控制。
+
+Bechtel 和 Yun 在 RTAS 2023 上利用这一点做了缓存银行级拒绝服务攻击。攻击流量只命中 LLC，不消耗 DRAM 带宽，因此 DRAM 侧的节流看不到它。在 Raspberry Pi 4 和 Jetson Nano 上，合成负载最多慢 9.7 倍，真实负载慢 2.3 倍，而且是在 LLC 分区和 DRAM 带宽节流都开启的情况下。
+
+防御分两个层次。缓存侧，per-bank 带宽调节给每个 bank 单独设预算。RTSS 2024 的论文报告，同一 bank 被打满时受害者相对单独运行慢 3.52 倍，全 bank 节流为了压住攻击会把良性任务拖慢 5.47 倍，per-bank 节流只拖慢 2.94 倍。论文还在两 bank 和四 bank 的场景里做了对比，全 bank 节流把良性任务拖慢 5.47 倍和 5.49 倍，per-bank 只拖慢 2.94 倍和 1.50 倍，良性 best-effort 任务相对 bank-oblivious 方法最多提升 3.66 倍吞吐。
+
+DRAM 侧，RTAS 2026 的论文把 per-bank 调节推到内存。保证带宽写成 64 除以 tRC，tRC 是行周期时间，跨代 DRAM 大约 45 到 65 纳秒。总带宽上界是每 bank 保证带宽乘以 bank 数。单 bank 被打满时，per-bank 和全 bank 给出相同的隔离保证；流量分散时，per-bank 的吞吐更高。实验在 FireSim 加 VCU118 上做，调节周期 1 毫秒，预算 53MB/s，best-effort 平均吞吐提升 5.74 倍，八个 bank 时 7.74 倍，单 bank 攻击下受害者被限制在单独运行的 1.1 倍以内。
+
+做 per-bank 隔离之前，先要弄清 bank 映射。商用 SoC 的文档经常不写，只能用实验测。做法是在一个 4KB 页内按固定步长做指针追逐，步长取 64 字节、128 字节、256 字节，分别测访问延迟。延迟出现规律性跳变，说明步长命中了不同的 bank 或 bank 组。Cortex-A72 的 L2 用地址位 4、5、6 索引 bank，这三位都在页内，用户态就能控制。测出映射之后，再决定按哪个粒度分预算。
+
+这两组工作说明，隔离的粒度要和干扰的粒度匹配。干扰集中在 bank，隔离就要做到 bank。只按核或按 VM 记账，会把没抢同一个 bank 的任务一起限流。
+
+## 四、内存带宽，从毫秒到微秒
+
+带宽预留是最成熟的一层。MemGuard 在 RTAS 2013 上按核预留带宽，用硬件性能计数器统计访存，超出预算就节流，调节周期通常在毫秒级。它的优点是平台通用，缺点是粒度粗，短时突发会被平均掉。
+
+MemPol 把粒度压到微秒。它从核外轮询 PMU，在 ZCU102 上做到 6.25 微秒的调节周期，在 i.MX8M 和 S32G2 上做到 10 微秒。代价是需要一个伴随核或者外部监控点。ETM2 换了一条路，把 Arm CoreSight 的 ETM 复用成带宽调节器，在大量 64 位 Arm 板上评估，目标是把微秒级粒度和中断方案的便携性结合起来。
+
+虚拟化层也有进展。H-MBR 发表在 NG-RES 2025，作者是 Oliveira、Costa、Moreira、Martins 和 Pinto。它在 Bao hypervisor 里实现 VM 级带宽预留，每个 vCPU 用 PMU 统计访存，超出预算触发中断，让核空闲到周期结束，周期重置用 generic timer。因为它位于 hypervisor 层，不依赖宿主操作系统，Linux、FreeRTOS、Zephyr 这些 guest 可以用同一套机制。
+
+H-MBR 的效果要说准确。论文在 ZCU104 上测，关键 VM 跑 Linux 加 MiBench，非关键 VM 跑裸机写压力，干扰最多让关键负载慢 2.3 倍。把预算压到 50，关键负载的性能回到接近单独运行。开销方面，调节周期 1 微秒时是 14.3%，2 微秒降到 2%，10 微秒起低于 1%。论文没有给出降低 90% 干扰这样的数字，中文资料里的 90% 在原文中找不到。平台无关只是设计目标，实测只有 ZCU104 一块板。
+
+硬件分区这层，Intel CAT 和 ARM MPAM 是主要接口。CAT 按路分配 LLC，白皮书里的 MSI 延迟数据是平均值从 4.53 微秒降到 1.62 微秒，最大值从 30.91 微秒降到 20.98 微秒，干扰应用带宽保持 32.5GB/s。MPAM 用 PARTID 给请求打标，架构最大宽度 16 位，具体实现可以更小，Cortex-A710 只支持 6 位。RTSS 2025 的一篇 WiP 在商用 MPAM 平台上实测，发现实现行为经常偏离规范，七个 A720 核混合干扰下，受害者减速从 16 倍到 100 倍，DSU-120 只实现了一种带宽划分方式。硬件接口存在，不代表行为可分析。
+
+CAT 和带宽分配解决的不是同一个问题。CAT 管容量，决定任务能用 LLC 的哪几路；MBA 管流量，决定任务每秒能发多少访存请求。两者都要配，只配一个会留下缺口。RTNS 2022 的一篇论文实测 Intel RDT，没有控制时受害者的带宽降幅可达 80%；把两个竞争者都节流到最大之后，残余下降仍有 36%，论文的结论是 MBA 单独不足以保护关键任务。这个结果说明，RDT 的接口适合做辅助隔离，不能单独承担硬实时保证。
+
+隔离强度和利用率是一对交换。强隔离给关键任务独占资源，其余任务只能等，平均利用率低；弱隔离允许共享，利用率高，最坏情况难证。选择取决于认证要求。汽车 ASIL-D 和航电 DO-178C 的高等级场景，通常接受利用率损失换可证性；消费电子和边缘计算，通常接受概率性保证换吞吐。
+
+| 资源 | 干扰机制 | 隔离手段 | 已验证效果 | 盲区 |
+| --- | --- | --- | --- | --- |
+| LLC 容量 | 组冲突与驱逐 | 页着色、CAT、MPAM | 执行时间最多改善 250% | 路粒度浪费容量 |
+| MSHR | 在途缺失占满表项 | 每核配额加调度器规划 | WCET 最多降 19% | 需要硬件寄存器 |
+| 缓存银行 | 单 bank 流量集中 | per-bank 预算 | 良性吞吐最多 3.66 倍 | 需要 bank 映射 |
+| 内存控制器 | 队列排队 | 带宽预留、优先级仲裁 | 干扰回到接近基线 | 毫秒级粒度偏粗 |
+| DRAM bank | 行冲突与 bank 争抢 | per-bank 调节 | 吞吐 5.74 倍，隔离不变 | 需要硬件支持 |
+
+## 五、建模能算到哪一步
+
+干扰模型的价值在于给出上界，让设计者知道最坏情况能不能接受。现在能用的模型分三类。
+
+第一类是到达曲线加服务曲线，适合内存控制器和 DRAM。每个核的访存需求写成随时间累积的函数，控制器服务能力写成另一条曲线，两条曲线之间的最大距离就是延迟上界。Pellizzoni 2010 的框架是代表，后续工作把优先级仲裁和 bank 状态加进去。
+
+第二类是每核预算模型，适合带宽预留。给每个核一个配额，配额之和不超过保证带宽，每个核的延迟上界由自己的配额决定。MemGuard 和 H-MBR 都用这个思路。它的前提是配额确实被执行，运行时要有计数器盯着。
+
+第三类是 per-bank 模型，适合缓存银行和 DRAM bank。它把保证带宽写成与 tRC 相关的常数，再按 bank 数线性放大。RTAS 2026 的公式属于这一类，边界条件写得比较清楚，单 bank 集中流量时退化成全 bank 保证。
+
+三类模型都算不了 MSHR 和替换策略。MSHR 的行为取决于在途请求的数量和时序，需要排队论或者仿真。替换策略的行为取决于访问序列，需要抽象解释或者符号化分析。工程上常见的做法是先用模型算一个下界，再用 PMU 实测校准，两者差得远就说明模型漏了资源。
+
+MSHR 还有一个现实困难，多数商用 CPU 不暴露 MSHR 占用计数。能测的是缺失并行度和延迟分布，占用情况要靠间接推断，或者用 gem5 这类仿真器建模。论文里的 21 倍放大，一部分实验是在真实板子上做的，一部分是在仿真器里改 MSHR 数量验证的。工程上要复现这类结论，得有仿真环境，不能只靠 perf。
+
+### 需要更正的三处
+
+第一处是 H-MBR 的 90%。中文资料说它把带宽干扰降低 90% 以上，原文没有这个数字。论文能给的是干扰最多 2.3 倍，严格预算下关键负载回到接近基线，调节周期 2 微秒以上时开销低于 1%。90% 这个说法不要再用。
+
+第二处是 MSHR 的 21.3 倍。论文摘要是最高 21 倍，作者 slides 给的写方向精确值是 21.4 倍。21.3 在论文、slides 和后续引用里都找不到。
+
+第三处是缓存银行的干扰模型。没有一篇论文单独给出缓存银行的完整形式化模型和隔离理论边界。能引用的是三件工作的组合，RTAS 2023 证明攻击有效，RTSS 2024 给出 per-bank 隔离和最坏情形等价性，RTAS 2026 给出 DRAM 侧的解析边界。把三件工作拼起来可以支撑设计，说成"已有完整理论模型"就过了。
+
+## 六、隔离设计的顺序
+
+把资源、机制和验证串起来，顺序大致如下。
+
+1. 先列出所有共享资源，不要只列缓存和内存。MSHR、写缓冲、TLB、中断控制器、片上网络都算共享资源。
+2. 对每个资源确认它是否在现有隔离手段的覆盖范围内。缓存分区不覆盖 MSHR，带宽节流不覆盖缓存银行，这是最容易漏的两处。
+3. 按最坏共跑场景设定预算，不要按平均负载。预算定低了，高关键任务的最坏时延仍然不可证；预算定高了，资源利用率白白浪费。
+4. 选择粒度匹配的机制。干扰集中在 bank 就用 per-bank，集中在核就用每核配额，跨 VM 就用 hypervisor 层。
+5. 用 PMU 验证预算被执行。配置写进寄存器不等于硬件按预期工作，MPAM 的实测偏差就是例子。
+6. 用真实负载复测最坏情况。微基准能暴露机制，不能证明端到端时延。
+7. 记录每个资源的余量。隔离参数要留出调整空间，负载变化时才有回旋余地。
+
+<MermaidDiagram chart={`flowchart TD
+    A["列出共享资源"] --> B["确认隔离覆盖范围"]
+    B --> C{"是否有盲区"}
+    C -->|是| D["补机制 MSHR 配额或 per-bank"]
+    C -->|否| E["按最坏共跑设定预算"]
+    D --> E
+    E --> F["选择匹配粒度"]
+    F --> G["PMU 验证执行"]
+    G --> H{"是否符合预算"}
+    H -->|否| F
+    H -->|是| I["真实负载复测"]
+    I --> J["记录余量与配置"]
+`} />
+
+## 七、判断
+
+共享资源隔离这条线，2023 到 2026 年的进展集中在两个地方。一个是把干扰的粒度从核和 VM 推到 bank 和 MSHR，承认平均带宽不足以描述最坏情况。另一个是把隔离机制从操作系统层推到 hypervisor 层和硬件层，减少对 guest 操作系统的依赖。
+
+还没解决的是可分析性。per-bank 调节需要 bank 映射，MSHR 配额需要硬件寄存器，MPAM 的实现行为不统一。每加一种机制，认证材料就多一份，而认证机构对黑盒硬件的信任有限。工程团队现实的选择，是在成熟平台上做组合隔离，把最坏情况测出来，再用运行时监控兜底。
+
+一个可操作的判断是，如果做完缓存分区和带宽预留，最坏执行时间仍然超过单独运行的 2 倍，优先检查 MSHR 和缓存银行。这两个地方的干扰不会出现在命中率和平均带宽里，却能把尾延迟推高一个数量级。
+
+这个方向属于超低时延系列，系列索引和材料核验说明见 [研究地图](/knowledge/os/ultra-low-latency-research-map)。
+
+## 参考资料
+
+1. Prathap Kumar Valsan, Heechul Yun, Farzad Farshchi. Taming Non-blocking Caches to Improve Isolation in Multicore Real-Time Systems. IEEE RTAS 2016. https://doi.org/10.1109/RTAS.2016.7461361
+2. Michael Bechtel, Heechul Yun. Cache Bank-Aware Denial-of-Service Attacks on Multicore ARM Processors. IEEE RTAS 2023. https://ittc.ku.edu/~heechul/papers/cachebank-rtas2023-camera.pdf
+3. Connor Sullivan, Alex Manley, Mohammad Alian, Heechul Yun. Per-Bank Bandwidth Regulation of Shared Last-Level Cache for Real-Time Systems. IEEE RTSS 2024. https://arxiv.org/abs/2410.14003
+4. Connor Sullivan, Amin Mamandipoor, Cole Strickler, Heechul Yun. Per-Bank Memory Bandwidth Regulation for Predictable and Performant Real-Time Systems. IEEE RTAS 2026. https://arxiv.org/abs/2603.26054
+5. Afonso Oliveira, Diogo Costa, Gonçalo Moreira, José Martins, Sandro Pinto. H-MBR, Hypervisor-level Memory Bandwidth Reservation for Mixed Criticality Systems. NG-RES 2025. https://doi.org/10.4230/OASIcs.NG-RES.2025.4
+6. Alexander Zuepke, Andrea Bastoni, Weifan Chen, Marco Caccamo, Renato Mancuso. MemPol, Polling-based Microsecond-scale Per-core Memory Bandwidth Regulation. Real-Time Systems 60, 2024. https://doi.org/10.1007/s11241-024-09422-8
+7. Alexander Zuepke, Ashutosh Pradhan, Daniele Ottaviano, Andrea Bastoni, Marco Caccamo. ETM2, Empowering Traditional Memory Bandwidth Regulation using ETM. arXiv 2603.16490, RTAS 2026. https://arxiv.org/abs/2603.16490
+8. Ashutosh Pradhan, Daniele Ottaviano, Alexander Zuepke, Andrea Bastoni, Marco Caccamo. A First Practical Look at Arm MPAM for Real-Time Systems. RTSS 2025 WiP. https://doi.org/10.1109/RTSS66672.2025.00056
+9. Rodolfo Pellizzoni, Andreas Schranzhofer, Jian-Jia Chen, Marco Caccamo, Lothar Thiele. Worst Case Delay Analysis for Memory Interference in Multicore Systems. DATE 2010. https://doi.org/10.1109/DATE.2010.5456952
+10. Hyoseung Kim, Dionisio de Niz, Björn Andersson, Mark H. Klein, Onur Mutlu, Ragunathan Rajkumar. Bounding Memory Interference Delay in COTS-based Multi-Core Systems. IEEE RTAS 2014. https://doi.org/10.1109/RTAS.2014.6925998
+11. Heechul Yun, Gang Yao, Rodolfo Pellizzoni, Marco Caccamo, Lui Sha. MemGuard, Memory Bandwidth Reservation System for Efficient Performance Isolation in Multi-core Platforms. IEEE RTAS 2013. https://doi.org/10.1109/RTAS.2013.6531079
+12. Intel. Improving Real-Time Performance by Utilizing Cache Allocation Technology. White Paper 331843-001US, 2015. https://www.intel.com/content/dam/www/public/us/en/documents/white-papers/cache-allocation-technology-white-paper.pdf
+13. Arm. Memory System Resource Partitioning and Monitoring Overview. https://developer.arm.com/documentation/107768/latest
+14. Wafic Lawand, Rodolfo Pellizzoni. DAMA, A Dual Arbitration Mechanism for Mixed-Criticality Applications. ECRTS 2025. https://doi.org/10.4230/LIPIcs.ECRTS.2025.9

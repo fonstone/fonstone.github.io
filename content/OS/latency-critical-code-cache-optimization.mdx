@@ -1,0 +1,176 @@
+---
+title: "时延敏感代码的缓存优化，编译器与硬件的真实分工"
+description: "梳理时延敏感代码在缓存上的可操作手段，覆盖 LLVM 编译器自动调优、静态缓存锁定、Intel CAT 与持久化、页着色和共享数据布局，附实测数字、适用粒度，以及三条在中文资料里流传但查不到出处的性能声明。"
+date: "2026-10-18"
+tags: ["OS", "超低时延", "缓存", "编译器", "WCET"]
+---
+
+先说一件查资料时碰到的事。中文技术资料里流传一组说法，LLVM 在 IR 层标记 WCET 关键路径，把 L2 命中率做到 99% 以上；时间感知的内存管理把缓存相关的 WCET 不确定性降低 30%；运行时热点数据重排把缓存利用率提高 25%，抖动降低 40%。我按中英文关键词把论文库、LLVM 官方文档和会议目录翻了几轮，这三组完整表述都没有找到出处。能找到的是另一批工作，做的方向相近，数字没那么漂亮，条件写得很清楚。
+
+这篇文章按能核实的工作写。先看缓存缺失怎样变成时延，再看编译器、操作系统、硬件各自能改什么，最后单列一节，说明那三条声明分别对应到哪些真实工作，差距在哪里。
+
+## 一、缓存对最坏执行时间的影响
+
+实时任务的最坏执行时间由指令数、流水线停顿和访存延迟共同决定。缓存命中时，访存只花流水线等待的时间；缺失时，请求要走到下一级存储。级别越深，等待越长，而且等待时间受邻居核影响，不是一个固定值。
+
+缺失次数不确定，这一点更难处理。一个循环顺序扫过一个大数组，缺失次数基本等于数组跨越的缓存行数。换一个访问顺序，或者换一个数据布局，缺失次数就变了。任务之间的干扰再叠加一层，同一段代码在单独运行和共跑时，缺失次数可以差出几倍。
+
+隔离手段能压住一部分。Mancuso 等人在 RTAS 2013 的 Colored Lockdown 工作里报告，把 LLC 干扰消掉之后，执行时间最多改善 250%，完成任务只需要 4 个内存页的缓存占用。这个数字说明缓存干扰的量级，也说明隔离的收益高度依赖任务本身。
+
+反过来，隔离做过头会浪费容量。缓存分区按路切，一路占容量的几十分之一，任务只需要几个页，却可能占掉一整路。Sun、Kloda、Arribas Garcia、Gracioli 和 Caccamo 在 Real-Time Systems 2024 年的一篇论文里，把缓存占用作为优化目标，在不破坏可调度性的前提下最小化每个任务的缓存使用量。论文报告，相比现有分区方法，平均缓存使用量减少 39.15%，启发式解与最优解的差距平均 0.79%。实验是单核、固定优先级和 EDF、合成任务集，参数取自真实嵌入式应用。
+
+这组结果的用法很直接。缓存容量是稀缺资源，给关键任务留够命中所需的容量，剩下的分给其他任务，比平均分配更有效。
+
+## 二、编译器能改的部分
+
+编译器对缓存的影响分四层，改代码布局、改数据布局、插入预取或锁定指令、给分析工具留下可追溯的流信息。四层的成熟度差别很大。
+
+第一层是优化 pass 的选择和排序。Magnani、Baroffio、Reghenzani、Agosta 和 Fornaciari 在 RTSS 2025 上提出一个基于 LLVM 的自动调优方法，在函数粒度上搜索优化 pass 的组合和顺序，目标是降低 WCET。论文的结论是，标准的 O0 到 O3 优化级别对 WCET 来说并不是最优选择。论文给的是逐函数、逐基准的结果，收益差别很大，方法本身已经进入工具链层面。
+
+第二层是缓存锁定。Puaut 和 Decotigny 在 RTSS 2002 上给出多任务硬实时系统里的静态缓存锁定算法，决定哪些指令或数据留在缓存里。WCC 项目把这类优化做成了 WCET 感知的 C 编译器，页面现在托管在 TUHH，配套的代码定位和指令缓存锁定工作发表在 CODES+ISSS 2007、CASES 2011 和 CGO 2012。Plazar 的博士论文报告，组合使用这些优化，实时应用的 WCET 可以降低 35% 到 48%。这些数字来自具体的基准和处理器模型，不能直接搬到别的平台。
+
+第三层是流信息的可追溯。RTNS 2014 的论文在 LLVM 里引入 WCETInfo，把循环边界这类流事实附着到 IR 上，让它们穿过优化流水线。WCET 2024 的 Platin 工具把 `#pragma loopbound` 之类的约束嵌进 LLVM IR，编译到机器码后仍能还原。这一层不直接改善缓存，但决定了分析工具能不能算出一个紧的上界。没有流信息，分析器只能按最坏情况假设循环次数。
+
+第四层是数据布局。LLVM 的 MemProf 用 profile 数据给分配指令打上 `!memprof` 元数据，区分热、冷和半冷分配，再配合静态数据分区把热数据聚到一起，官方文档说这样可以改善 dTLB 和缓存效率。NVPTX 后端还有 `!mem.cache_hint` 元数据，用来指定 L2 的驱逐策略，属于目标相关的缓存控制。这些机制在 LLVM 里真实存在，但它们服务的是平均性能，不是 WCET。
+
+<MermaidDiagram chart={`flowchart LR
+    A["源码与循环边界"] --> B["LLVM IR 与流事实"]
+    B --> C["优化 pass 搜索与排序"]
+    C --> D["代码定位与缓存锁定"]
+    D --> E["目标文件与可执行文件"]
+    E --> F["WCET 分析工具"]
+    F --> G["最坏路径与上界"]
+    G --> C
+    B --> H["MemProf 冷热元数据"]
+    H --> I["静态数据分区"]
+    I --> E
+`} />
+
+这张图里有一条反馈边。分析结果回到编译器，指导下一轮优化。WCC 的 back-annotation 机制就是把基本块是否位于最坏执行路径的信息回填给编译器。没有这条反馈，编译器只能按平均情况优化，WCET 未必下降。
+
+## 三、分析精度决定优化空间
+
+编译器要优化缓存，先要知道哪里有缓存问题。现代缓存分析的精度这几年在提高，方向有三个。
+
+第一个是符号化分析。Touzeau 和 Reineke 在 RTSS 2023 上把 LLVM 的 ScalarEvolution 用到数据缓存分析里，用符号表达式描述访问地址和循环变量之间的关系。论文报告，符号化数据缓存分析在精度和运行时间上都优于经典的 LRU must 分析。精度提高意味着分析器不会把大量实际命中的访问当成可能缺失，WCET 上界因此收紧。
+
+第二个是路径敏感分析。PLDI 2026 的论文把路径敏感抽象解释引入 WCET 估计，根据山东大学的新闻稿，平均把 WCET 估计误差降低约 24.83%，复杂分支程序上最高降低 76.06%。ACM 页面的摘要确认了方法，具体数字来自作者单位的公开稿。这个方法的价值在于，它不再对所有路径取同一个缓存状态，而是按分支条件分别分析。
+
+第三个是替换策略的适配。Kahlen 和 Reineke 在 RTAS 2025 上提出一个统一的定量缓存分析框架，把 competitiveness 和 block competitiveness 统一起来，让 FIFO 和 MRU 这类非 LRU 缓存也能得到接近 LRU 的精度。论文的实验基于 TACLeBench。真实处理器很少用纯 LRU，这个工作让分析工具能跟上硬件。
+
+分析精度提高的直接后果是优化空间变大。原来因为上界太松而不敢做的布局调整，现在可以试着做。原来被判定为不可调度的任务集，换一个更紧的分析可能就通过了。
+
+## 四、缓存驻留的几种做法
+
+让关键代码或数据常驻缓存，有四种做法，粒度和代价各不相同。
+
+第一种是硬件锁定。Arm 的 L2C-310 缓存控制器支持按行锁定、按路锁定和按主设备锁定。按行锁定最精确，但可锁的行数有限；按路锁定简单，代价是整路容量被占住。Intel 的 CAT 按路分配 LLC，L2 和 L3 都有对应的能力，操作系统通过 resctrl 文件系统配置。CAT 的白皮书给过一组中断延迟数据，在外部 PCIe 设备每毫秒产生一次 MSI 的测试里，开启 CAT 后平均 MSI 延迟从 4.53 微秒降到 1.62 微秒，最大延迟从 30.91 微秒降到 20.98 微秒，干扰应用的聚合带宽保持在 32.5GB/s 不变。测试平台是 16GB DDR4-2133、RHEL 6.3、内核 3.7.10。
+
+第二种是页着色加锁定。Colored Lockdown 把物理页映射到指定的缓存组，再把热点页锁在缓存里。它比纯硬件锁定灵活，因为操作系统可以按任务分配页。代价是需要控制物理页分配，页着色的粒度受缓存组数限制。Kessler 和 Hill 在 1992 年的论文里就指出，任意的页放置会带来最多 30% 的不必要冲突，页着色的目的就是消掉这部分冲突。
+
+第三种是持久化。Intel RDT 的 pseudo-locking 和 RTAS 2025 上的 persistence 分析工作，思路是把某些缓存行标记为持久，让它们不被普通流量驱逐。RTAS 2025 的工作还在 WiP 阶段，没有给出可引用的性能数字，但方向值得关注，因为它把缓存驻留从静态配置变成了可分析的性质。
+
+第四种是共享数据下的空间隔离。ParRP 发表在 RTAS 2025，作者是 Wang、Pellizzoni 和 Patel。它不隔离数据本身，而是隔离替换信息，让多线程任务共享数据时仍然有可分析的最坏情况。gem5 上的实验报告，多线程任务的最坏执行时间最多降低 2.4 倍，代价是平均性能下降 16.5%。这个交换是否值得，取决于系统更在意最坏情况还是平均吞吐。
+
+| 做法 | 粒度 | 主要代价 | 适用场景 |
+| --- | --- | --- | --- |
+| 硬件按行锁定 | 缓存行 | 可锁行数有限 | 很小的关键循环 |
+| CAT 按路分配 | 路 | 容量按路浪费 | 多任务共享 LLC |
+| 页着色加锁定 | 物理页 | 需要控制页分配 | 任务级隔离 |
+| 持久化 | 缓存行或区域 | 配置复杂，硬件支持不一 | 周期性关键数据 |
+| 共享数据空间隔离 | 替换信息 | 平均性能下降 | 多线程共享数据 |
+
+锁定在商用芯片上有几个绕不开的限制。容量按路分配，一路占 LLC 的几十分之一，任务只需要几页，却可能占掉整路。组相联结构决定锁定行落到哪个组，锁得多，别的组可能空着，锁得少，关键行又覆盖不全。任务迁移到另一个核，私有缓存里的锁定内容不跟着走。冷启动时缓存是空的，第一次访问仍然要走到内存。这些限制决定了锁定适合小工作集、周期性访问的关键路径，不适合大范围的数据驻留。
+
+Intel RDT 的 pseudo-locking 是另一种思路。它不按路切，而是按地址范围把指定区域保护起来，普通流量不能驱逐。适合周期性访问的小数据集，代价是区域大小受硬件限制，内核和固件都要支持。配置接口在 resctrl 里，和 CAT 的路掩码分开管理。
+
+## 五、数据布局与伪共享
+
+数据布局的收益在平均性能领域有很多证据，在 WCET 领域少得多。
+
+平均性能这边，CApRI 在 SIGMETRICS 2014 上做不规则代码的缓存感知数据重排，把访问频率高的数据放到一起。B+ 树的热路径布局把高概率访问的节点放在连续地址上，利用硬件预取。LLVM 的 MemProf 把热分配聚到静态数据区。这些工作共同说明，布局对缓存命中率有实质影响。
+
+WCET 这边，布局的作用主要体现在减少冲突缺失和伪共享。两个核写同一个缓存行里的不同字段，MESI 协议让整行在核间来回搬，每次写都要拿独占权。FSDetect 和 FSLite 在 MICRO 2024 上用一致性 miss 的频率识别这种模式，检测到之后在 LLC 做字节级合并，平均带来 1.39 倍性能提升。这个数字是平均性能，不是最坏情况，但它说明伪共享的代价可以被量化。
+
+布局优化的难点在验证。改一个结构体字段的顺序，可能让一个核的命中率上升，另一个核下降。做 WCET 分析时，布局变化会改变缓存状态，必须重新跑分析。工程上的做法是先用 perf c2c 或 FSDetect 找争用，再做小范围布局调整，每次调整都复测最坏执行时间。
+
+## 六、三条查不到出处的声明
+
+回到开头那三条。逐条说清楚我查到了什么，以及真实工作差在哪里。
+
+第一条，LLVM IR 级 WCET 路径标记，L2 命中率 99% 以上。LLVM 确实有 IR 层的元数据机制，MemProf 标记冷热分配，NVPTX 有缓存提示，Platin 把流事实嵌进 IR。WCET 工具也确实会输出最坏执行路径，WCC 会把路径信息回填给编译器。但没有一篇论文或工具文档描述过这样的完整流程，在 IR 层标记 WCET 关键路径、注入缓存优化元数据、指导指令调度和缓存布局，并把关键路径 L2 命中率做到 99%。最接近的是 RTSS 2025 的 LLVM 自动调优和 RTNS 2014 的流信息追溯，两者都不做缓存命中率保证。
+
+第二条，时间感知内存管理把缓存相关 WCET 不确定性降低 30% 以上。地址映射影响缓存冲突，这一点有大量工作支持，CAMA 在 ECRTS 2011 上做缓存集定向分配，WCET 感知的页着色在 2019 年也有论文。但没有找到以时间感知内存管理为名、给出 30% 这个数字的工作。检索中反复出现的 30% 是 Kessler 和 Hill 1992 年论文里的不必要冲突比例，与 WCET 不确定性不是一回事。
+
+第三条，热点数据动态重排把缓存利用率提高 25%、敏感路径抖动降低 40%。动态布局调整在数据库和 HPC 里有实现，比如按访问频率重排数据项、把热路径节点放到连续地址。但没有找到把这两个数字放在一起、并且针对实时敏感路径的工作。数字最接近的是 FrozenHot 在 EuroSys 2023 报告的吞吐提升 90%、尾延迟降低 46%，场景是内存缓存系统，不是 WCET。
+
+这三条的共同问题是把不同工作的零件拼成了一个完整故事。零件是真的，组合起来的结论没有出处。写设计文档时，可以把它们当研究方向，不能当已经实现的性能数据。
+
+## 七、一条可执行的优化流程
+
+把上面的手段排成流程，顺序如下。
+
+1. 先确定优化目标是平均延迟还是最坏执行时间。两个目标的工具链不同，混着做会得到互相矛盾的结论。
+2. 用 PMU 和缓存分析工具定位缺失类型。容量缺失、冲突缺失、强制缺失的处理方式完全不同。
+3. 容量缺失优先考虑分区或扩大有效容量，冲突缺失优先考虑页着色或布局调整，强制缺失只能靠预取或改算法。
+4. 关键循环小到能放进缓存时，考虑锁定。锁定之前先确认硬件支持哪种粒度，按行还是按路。
+5. 多任务共享 LLC 时，先用 CAT 或 MPAM 做路划分，再用持久化保护周期性的关键数据。
+6. 每次改动后复跑 WCET 分析，确认上界没有变松。布局和锁定都会改变缓存状态，不能只看微基准的命中率。
+7. 记录配置和测量条件。缓存优化的结果对平台、负载、编译选项都敏感，没有条件的数字没法复现。
+
+缺失分类可以用一条 perf 命令起步。先看 L1 和 LLC 的访问数、缺失数，再决定往哪个方向查。L1 缺失率高、LLC 缺失率也高，多半是容量或强制缺失；LLC 访问多但缺失率不高，冲突的可能性更大。要看到行级冲突，得用缓存模拟器，perf 只给统计。
+
+```bash
+perf stat -e L1-dcache-loads,L1-dcache-load-misses,LLC-loads,LLC-load-misses ./task
+```
+
+| 缺失类型 | 识别方法 | 可用手段 | 代价 |
+| --- | --- | --- | --- |
+| 强制缺失 | 首次访问，无法避免 | 预取、改算法 | 预取可能污染缓存 |
+| 容量缺失 | 工作集大于可用分区 | 分区、压缩数据、扩容 | 容量与成本 |
+| 冲突缺失 | 多个热点映射到同一组 | 页着色、布局调整、锁定 | 需要控制物理页 |
+| 一致性缺失 | 共享行在核间迁移 | 填充、私有化、FSDetect | 内存占用增加 |
+
+分类之后再做单变量调整。一次只改一项，布局、锁定或者分区，每改一次复测最坏执行时间。三项一起改，出了问题不知道是哪一项带来的。
+
+<MermaidDiagram chart={`flowchart TD
+    A["确定目标 平均延迟或 WCET"] --> B["PMU 与缓存分析"]
+    B --> C{"缺失类型"}
+    C -->|容量| D["分区或扩容"]
+    C -->|冲突| E["页着色或布局"]
+    C -->|强制| F["预取或改算法"]
+    D --> G["锁定或持久化"]
+    E --> G
+    F --> G
+    G --> H["复跑 WCET 分析"]
+    H --> I{"上界是否变松"}
+    I -->|是| B
+    I -->|否| J["固定配置并记录条件"]
+`} />
+
+## 八、判断
+
+时延敏感代码的缓存优化，可用的自由度比宣传里小。编译器能改布局和锁定，操作系统能改页映射，硬件能改路分配，三层各管一段，跨层的自动配合还没有成熟工具。工程上最可靠的做法，是把每一层的配置显式写出来，再用 WCET 分析验证组合后的效果。
+
+未来两年值得关注两件事。一是分析精度继续提高，路径敏感和符号化方法进入商用工具，优化空间会变大。二是持久化和共享数据隔离进入硬件，缓存驻留从手工配置变成可分析的系统属性。两件事都指向同一个方向，缓存不再是被动命中的存储，而是可以被分配、被证明的资源。
+
+这个方向属于超低时延系列，系列索引和材料核验说明见 [研究地图](/knowledge/os/ultra-low-latency-research-map)。
+
+## 参考资料
+
+1. Emanuele Magnani, Davide Baroffio, Federico Reghenzani, Giovanni Agosta, Carlo G. Fornaciari. Modern LLVM-Based Compiler Autotuning for WCET Optimization. IEEE RTSS 2025. https://doi.org/10.1109/RTSS66672.2025.00043
+2. Isabelle Puaut, David Decotigny. Low-Complexity Algorithms for Static Cache Locking in Multitasking Hard Real-Time Systems. IEEE RTSS 2002. https://doi.org/10.1109/REAL.2002.1181567
+3. Heiko Falk, Sascha Plazar, Henrik Theiling. Compile-time Decided Instruction Cache Locking Using Worst-Case Execution Paths. CODES+ISSS 2007. https://doi.org/10.1145/1289816.1289853
+4. Heiko Falk, Jan Kleinsorge. Optimal Static WCET-aware Scratchpad Allocation of Program Code. DAC 2009. https://doi.org/10.1145/1629911.1630101
+5. Hanbing Li, Isabelle Puaut, Erven Rohou. Traceability of Flow Information, Reconciling Compiler Optimizations and WCET Estimation. RTNS 2014. https://wsept.inria.fr/pub/RTNS-2014-Inria.pdf
+6. LLVM. MemProf, Memory Profile Metadata. https://www.llvm.org/docs/MemProf.html
+7. Valentin Touzeau, Jan Reineke. Leveraging LLVM ScalarEvolution for Symbolic Data Cache Analysis. IEEE RTSS 2023. https://arxiv.org/abs/2310.04809
+8. Sophie Kahlen, Jan Reineke. A Unified Framework for Quantitative Cache Analysis. IEEE RTAS 2025. https://arxiv.org/abs/2503.16588
+9. Wang, Pellizzoni, Patel. ParRP, Enabling Space Isolation in Caches with Shared Data. IEEE RTAS 2025. https://doi.org/10.1109/RTAS65571.2025.00020
+10. Renato Mancuso, Roman Dudko, Emiliano Betti, Marco Cesati, Marco Caccamo, Rodolfo Pellizzoni. Real-time Cache Management Framework for Multi-core Architectures. IEEE RTAS 2013. https://doi.org/10.1109/RTAS.2013.6531078
+11. Intel. Improving Real-Time Performance by Utilizing Cache Allocation Technology. White Paper 331843-001US, 2015. https://www.intel.com/content/dam/www/public/us/en/documents/white-papers/cache-allocation-technology-white-paper.pdf
+12. Arm. CoreLink Level 2 Cache Controller L2C-310 Technical Reference Manual, ARM DDI 0246. https://developer.arm.com/documentation/ddi0246/latest
+13. Binqi Sun, Tomasz Kloda, Sergio Arribas Garcia, Giovani Gracioli, Marco Caccamo. Minimizing Cache Usage with Fixed-Priority and Earliest Deadline First Scheduling. Real-Time Systems 60, 2024. https://doi.org/10.1007/s11241-024-09423-7
+14. Vipin Patel, Swarnendu Biswas, Mainak Chaudhuri. Leveraging Cache Coherence to Detect and Repair False Sharing On-the-Fly. MICRO 2024. https://www.cse.iitk.ac.in/users/swarnendu/files/papers/micro24.pdf
+15. Wei Ding, Mahmut Kandemir. CApRI, Cache-conscious Data Reordering for Irregular Codes. SIGMETRICS 2014. https://doi.org/10.1145/2637364.2591992
+16. Kessler, Hill. Page Placement Algorithms for Large Real-Indexed Caches. ACM TOCS 10(4), 1992. https://doi.org/10.1145/138873.138876

@@ -1,0 +1,99 @@
+---
+title: "大模型的不确定性与遵从性，怎么落到工程约束"
+description: "从工单转 JSON 的失败场景出发，用九个具体例子说明确定性脚本、Hook 约束、TodoList、关键信息前置、编号化要求、角色边界、eval、统一约定和结构化设计，怎么把大模型的不确定性与遵从性问题变成可维护的工程问题。"
+date: "2026-11-02"
+tags: ["AI", "大模型", "Agent", "Skill", "提示词工程", "评估", "工程化"]
+---
+
+假设一个 Skill 要把工单转成固定 JSON。第一次运行，模型在 JSON 后面补了一句“已处理”，解析器报错。你把提示词改得更严厉，第二次它不补句子了，却把枚举值写成了近义词。再改，它把两个字段合并成一个。
+
+这类失败继续改提示词很难收敛。模型的不确定性有几个来源，格式、步骤、上下文和权限都在里面；评估缺位会让这些错误漏过去。我的做法是先问一句，这个失败能不能从模型手里拿走。能拿走的交给代码，拿不走的用信息和权限缩小范围，剩下的把 Skill 当软件维护。
+
+## 能定死的，先从模型手里拿走
+
+### 固定格式和定值计算交给脚本
+
+Anthropic 把智能体系统分成 workflow 和 agent 两类。Workflow 用预定义代码路径编排 LLM 和工具，适合定义清楚的任务；agent 让模型自己决定流程和工具，适合开放任务。Anthropic 的说法是，workflow 对定义清楚的任务提供可预测性和一致性，agent 适合需要灵活性和模型自主决策的场景<sup>[1]</sup>。工单转 JSON 属于前者。字段名、类型、枚举值都能定死，让模型生成整个 JSON，等于把 schema 校验交给概率。
+
+更稳的做法是把转换逻辑写进脚本，模型只负责调用工具和填参数。比如提供一个 `convert_ticket` 工具，参数用 JSON Schema 约束，脚本负责字段映射、枚举校验和最终序列化。日期格式、金额单位、状态枚举这些规则都能写进脚本，模型只填 `ticket_id` 和 `status`。`2026/11/02` 要转成 `2026-11-02`，金额从分转元，“已完成”要映射成 `closed`，这些都不需要模型判断。模型可以选择调用哪个工具，可以选择参数值，但不负责拼最终字符串。
+
+如果必须让模型直接产出 JSON，Structured Outputs 提供了另一层格式约束。它用 JSON Schema 约束解码，让输出在形状上符合 schema<sup>[2]</sup>。OpenAI 在 2024 年的发布公告里说，gpt-4o-2024-08-06 加 Structured Outputs 在他们自家的复杂 schema 评测中到了 100%，同一评测里 gpt-4-0613 低于 40%。公告的技术说明里还写了一个数，模型单独跑是 93%，剩下 7 个百分点是约束解码补上的。同一篇公告也写明，schema 只保证形状，值仍可能算错，模型拒绝回答或 `max_tokens` 截断也会让输出不符合 schema<sup>[2]</sup>。这组数字是 2024 年公告里的厂商自报，不是独立复现，也不是对所有模型的承诺；具体模型支持范围要看当前文档。对准备把格式校验交给模型的团队，这个差别很实际。schema 能挡住解析错误，挡不住业务错误；解析器过了，字段值仍可能错。
+
+### Hook 只放在能校验的节点上
+
+Skill 里很难没有分支。交互确认、工具调用前后、插件入口都可以挂 Hook。既然很难清零，就在每个 Hook 点放一个能执行的检查器。比如写文件前检查路径是否在 `src/`，不在就返回 `deny`；发消息前检查收件人是否在白名单；退款前检查金额是否超过阈值，超过就转人工。每个 Hook 至少要有输入、判断条件和失败动作。只打日志的 Hook 不算约束，它只是记录。
+
+Claude Code 的 Hooks 在生命周期节点执行命令、HTTP 请求、MCP 工具调用等，`PreToolUse` 可以返回 `deny` 的权限决策，阻断工具调用<sup>[3]</sup>，Skill 的 frontmatter 里也能注册 Hooks<sup>[3]</sup>。但官方文档也提醒，`if` 过滤器是 best-effort，匹配不准时 hook 可能照常运行；要硬允许或硬拒绝，应该用权限系统<sup>[3]</sup>。这句话很关键。Hook 的强度取决于你把它放在哪一层，匹配规则不能代替权限边界。高风险动作要靠权限系统、沙箱或人工确认。
+
+### TodoList 要配外部校验
+
+多步流程还会遇到跳步。Plan-and-Solve 的论文把漏步骤列为 zero-shot CoT 的典型错误，先用计划把任务拆成子任务再执行，论文报告在 10 个数据集上优于 zero-shot CoT<sup>[7]</sup>。这套思路可以借到 Skill 上，把任务清单做成显式状态，每完成一步做一次校验，校验通过才进入下一步。清单可以写成 `读取工单 -> 校验字段 -> 转换 -> 写回 -> 复核`，每一步的产出落盘或返回结构化结果，下一步只能读上一步的结果。第 2 步缺字段，第 3 步不能开始；第 3 步输出的 JSON 不过 schema，第 4 步不能写回。TodoList 本身是文本，不是执行引擎。它不会自动阻止跳过，也不会自动检查清单上的勾是不是真的做完了。要让清单和外部校验绑定，比如每步产出必须通过测试、schema 或字段比对，才允许进入下一步。清单管步骤，校验管正确性。
+
+## 剩下的部分，用信息和权限缩小范围
+
+### 关键约束放在模型看得见的位置
+
+有些环节拿不走，比如开放式的需求澄清、方案选择、异常解释。这些环节只能引导。先把关键约束放在模型看得见的位置。Lost in the Middle 的论文在多文档问答和键值检索里发现，相关信息放在开头或结尾时往往表现最好，放在中间时明显下降，即使模型支持长上下文<sup>[4]</sup>。这个结论不能外推到所有任务，但它支持一个低成本做法，核心目标、红线、关键参数不要埋在一大段背景后面。比如把“只允许读 `src/`，不允许改 `package.json`，输出必须是 Ticket JSON”放在指令第一段；背景、示例和工具说明放在后面。关键参数用固定格式，不要藏在自然语言段落里。放在指令最前面，结尾再提醒一次；论文没有测复述本身，但这一步成本很低。
+
+### 指令编号要能逐条判定
+
+要求也要能逐条判定。IFEval 用 25 类可验证指令、541 条 prompt 做评估，按 prompt-level 和 instruction-level 统计<sup>[6]</sup>。这套方法可以借到 Skill 上，每条要求都要有判定方式。比如把要求写成 1 必须包含 `ticket_id`，2 `status` 只能是 `open` 或 `closed`，3 输出不得超过 200 字。每条后面配一个判定器，没有判定器的编号不算要求。编号要给每条要求一个独立的检查项。只把句子标上序号，检查项没有增加，编号就只是装饰。
+
+### 角色边界要配权限
+
+还要收缩模型的自主权。把模型定位为执行者，明确它可以决定什么、不能决定什么。模型可以决定用哪个工具查日志，不能决定删除哪台机器；可以起草回复，不能直接发送。退款这类动作也一样，模型只能建议，执行要交给代码或人工。把决策拆成建议和执行两段，执行段不放模型手里。
+
+角色设定不是硬保证。Instruction Hierarchy 的论文指出，模型常把 system prompt 和不可信用户输入当成同一优先级，提出用指令层级训练模型选择性忽略低优先级指令<sup>[5]</sup>。论文没有测角色提示词的效果，但它说明指令优先级涉及模型训练层面的行为。应用层不能把一句“你是执行者”当成边界，高风险动作还是要交给权限系统或人工确认，模型只能提出建议。
+
+## 把 Skill 当软件维护
+
+### 先有 eval，再改提示词
+
+Skill 的质量不能靠读提示词的感觉。先攒一组能复现的失败样例，至少覆盖正常工单、缺字段、枚举越界、工具超时和模型拒绝回答。每条样例记录输入、期望输出、判定器和实际结果。判定器可以是 schema 校验、字段比对、工具调用序列检查、人工评分。失败样例进回归集，每次改提示词、换模型、加工具，都跑一遍。没有 eval 的提示词修改是盲改。
+
+比如工单转换的 eval 可以分成三类，正常工单要求字段全对，缺字段的工单要求返回错误码，枚举值不在表里的工单要求拒绝转换。判定器只看 JSON 字段和错误码，不看模型解释。IFEval 的 prompt-level 和 instruction-level 指标可以借用<sup>[6]</sup>。
+
+### 用统一约定减少重复发明
+
+统一 Skill 的文件结构。每个 `SKILL.md` 至少写清目标、允许的工具、步骤、输出格式、失败处理。允许的工具写进 frontmatter 的 `allowed-tools`，它给调用该 Skill 的那一轮免询问授权；要禁止其他工具，还要配 `disallowed-tools` 或权限规则<sup>[9]</sup>。正文只解释怎么用。输出格式用同一套 schema，错误用同一套格式，日志用同一套字段。比如所有 Skill 都用同一套输出信封，`{ok, data, error}`；错误码用同一套表；日志里都带 `skill_name`、`step`、`tool`。约定先统一最常变的三个地方，输出格式、错误格式、工具命名。这样模型不用每次猜格式，维护者也不用每次读一套新规则。
+
+```markdown
+---
+name: ticket-converter
+description: 把工单转成固定 JSON，字段不合法时拒绝继续
+allowed-tools: read_ticket, convert_ticket
+---
+
+## 目标
+把工单转成 Ticket JSON，枚举值必须来自 schema。
+
+## 步骤
+1. 读取工单。
+2. 调用 convert_ticket，参数必须通过 schema。
+3. 校验返回值和必填字段，失败就停下并报告。
+
+## 输出与失败
+只返回 Ticket JSON。缺字段、枚举不合法、工具报错时返回错误码，不自行补全。
+```
+
+Claude Code 的 Skill 用 `SKILL.md` 加 supporting files，body 只在被使用时加载<sup>[9]</sup>。这给了结构化设计一个文件边界，参考文档、脚本、模板可以分文件放，不必把所有内容塞进一段提示词。
+
+### 结构化不是套标签
+
+结构化设计要让每块只回答一个问题。反例是一段提示词里同时写“你要准确”“输出 JSON”“失败重试三次”“不要修改数据库”，模型很难判断哪条优先。把内容拆成目标、约束、步骤、输出、异常五块，每块只回答一个问题，冲突会少很多。结构上先给目标，再给约束、步骤和输出格式，让模型按这个顺序找信息。XML 标签能分隔内容，标签本身不解决优先级。
+
+DSPy 的论文把 LM pipeline 抽象成 text transformation graph，用编译器按指标优化<sup>[8]</sup>。这说明提示词可以是工程产物，有模块、参数和指标，可以按指标重新编译。但不要把 DSPy 当成万能框架，它优化的是你给的指标，指标错了，优化只会更快地走到错的地方。
+
+这套做法有代价。脚本和 Hook 增加维护成本，信息设计增加提示词长度，评估拖慢迭代。所以顺序很重要。先用最便宜的一层挡住最贵的错误，再决定要不要加下一层。开放式研究、创意写作这类任务，硬约束会把可选空间压小，不适合把每一步都脚本化。这类任务需要另一套评估，不能拿工单转换的规则硬套。我先从最容易复现的失败样例开始，把能定死的部分拿出去，再看剩下的是不是需要模型判断。
+
+## 参考资料
+
+1. Anthropic. Building effective agents. 2024-12-19. https://www.anthropic.com/engineering/building-effective-agents
+2. OpenAI. Introducing Structured Outputs in the API. 2024-08-06. https://openai.com/index/introducing-structured-outputs-in-the-api/
+3. Claude Code Docs. Hooks reference. https://code.claude.com/docs/en/hooks
+4. Liu, N. F. et al. Lost in the Middle&#58; How Language Models Use Long Contexts. TACL, 2023. https://arxiv.org/abs/2307.03172
+5. Wallace, E. et al. The Instruction Hierarchy&#58; Training LLMs to Prioritize Privileged Instructions. 2024. https://arxiv.org/abs/2404.13208
+6. Zhou, J. et al. Instruction-Following Evaluation for Large Language Models. 2023. https://arxiv.org/abs/2311.07911
+7. Wang, L. et al. Plan-and-Solve Prompting&#58; Improving Zero-Shot Chain-of-Thought Reasoning by Large Language Models. ACL, 2023. https://arxiv.org/abs/2305.04091
+8. Khattab, O. et al. DSPy&#58; Compiling Declarative Language Model Calls into Self-Improving Pipelines. 2023. https://arxiv.org/abs/2310.03714
+9. Claude Code Docs. Extend Claude with skills. https://code.claude.com/docs/en/skills

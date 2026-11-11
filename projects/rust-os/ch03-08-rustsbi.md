@@ -4,7 +4,7 @@ description: "RISC-V指令集的SBI标准规定了类Unix操作系统之下的�
 date: "2026-07-12"
 order: 21
 tags: ["附录", "RustSBI", "机器模式", "SBI", "固件"]
-est_time: "20分钟"
+est_time: "20 分钟"
 ---
 RISC-V指令集的SBI标准规定了类Unix操作系统之下的运行环境规范。这个规范拥有多种实现，RustSBI是它的一种实现。
 

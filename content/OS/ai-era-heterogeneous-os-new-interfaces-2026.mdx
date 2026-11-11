@@ -43,7 +43,7 @@ MemSpec 的思路是预测代替探索。轻量预测器在推理前先估计哪
 
 预测引擎用 fine-tuned BERT 编码器，输入 prompt 和最近的 token，输出每个候选草稿的概率。训练数据是投机解码轨迹，每条上下文标出取得最高解码效用的草稿，预测目标和系统级性能直接对齐。论文强调预测引擎只需要排序足够准，不用精细估效用，因为下游缓存管理器和运行时控制器只看相对优先级。
 
-![MemSpec 总体架构](/images/ai-os-arxiv-2026/memspec-arch.png)
+![MemSpec 总体架构](/images/ai-os-arxiv-2026/memspec-arch.webp)
 
 *MemSpec 论文 Figure 5，预测引擎排序草稿，缓存管理器维护常驻工作集并异步预取，运行时循环按调度点切换。作者 Eunjeong Kim 等，arXiv 2608.10362*
 
@@ -63,7 +63,7 @@ MemSpec 的思路是预测代替探索。轻量预测器在推理前先估计哪
 
 Themis 的核心观察是，数据页粒度上可以精确过滤无用的预取，不影响覆盖率。按页存预取有用性元数据在硬件里太贵，论文提出软硬件接口的分工，软件决定往哪预取，硬件在软件圈定的区域内识别并发起预取。
 
-![Themis 使用模型](/images/ai-os-arxiv-2026/themis-fig5.png)
+![Themis 使用模型](/images/ai-os-arxiv-2026/themis-fig5.webp)
 
 *Themis 论文 Figure 5，页面级 hint 存进页表项，TLB 命中后预取器按 hint 启用或停用。作者 Keisuke Kamahori 等，arXiv 2608.00259*
 
@@ -89,7 +89,7 @@ Themis 的核心观察是，数据页粒度上可以精确过滤无用的预取�
 
 usefulness 的计算有个参数，论文叫 usefulness factor，用来区分有用预取和无用预取的不同影响。hint 更新频率不需要高，预取友好性由页上的数据结构决定，数组所在页大概率预取友好，指针式访问所在页大概率不友好，这些在页分配后很少变化，所以 profiling 按页分配释放的节奏跑就行。论文验证了 hint 跨数十亿指令的一致性，大多数页的开关决定在多个 trace 片段间高度一致。
 
-![Themis 微架构与 profiling 机制](/images/ai-os-arxiv-2026/themis-fig6.png)
+![Themis 微架构与 profiling 机制](/images/ai-os-arxiv-2026/themis-fig6.webp)
 
 *Themis 论文 Figure 6，Cache PMU 记录无用预取地址，内核模块周期采样、计算 usefulness、更新页表属性。作者 Keisuke Kamahori 等，arXiv 2608.00259*
 
@@ -103,7 +103,7 @@ usefulness 的计算有个参数，论文叫 usefulness factor，用来区分有
 
 Agora 在商品服务器上做原型验证，机制分三层。第一层收割闲置的 CPU 和 GPU 周期，把更多 agent 塞进更少的 GPU，利用同租户 agent 的局部性。第二层 GPU 内存超订，单个 GPU 上放更多 agent，预取下一个 agent 的状态来掩盖换入换出延迟。第三层角色感知的核心池化，编排、调度、执行三类角色按需分池，池内 pin 任务恢复局部性。
 
-![Agora GPU 收割机制](/images/ai-os-arxiv-2026/agora-gpu-harvest.png)
+![Agora GPU 收割机制](/images/ai-os-arxiv-2026/agora-gpu-harvest.webp)
 
 *Agora 论文 Figure 20，把 agent 合并到更少的 GPU 上，收割空闲 GPU 容量，同时保留同租户任务局部性。作者 Jirong Yang 等，arXiv 2608.04458*
 
@@ -119,7 +119,7 @@ CPU 收割的机制值得细看。收割器只在 agent 空闲窗口动手，工
 
 PFM 的解法是双视图。物理布局只优化一次，NPU 和 PIM 各看到一个按自己访问模式解释的逻辑视图。存储不做重复拷贝，运行时在内存控制器里做两层轻量扩展。Address Remapping Unit 用预计算的算子专属映射把物理地址翻译成硬件地址，Flexible Access Scheduler 对 NPU 请求按通道并发和行局部性重排，对 PIM 请求按 bank 并行广播批量处理，两类请求流仲裁，延迟敏感的先走。
 
-![PFM 内存分配与访问](/images/ai-os-arxiv-2026/pfm-pfm-malloc.png)
+![PFM 内存分配与访问](/images/ai-os-arxiv-2026/pfm-pfm-malloc.webp)
 
 *PFM 论文 Figure 8，PFMMalloc 用双视图映射优化选择联合地址映射，访问路径先做 VA 到 PA 翻译，再用 MDT 和请求来源解析硬件地址。作者 Shixin Zhao 等，arXiv 2608.06989*
 

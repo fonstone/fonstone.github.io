@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getKnowledgeCategories, slugToCategory } from "@/lib/knowledge/knowledge";
 
@@ -7,6 +8,20 @@ export const dynamicParams = false;
 export async function generateStaticParams() {
   const categories = await getKnowledgeCategories();
   return categories.map((c) => ({ category: c.slug }));
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ category: string }>;
+}): Promise<Metadata> {
+  const { category: slug } = await params;
+  const category = slugToCategory(slug);
+  return {
+    title: `${category} 文章`,
+    description: `${category} 分类下的全部技术长文与工程笔记。`,
+    alternates: { canonical: `/knowledge/${slug}` },
+  };
 }
 
 export default async function KnowledgeCategoryPage({

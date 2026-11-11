@@ -4,7 +4,7 @@ description: "为了保护我们的批处理操作系统不受到出错应用程
 date: "2026-07-12"
 order: 34
 tags: ["特权级", "U/S/M", "RISC-V", "陷入", "系统调用"]
-est_time: "35分钟"
+est_time: "35 分钟"
 ---
 ## 本节导读
 
@@ -62,7 +62,7 @@ RISC-V 特权级
 
 之前我们给出过支持应用程序运行的一套 执行环境栈 ，现在我们站在特权级架构的角度去重新看待它：
 
-![PrivilegeStack.png](/images/rust-os/rcore/chapter2/PrivilegeStack.png)
+![PrivilegeStack.png](/images/rust-os/rcore/chapter2/PrivilegeStack.webp)
 
 和之前一样，白色块表示一层执行环境，黑色块表示相邻两层执行环境之间的接口。这张图片给出了能够支持运行 Unix 这类复杂系统的软件栈。其中操作系统内核代码运行在 S 模式上；应用程序运行在 U 模式上。运行在 M 模式上的软件被称为 **监督模式执行环境** (SEE, Supervisor Execution Environment)，如在操作系统运行前负责加载操作系统的 Bootloader -- RustSBI。站在运行在 S 模式上的软件视角来看，它的下面也需要一层执行环境支撑，因此被命名为 SEE，它需要在相比 S 模式更高的特权级下运行，一般情况下 SEE 在 M 模式上运行。
 
@@ -113,7 +113,7 @@ RISC-V 异常一览表
 
 可以看到，在这样的架构之下，每层特权级的软件都只能做高特权级软件允许它做的、且不会产生什么撼动高特权级软件的事情，一旦低特权级软件的要求超出了其能力范围，就必须寻求高特权级软件的帮助，否则就是一种异常行为了。因此，在软件（应用、操作系统等）执行过程中我们经常能够看到特权级切换。如下图所示：
 
-![EnvironmentCallFlow.png](/images/rust-os/rcore/chapter2/EnvironmentCallFlow.png)
+![EnvironmentCallFlow.png](/images/rust-os/rcore/chapter2/EnvironmentCallFlow.webp)
 
 其他的异常则一般是在执行某一条指令的时候发生了某种错误（如除零、无效地址访问、无效指令等），或处理器认为处于当前特权级下执行的当前指令是高特权级指令或会访问不应该访问的高特权级的资源（可能危害系统）。碰到这些情况，就需要将控制转交给高特权级的软件（如操作系统）来处理。当错误/异常恢复后，则可重新回到低优先级软件去执行；如果不能恢复错误/异常，那高特权级软件可以杀死和清除低特权级软件，避免破坏整个执行环境。
 

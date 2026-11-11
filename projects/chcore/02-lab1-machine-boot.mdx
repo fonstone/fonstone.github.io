@@ -4,7 +4,7 @@ description: "在树莓派 3B+ 上启动 ChCore 微内核，完成 EL3→EL1 异
 date: "2026-07-05"
 order: 2
 tags: ["ARM64", "启动", "页表", "MMU", "异常级别", "汇编"]
-est_time: "10-15 小时"
+est_time: "750 分钟"
 ---
 # Lab1：机器启动 — CPU 异常级别、页表与 MMU
 
@@ -233,7 +233,7 @@ END_FUNC(_start)
 **关键点解析**：
 - `mpidr_el1`（Multiprocessor Affinity Register）的低 8 位标识 CPU 核心 ID
 
-![ARM 架构参考手册 — mpidr_el1 寄存器说明](/images/chcore/arm-manual.png)
+![ARM 架构参考手册 — mpidr_el1 寄存器说明](/images/chcore/arm-manual.webp)
 
 - `cbz`（Compare and Branch if Zero）实现条件分支
 - 从核在 `_start` 处执行两次 `wait`：先等 BSS 清零，再等 `secondary_boot_flag` 置位
@@ -572,7 +572,7 @@ TCR_EL1 决定地址翻译的配置：
     TCR_EL1_RGN1_WBWA)                             \
 ```
 
-![AArch64 4 级页表结构示意图](/images/chcore/pt.png)
+![AArch64 4 级页表结构示意图](/images/chcore/pt.webp)
 
 ### 5.2 4 级页表翻译过程
 
@@ -644,7 +644,7 @@ flowchart TB
 
 文件：`kernel/arch/aarch64/boot/raspi3/init/mmu.c`
 
-![树莓派 3B+ 物理地址空间分布图](/images/chcore/pt2.png)
+![树莓派 3B+ 物理地址空间分布图](/images/chcore/pt2.webp)
 
 树莓派 3B+ 的物理地址空间布局：
 

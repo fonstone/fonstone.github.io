@@ -1,15 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 type Props = {
   chart: string;
 };
 
+/** Mermaid 在构建期不执行，主题必须等客户端拿到 <html class="dark"> 后再决定 */
 export default function MermaidDiagram({ chart }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>("");
   const [error, setError] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    const sync = () => setIsDark(document.documentElement.classList.contains("dark"));
+    sync();
+    const onThemeChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ dark?: boolean }>).detail;
+      setIsDark(typeof detail?.dark === "boolean" ? detail.dark : document.documentElement.classList.contains("dark"));
+    };
+    window.addEventListener("stonefon-theme-change", onThemeChange);
+    return () => window.removeEventListener("stonefon-theme-change", onThemeChange);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -19,9 +31,12 @@ export default function MermaidDiagram({ chart }: Props) {
         const mermaid = (await import("mermaid")).default;
         mermaid.initialize({
           startOnLoad: false,
-          theme: "neutral",
+          theme: isDark ? "dark" : "neutral",
           themeVariables: {
             fontSize: "14px",
+            ...(isDark
+              ? { background: "#0f172a", primaryColor: "#1e3a5f", lineColor: "#7dd3fc", textColor: "#e2e8f0" }
+              : {}),
           },
           flowchart: {
             useMaxWidth: true,
@@ -47,7 +62,7 @@ export default function MermaidDiagram({ chart }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [chart]);
+  }, [chart, isDark]);
 
   if (error) {
     return (
@@ -71,7 +86,6 @@ export default function MermaidDiagram({ chart }: Props) {
   return (
     <div
       className="not-prose my-6 w-full overflow-x-auto rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 [&>svg]:max-w-full [&>svg]:h-auto"
-      ref={containerRef}
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

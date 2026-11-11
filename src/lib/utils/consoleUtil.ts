@@ -1,137 +1,54 @@
 /**
- * Console Utility
- * Displays developer credits and ASCII art in browser console
+ * 浏览器控制台的启动日志。仅在客户端挂载时执行一次，不轮询，不清理控制台。
  */
 
-// Extend Window interface for wafastarz object
 declare global {
   interface Window {
-    wafastarz?: {
+    stonefon?: {
+      boot: () => void;
       info: () => void;
-      links: () => void;
-      ascii: () => void;
-      heart: () => void;
     };
   }
 }
 
-export const consoleUtil = {
-  // ASCII Art for Wafastarz
-  asciiArt: `
-██╗    ██╗ █████╗ ███████╗ █████╗ ███████╗████████╗ █████╗ ██████╗ ███████╗
-██║    ██║██╔══██╗██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔══██╗╚══███╔╝
-██║ █╗ ██║███████║█████╗  ███████║███████╗   ██║   ███████║██████╔╝  ███╔╝ 
-██║███╗██║██╔══██║██╔══╝  ██╔══██║╚════██║   ██║   ██╔══██║██╔══██╗ ███╔╝  
-╚███╔███╔╝██║  ██║██║     ██║  ██║███████║   ██║   ██║  ██║██║  ██║███████╗
- ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝
-`,
+const BOOT_LINES = [
+  "[    0.000000] stonefon boot: from silicon to system",
+  "[    0.000412] cpu: ARM64 / RISC-V awareness ........ ok",
+  "[    0.001237] bsp: device tree parsed, 0 warnings",
+  "[    0.004981] mm: page tables and memory barriers .. ok",
+  "[    0.009314] sched: deterministic path enabled",
+  "[    0.014002] virt: qemu device model .............. ok",
+  "[    0.021770] edge-ai: npu runtime registered",
+  "[    0.033115] mount: knowledge space ready",
+];
 
-  // Developer information
-  developerInfo: {
-    name: "Wafastarz (Muhammad Khoirul Wafa)",
-    github: "https://github.com/mkhoirulwafa18",
-    website: "https://wafastarz.site",
-    email: "wafastarzteam@gmail.com",
-    message: "Thanks for checking out the code! 🚀"
-  },
+const LINE_STYLE =
+  "color: #7dd3fc; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.6;";
+const TITLE_STYLE = "color: #5eead4; font-size: 14px; font-weight: 500;";
 
-  // Console styles
-  styles: {
-    title: "color: #ff6b6b; font-size: 16px; font-weight: bold;",
-    ascii: "color: #4ecdc4; font-family: monospace; font-size: 10px; line-height: 1;",
-    info: "color: #45b7d1; font-size: 14px;",
-    link: "color: #96ceb4; font-size: 12px; text-decoration: underline;",
-    message: "color: #feca57; font-size: 12px; font-style: italic;",
-    heart: "color: #ff6b6b; font-size: 14px;"
-  },
-
-  // Display the easter egg
-  display() {
-    // Clear console first (optional)
-    console.clear();
-
-    // Display ASCII art
-    console.log(`%c${this.asciiArt}`, this.styles.ascii);
-    
-    // Display title
-    console.log(`%c🎨 Made with ❤️ by ${this.developerInfo.name}`, this.styles.title);
-    // taking a peek huh?
-    console.log(`%c👀👀 Taking a peek huh? 👀👀 checkout links below!`, this.styles.title);
-    // Display links
-    console.log(`%c🔗 GitHub: ${this.developerInfo.github}`, this.styles.link);
-    console.log(`%c🌐 Website: ${this.developerInfo.website}`, this.styles.link);
-    console.log(`%c📧 Email: ${this.developerInfo.email}`, this.styles.link);
-    
-    // Display message
-    console.log(`%c💬 ${this.developerInfo.message}`, this.styles.message);
-    
-    // Add interactive commands
-    console.log(`%c\n🎮 Try these commands:`, this.styles.info);
-    console.log(`%c• wafastarz.info() - Show developer info`, this.styles.info);
-    console.log(`%c• wafastarz.links() - Show all links`, this.styles.info);
-    console.log(`%c• wafastarz.ascii() - Show ASCII art again`, this.styles.info);
-  },
-
-  // Interactive commands
-  setupCommands() {
-    // Create global wafastarz object
-    window.wafastarz = {
-      info: () => {
-        console.log(`%c👨‍💻 Developer Information`, this.styles.title);
-        console.log(`%cName: ${this.developerInfo.name}`, this.styles.info);
-        console.log(`%cGitHub: ${this.developerInfo.github}`, this.styles.link);
-        console.log(`%cWebsite: ${this.developerInfo.website}`, this.styles.link);
-        console.log(`%cEmail: ${this.developerInfo.email}`, this.styles.link);
-      },
-      
-      links: () => {
-        console.log(`%c🔗 All Links`, this.styles.title);
-        Object.entries(this.developerInfo)
-          .filter(([key]) => ['github', 'website', 'email'].includes(key))
-          .forEach(([key, value]) => {
-            console.log(`%c${key.charAt(0).toUpperCase() + key.slice(1)}: ${value}`, this.styles.link);
-          });
-      },
-      
-      ascii: () => {
-        console.log(`%c${this.asciiArt}`, this.styles.ascii);
-      },
-      
-      heart: () => {
-        console.log(`%c❤️ Made with love and lots of coffee! ☕`, this.styles.heart);
-      }
-    };
-  },
-
-  // Initialize the easter egg
-  init() {
-    // Display immediately
-    this.display();
-    
-    // Setup interactive commands
-    this.setupCommands();
-    
-    // Add detection for dev tools opening (optional)
-    this.detectDevTools();
-  },
-
-  // Detect when dev tools are opened
-  detectDevTools() {
-    const devtools = { open: false };
-    
-    setInterval(() => {
-      if (window.outerHeight - window.innerHeight > 200 || 
-          window.outerWidth - window.innerWidth > 200) {
-        if (!devtools.open) {
-          devtools.open = true;
-          console.log(`%c🔍 Welcome to the developer console!`, this.styles.title);
-          console.log(`%c💡 Tip: Try typing 'wafastarz.info()' for more info!`, this.styles.message);
-        }
-      } else {
-        devtools.open = false;
-      }
-    }, 500);
+function printBoot() {
+  console.log("%cStoneFon / 从内核到智能系统", TITLE_STYLE);
+  for (const line of BOOT_LINES) {
+    console.log(`%c${line}`, LINE_STYLE);
   }
-};
+  console.log("%chttps://fonstone.github.io", LINE_STYLE);
+}
 
-// Auto-initialization removed - use Console.tsx component instead
+export const consoleUtil = {
+  init() {
+    if (typeof window === "undefined") return;
+    try {
+      printBoot();
+      window.stonefon = {
+        boot: printBoot,
+        info: () => {
+          console.log("%cStoneFon / 知识空间", TITLE_STYLE);
+          console.log("%c/knowledge 技术长文 · /projects 课程与实验", LINE_STYLE);
+          console.log("%chttps://github.com/fonstone", LINE_STYLE);
+        },
+      };
+    } catch {
+      // 控制台不可用时静默跳过
+    }
+  },
+};

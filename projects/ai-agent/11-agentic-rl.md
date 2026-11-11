@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Agentic-RL"
 description: "从 SFT 到 GRPO 的 LLM 训练演进，强化学习在智能体中的应用。"
 date: "2026-07-12"
@@ -45,7 +45,7 @@ duck egg. How much in dollars does she make every day at the farmers' market?
 
 
 
-![](/images/courses/11-figures/11-1.png)
+![](/images/courses/11-figures/11-1.webp)
 
 *图 11.1 LLM 训练全景图*
 
@@ -104,7 +104,7 @@ $$
 强化学习常用马尔可夫决策过程(Markov Decision Process，MDP)框架进行形式化。MDP 由五元组 $(S, A, P, R, \gamma)$ 定义：状态空间 $S$、行动空间 $A$、状态转移函数 $P(s'|s,a)$、奖励函数 $R(s,a)$ 和折扣因子 $\gamma$。下表从 MDP 角度对比 PBRFT 和 Agentic RL。
 
 <p>表 11.1 PBRFT 与 Agentic RL 对比</p>
-  ![](/images/courses/11-figures/11-table-1.png)
+  ![](/images/courses/11-figures/11-table-1.webp)
 
 在状态方面，PBRFT 的状态 $s_0$ 仅由用户提示构成，时间跨度 $T=1$(单步)，状态不变化，可以表示为 $s_0 = \text{prompt}$。而 Agentic RL 的状态 $s_t$ 包含历史观察和上下文，时间跨度 $T \gg 1$(多步)，状态随行动演化，可以表示为 $s_t = (\text{prompt}, o_1, o_2, ..., o_t)$，其中 $o_t$ 是第 $t$ 步的观察(如工具返回结果、环境反馈等)。
 
@@ -140,7 +140,7 @@ Agentic RL 的目标是赋予 LLM 智能体六大核心能力，如图 11.2 所�
 
 
 
-![](/images/courses/11-figures/11-2.png)
+![](/images/courses/11-figures/11-2.webp)
 
 *图 11.2 Agentic RL 的六大核心能力*
 
@@ -168,7 +168,7 @@ HelloAgents 的 Agentic RL 模块采用四层架构设计，如图 11.3 所示�
 
 
 
-![](/images/courses/11-figures/11-3.png)
+![](/images/courses/11-figures/11-3.webp)
 
 *图 11.3 HelloAgents Agentic RL 架构*
 
@@ -265,7 +265,7 @@ print(f"  GRPO模型: {grpo_result['output_dir']}")
 GSM8K(Grade School Math 8K)<sup>[4]</sup>是一个高质量的小学数学应用题数据集。如表 11.2 所示，数据集包含 7，473 个训练样本和 1，319 个测试样本，难度为小学数学水平(2-8 年级)，题型为应用题，需要 2-8 步推理才能得出答案。
 
 <p>表 11.2 GSM8K 数据集统计</p>
-  ![](/images/courses/11-figures/11-table-2.png)
+  ![](/images/courses/11-figures/11-table-2.webp)
 让我们看一个典型的 GSM8K 问题:
 
 ```
@@ -286,7 +286,7 @@ GSM8K 数据集需要转换为不同的格式，以适应不同的训练方法�
 
 
 
-![](/images/courses/11-figures/11-4.png)
+![](/images/courses/11-figures/11-4.webp)
 
 *图 11.4 GSM8K 数据格式转换*
 
@@ -318,7 +318,7 @@ RL 格式用于强化学习，只提供问题和正确答案，不提供解题�
 如表 11.3 所示，三种格式各有用途。
 
 <p>表 11.3 数据格式对比</p>
-  ![](/images/courses/11-figures/11-table-3.png)
+  ![](/images/courses/11-figures/11-table-3.webp)
 HelloAgents 提供了便捷的数据集加载函数。让我们通过代码来加载和查看数据集:
 
 ```python
@@ -379,7 +379,7 @@ HelloAgents 提供了三种内置奖励函数，可以单独使用或组合使�
 
 
 
-![](/images/courses/11-figures/11-5.png)
+![](/images/courses/11-figures/11-5.webp)
 
 *图 11.5 奖励函数设计*
 
@@ -576,7 +576,7 @@ print("步骤奖励:", json.loads(step_result)['description'])
 如表 11.4 所示，不同奖励函数适合不同的应用场景。
 
 <p>表 11.4 奖励函数对比</p>
-  ![](/images/courses/11-figures/11-table-4.png)
+  ![](/images/courses/11-figures/11-table-4.webp)
 
 ### 11.2.3 自定义数据集和奖励函数
 
@@ -933,7 +933,7 @@ Final Answer: 72<|im_end|>
 
 
 
-![](/images/courses/11-figures/11-6.png)
+![](/images/courses/11-figures/11-6.webp)
 
 *图 11.6 SFT 在训练流程中的作用*
 
@@ -968,7 +968,7 @@ $$
 如表 11.5 所示，LoRA 在不同模型规模下的效果对比。
 
 <p>表 11.5 LoRA vs 全量微调对比</p>
-  ![](/images/courses/11-figures/11-table-5.png)
+  ![](/images/courses/11-figures/11-table-5.webp)
 
 LoRA 的关键超参数包括:秩(rank，r)，控制 LoRA 矩阵的秩，越大表达能力越强，但参数量也越多，典型值为 4-64，默认 8;Alpha($\alpha$)，LoRA 的缩放因子，实际更新为 $\Delta W = \frac{\alpha}{r} BA$，控制 LoRA 的影响强度，典型值等于 rank;目标模块(target_modules)，指定哪些层应用 LoRA，通常选择注意力层(q_proj， k_proj， v_proj， o_proj)，也可以包括 MLP 层(gate_proj， up_proj， down_proj)。
 
@@ -1192,7 +1192,7 @@ $$
 
 
 
-![](/images/courses/11-figures/11-7.png)
+![](/images/courses/11-figures/11-7.webp)
 
 *图 11.7 PPO vs GRPO 训练流程*
 
@@ -1203,7 +1203,7 @@ $$
 如表 11.6 所示，PPO 和 GRPO 的详细对比。
 
 <p>表 11.6 PPO vs GRPO 对比</p>
-  ![](/images/courses/11-figures/11-table-6.png)
+  ![](/images/courses/11-figures/11-table-6.webp)
 
 
 
@@ -1581,7 +1581,7 @@ $$
 如表 11.7 所示，不同指标的对比。
 
 <p>表 11.7 评估指标对比</p>
-  ![](/images/courses/11-figures/11-table-7.png)
+  ![](/images/courses/11-figures/11-table-7.webp)
 
 
 ### 11.5.2 评估实战
@@ -1768,7 +1768,7 @@ for group_name, results in step_groups.items():
 
 
 
-![](/images/courses/11-figures/11-8.png)
+![](/images/courses/11-figures/11-8.webp)
 
 *图 11.8 模型改进迭代流程*
 
@@ -1786,7 +1786,7 @@ for group_name, results in step_groups.items():
 
 
 
-![](/images/courses/11-figures/11-9.png)
+![](/images/courses/11-figures/11-9.webp)
 
 *图 11.9 端到端训练流程*
 
@@ -2225,7 +2225,7 @@ print(f"最佳准确率: {study.best_value:.2%}")
 如表 11.8 所示，不同调优方法的对比。
 
 <p>表 11.8 超参数调优方法对比</p>
-  ![](/images/courses/11-figures/11-table-8.png)
+  ![](/images/courses/11-figures/11-table-8.webp)
 
 ### 11.6.3 分布式训练
 
@@ -2372,7 +2372,7 @@ accelerate launch --config_file deepspeed_zero3.yaml train_script.py
 如表 11.9 所示，这是 Qwen3-0.6B 模型用不同方式训练的显存对比:
 
 <p>表 11.9 显存对比 (Qwen3-0.6B 模型)</p>
-  ![](/images/courses/11-figures/11-table-9.png)
+  ![](/images/courses/11-figures/11-table-9.webp)
 
 <strong>（4）多节点训练</strong>
 

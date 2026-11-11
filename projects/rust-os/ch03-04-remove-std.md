@@ -4,7 +4,7 @@ description: "本章的目标是构建一个内核最小执行环境使得它能
 date: "2026-07-12"
 order: 17
 tags: ["no_std", "标准库", "裸机", "Rust", "链接"]
-est_time: "25分钟"
+est_time: "25 分钟"
 ---
 ## 本节导读
 

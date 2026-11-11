@@ -1,4 +1,4 @@
-﻿---
+---
 title: "自动化深度研究智能体"
 description: "DeepResearch Agent 复现与深度解析。"
 date: "2026-07-12"
@@ -39,7 +39,7 @@ est_time: "60 分钟"
 
 
 
-![](/images/courses/14-figures/14-1.png)
+![](/images/courses/14-figures/14-1.webp)
 
 *图 14.1 深度研究助手技术架构*
 
@@ -59,7 +59,7 @@ est_time: "60 分钟"
 
 
 
-![](/images/courses/14-figures/14-2.png)
+![](/images/courses/14-figures/14-2.webp)
 
 *图 14.2 深度研究助手数据流转过程*
 
@@ -187,7 +187,7 @@ npm run dev
 
 
 
-![](/images/courses/14-figures/14-3.png)
+![](/images/courses/14-figures/14-3.webp)
 
 *图 14.3 深度研究助手搜索页面*
 
@@ -197,7 +197,7 @@ npm run dev
 
 
 
-![](/images/courses/14-figures/14-4.png)
+![](/images/courses/14-figures/14-4.webp)
 
 *图 14.4 深度研究助手展开研究*
 
@@ -270,7 +270,7 @@ npm run dev
 
 
 
-![](/images/courses/14-figures/14-5.png)
+![](/images/courses/14-figures/14-5.webp)
 
 *图 14.5 TODO 驱动的研究流程*
 
@@ -460,7 +460,7 @@ Datawhale发布了多个高质量的开源教程，包括Hello-Agents、Joyful-P
 如表 14.1 所示，三个 Agent 分别负责规划、总结和报告生成。
 
 <p>表 14.1 三个 Agent 的职责划分</p>
-  ![](/images/courses/14-figures/14-table-1.png)
+  ![](/images/courses/14-figures/14-table-1.webp)
 
 让我们详细介绍每个 Agent 的设计。
 
@@ -861,7 +861,7 @@ class DeepResearchAgent:
 
 
 
-![](/images/courses/14-figures/14-6.png)
+![](/images/courses/14-figures/14-6.webp)
 
 *图 14.6 Agent 协作流程*
 
@@ -922,7 +922,7 @@ class DeepResearchAgent:
 如表 14.2 所示，这次增加的搜索引擎有不同的特点和适用场景。
 
 <p>表 14.2 多搜索引擎对比</p>
-  ![](/images/courses/14-figures/14-table-2.png)
+  ![](/images/courses/14-figures/14-table-2.webp)
 
 我们不再单独讨论如何扩展，可以参考源码以及第七章的拓展案例实现。`SearchTool`提供了统一的搜索接口，无论使用哪个搜索引擎，调用方式都是一样的。
 
@@ -1102,7 +1102,7 @@ agent = ToolAwareSimpleAgent(
 
 
 
-![](/images/courses/14-figures/14-7.png)
+![](/images/courses/14-figures/14-7.webp)
 
 *图 14.7 工具调用流程*
 
@@ -1633,7 +1633,7 @@ class SearchService:
 
 
 
-![](/images/courses/14-figures/14-8.png)
+![](/images/courses/14-figures/14-8.webp)
 
 *图 14.8 搜索引擎调度流程*
 
@@ -1716,7 +1716,7 @@ class SearchService:
 
 
 
-![](/images/courses/14-figures/14-9.png)
+![](/images/courses/14-figures/14-9.webp)
 
 *图 14.9 全屏模态对话框 UI*
 
@@ -1869,7 +1869,7 @@ watch(() => props.isOpen, (isOpen) => {
 
 
 
-![](/images/courses/14-figures/14-10.png)
+![](/images/courses/14-figures/14-10.webp)
 
 *图 14.10 SSE 流程*
 

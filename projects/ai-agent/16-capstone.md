@@ -1,4 +1,4 @@
-﻿---
+---
 title: "毕业设计"
 description: "综合运用全书知识，构建属于你的完整多智能体应用。"
 date: "2026-07-12"
@@ -153,7 +153,7 @@ jupyter lab
 
 
 
-![](/images/courses/16-figures/16-1.png)
+![](/images/courses/16-figures/16-1.webp)
 
 *图 16.1 Fork 仓库步骤*
 
@@ -177,7 +177,7 @@ git remote -v
 
 
 
-![](/images/courses/16-figures/16-2.png)
+![](/images/courses/16-figures/16-2.webp)
 
 *图 16.2 克隆仓库到本地*
 
@@ -640,7 +640,7 @@ git push origin feature/你的项目名称
 
 
 
-![](/images/courses/16-figures/16-3.png)
+![](/images/courses/16-figures/16-3.webp)
 
 *图 16.3 创建 Pull Request*
 
@@ -717,7 +717,7 @@ git push origin feature/你的项目名称
 
 
 
-![](/images/courses/16-figures/16-4.png)
+![](/images/courses/16-figures/16-4.webp)
 
 *图 16.4 提交 Pull Request*
 

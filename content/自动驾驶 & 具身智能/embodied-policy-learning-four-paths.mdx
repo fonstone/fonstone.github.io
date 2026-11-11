@@ -109,7 +109,7 @@ Ctrl-World（ICLR 2026）是把预训练视频扩散模型改造成可控世界�
 
 SFT 就是 BC 的文本版本，不展开。RLHF（Ouyang 2022）让人类对两个回答排序，用偏好训奖励模型再跑 PPO。RLAIF（Bai 2022）把打分的人换成 AI，省人力但反馈质量依赖模型。RLVR（Lambert 2024）是可验证奖励，数学题答案匹配、代码过不过单测，都能给出 0 或 1，比学习出来的奖励模型抗 reward hacking，因为验证器不能靠糊弄过关。
 
-![InstructGPT 三段式 RLHF 流程](/images/ai-algorithm-technology-sandbox/rlhf-fig2.jpg)
+![InstructGPT 三段式 RLHF 流程](/images/ai-algorithm-technology-sandbox/rlhf-fig2.webp)
 *InstructGPT 论文 Figure 2，SFT 打底，人类偏好训奖励模型，PPO 用奖励模型做反馈。*
 
 GRPO（Shao 2024）在这套上取消了 critic。对同一个问题采样一组回答，把每条回答的奖励在组内做归一化当成 advantage，不训练价值网络，省内存也简单，DeepSeek-R1 用的就是它。advantage 在组内算，这条回答的奖励减去组内均值再除以组内标准差，谁比同组平均好就推谁，代价是同组样本要够多样，全对或全错的组标准差为零，advantage 全部归零。DAPO（Yu 2025）补 GRPO 的两个毛病，一个是熵坍缩，训练中策略很快变确定，同组样本趋于雷同，探索消失，DAPO 用 Clip-Higher 放开裁剪上界；另一个是全对组里 advantage 全是零，梯度消失，它用动态采样把这类组丢掉。RFT（Yuan 2023）是更朴素的路线，采样多条回答只留正确的做 SFT，正确轨迹越多样效果越好，GSM8K 上 LLaMA-7B 到 49.3%，同期 SFT 基线 35.9%。DPO（Rafailov 2023）再省一步，直接用偏好对构造训练目标，隐式地学一个奖励函数，不用显式训练奖励模型也不跑 PPO。RLINF（Tang 2025）把训练目标换成了推理期目标，pass@k 和多数投票直接进训练目标。
@@ -145,7 +145,7 @@ GRPO（Shao 2024）在这套上取消了 critic。对同一个问题采样一组
 
 几个方向值得继续盯。Cosmos 3 把世界模型直接当动作生成器，Edge 版策略模型面向实时推理，这会让世界模型从训练工具变成执行本体。这类世界动作模型自己也有缺口，HarnessWAM 论文把问题画成 prediction-deliberation gap，WAM 只管短期的预测和动作生成，复杂任务的全局规划和失败恢复都不在它职责内。
 
-![WAM 的 prediction-deliberation gap](/images/wam-survey/harnesswam-fig1.png)
+![WAM 的 prediction-deliberation gap](/images/wam-survey/harnesswam-fig1.webp)
 *HarnessWAM 论文 Figure 1，普通 WAM 在记忆依赖任务里目标悬而未决，需要外部执行层来累积证据。*
 
 JEPA 的价值引导规划在做一件事，用 IQL 式的损失塑形表示空间，让表示之间的距离近似价值，规划就不容易陷进局部最优，Destrade 2026 年那篇工作沿着这个思路。HIL-SERL 的部署脆弱性暴露了真机 RL 的日常问题，RoHIL 用纯离线微调把跨工作台的光照迁移补齐，不增加真机交互。SiLRI 则证明次优的介入数据也能被利用，90% 成功率比 HIL-SERL 快至少一半，长时序任务上其他方法做不到的它能到 100%。

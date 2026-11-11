@@ -55,7 +55,7 @@ export default function WeChatCard() {
           >
             <div className="relative rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(59,130,246,0.3)] animate-[breathe_4s_ease-in-out_infinite] bg-white p-4 dark:bg-slate-900">
               <Image
-                src="/wehcart.jpg"
+                src="/wehcart.webp"
                 alt="WeChat QR Code"
                 width={400}
                 height={400}

@@ -4,7 +4,7 @@ description: "在上一小节中我们已经简单介绍了分页的内存管理
 date: "2026-07-12"
 order: 74
 tags: ["SV39", "页表", "多级", "TLB", "硬件机制"]
-est_time: "45分钟"
+est_time: "45 分钟"
 ---
 ## 本节导读
 
@@ -20,7 +20,7 @@ est_time: "45分钟"
 >
 > M 特权级的访存地址被视为一个物理地址还是一个需要经历和 S/U 特权级相同的地址转换的虚拟地址取决于硬件配置，在这里我们不会进一步探讨。
 
-![satp.png](/images/rust-os/rcore/chapter4/satp.png)
+![satp.png](/images/rust-os/rcore/chapter4/satp.webp)
 
 上图是 RISC-V 64 架构下 satp 的字段分布，含义如下：
 
@@ -34,7 +34,7 @@ est_time: "45分钟"
 
 ### 地址格式与组成
 
-![sv39-va-pa.png](/images/rust-os/rcore/chapter4/sv39-va-pa.png)
+![sv39-va-pa.png](/images/rust-os/rcore/chapter4/sv39-va-pa.webp)
 
 我们采用分页管理，单个页面的大小设置为 $4text{KiB}$ ，每个虚拟页面和物理页帧都对齐到这个页面大小，也就是说虚拟/物理地址区间 $[0,4text{KiB})$ 为第 $0$ 个虚拟页面/物理页帧，而 $[4text{KiB},8text{KiB})$ 为第 $1$ 个，以此类推。 $4text{KiB}$ 需要用 12 位字节地址来表示，因此虚拟地址和物理地址都被分成两部分：它们的低 12 位，即 $[11:0]$ 被称为 **页内偏移** (Page Offset) ，它描述一个地址指向的字节在它所在页面中的相对位置。而虚拟地址的高 27 位，即 $[38:12]$ 为它的虚拟页号 VPN，同理物理地址的高 44 位，即 $[55:12]$ 为它的物理页号 PPN，页号可以用来定位一个虚拟/物理地址属于哪一个虚拟页面/物理页帧。
 
@@ -149,7 +149,7 @@ impl PhysAddr {
 
 第一小节中我们提到，在页表中以虚拟页号作为索引不仅能够查到物理页号，还能查到一组保护位，它控制了应用对地址空间每个虚拟页面的访问权限。但实际上还有更多的标志位，物理页号和全部的标志位以某种固定的格式保存在一个结构体中，它被称为 **页表项** (PTE, Page Table Entry) ，是利用虚拟页号在页表中查到的结果。
 
-![sv39-pte.png](/images/rust-os/rcore/chapter4/sv39-pte.png)
+![sv39-pte.png](/images/rust-os/rcore/chapter4/sv39-pte.webp)
 
 上图为 SV39 分页模式下的页表项，其中 $[53:10]$ 这 $44$ 位是物理页号，最低的 $8$ 位 $[7:0]$ 则是标志位，它们的含义如下（请注意，为方便说明，下文我们用 *页表项的对应虚拟页面* 来表示索引到一个页表项的虚拟页号对应的虚拟页面）：
 
@@ -248,7 +248,7 @@ impl PageTableEntry {
 
 页表的一种最简单的实现是线性表，也就是按照地址从低到高、输入的虚拟页号从 $0$ 开始递增的顺序依次在内存中（我们之前提到过页表的容量过大无法保存在 CPU 中）放置每个虚拟页号对应的页表项。由于每个页表项的大小是 $8$ 字节，我们只要知道第一个页表项（对应虚拟页号 $0$ ）被放在的物理地址 $text{base\_addr}$ ，就能直接计算出每个输入的虚拟页号对应的页表项所在的位置。如下图所示：
 
-![linear-table.png](/images/rust-os/rcore/chapter4/linear-table.png)
+![linear-table.png](/images/rust-os/rcore/chapter4/linear-table.webp)
 
 事实上，对于虚拟页号 $i$ ，如果页表（每个应用都有一个页表，这里指其中某一个）的起始地址为 $text{base\_addr}$ ，则这个虚拟页号对应的页表项可以在物理地址 $text{base\_addr}+8i$ 处找到。这使得 MMU 的实现和内核的软件控制都变得非常简单。然而遗憾的是，这远远超出了我们的物理内存限制。由于虚拟页号有 $2^{27}$ 种，每个虚拟页号对应一个 $8$ 字节的页表项，则每个页表都需要消耗掉 $1text{GiB}$ 内存！应用的数据还需要保存在内存的其他位置，这就使得每个应用要吃掉 $1text{GiB}$ 以上的内存。作为对比，我们的 K210 开发板目前只有 $8text{MiB}$ 的内存，因此从空间占用角度来说，这种线性表实现是完全不可行的。
 
@@ -260,13 +260,13 @@ impl PageTableEntry {
 
 简单起见，假设 $n=3$ 。那么我们可能会建立这样一颗 **字典树** (Trie) ：
 
-![trie.png](/images/rust-os/rcore/chapter4/trie.png)
+![trie.png](/images/rust-os/rcore/chapter4/trie.webp)
 
 字典树由若干个节点（图中用椭圆形来表示）组成，从逻辑上而言每个节点代表一个可能的字符串前缀。每个节点的存储内容都只有三个指针，对于蓝色的非叶节点来说，它的三个指针各自指向一个子节点；而对于绿色的叶子节点来说，它的三个指针不再指向任何节点，而是具体保存一种可能的长度为 $n$ 的字符串的计数。这样，对于题目要求的两种操作，我们只需根据输入的字符串中的每个字符在字典树上自上而下对应走出一步，最终就能够找到字典树中维护的它的计数。之后我们可以将其直接返回或者加一。
 
 注意到如果某些字符串自始至终没有被插入，那么一些节点没有存在的必要。反过来说一些节点是由于我们插入了一个以它对应的字符串为前缀的字符串才被分配出来的。如下图所示：
 
-![trie-1.png](/images/rust-os/rcore/chapter4/trie-1.png)
+![trie-1.png](/images/rust-os/rcore/chapter4/trie-1.webp)
 
 一开始仅存在一个根节点。在我们插入字符串 acb 的过程中，我们只需要分配 a 和 ac 两个节点。注意 ac 是一个叶节点，它的 b 指针不再指向另外一个节点而是保存字符串 acb 的计数。此时我们无法访问到其他未分配的节点，如根节点的 b/c 或是 a 节点的 a/b 均为空指针。如果后续再插入一个字符串，那么 **至多分配两个新节点** ，因为如果走的路径上有节点已经存在，就无需重复分配了。这可以说明，字典树中节点的数目（或者说字典树消耗的内存）是随着插入字符串的数目逐渐线性增加的。
 
@@ -286,7 +286,7 @@ impl PageTableEntry {
 
 在这里我们给出 SV39 中的 R/W/X 组合的含义：
 
-> ![pte-rwx.png](/images/rust-os/rcore/chapter4/pte-rwx.png)
+> ![pte-rwx.png](/images/rust-os/rcore/chapter4/pte-rwx.webp)
 
 > **Note**
 >
@@ -321,7 +321,7 @@ impl PageTableEntry {
 
 接下来，我们给出 SV39 地址转换的全过程图示（来源于 MIT 6.828 课程）来结束多级页表原理的介绍：
 
-![sv39-full.png](/images/rust-os/rcore/chapter4/sv39-full.png)
+![sv39-full.png](/images/rust-os/rcore/chapter4/sv39-full.webp)
 
 在 SV39 模式中我们采用三级页表，即将 27 位的虚拟页号分为三个等长的部分，第 26-18 位为一级页索引 $text{VPN}\_0$ ，第 17-9 位为二级页索引 $text{VPN}\_1$ ，第 8-0 位为三级页索引 $text{VPN}\_2$ 。
 

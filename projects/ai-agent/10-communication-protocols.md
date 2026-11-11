@@ -1,4 +1,4 @@
-﻿---
+---
 title: "智能体通信协议"
 description: "MCP、A2A、ANP 三种智能体通信协议深度解析。"
 date: "2026-07-12"
@@ -99,7 +99,7 @@ MCP 的设计哲学是"上下文共享"。它不仅仅是一个 RPC（远程过�
 
 
 
-![](/images/courses/10-figures/10-1.png)
+![](/images/courses/10-figures/10-1.webp)
 
 *图 10.1 MCP 设计思想*
 
@@ -113,7 +113,7 @@ A2A 的设计哲学是"对等通信"。如图 10.2 所示，在 A2A 网络中，
 
 
 
-![](/images/courses/10-figures/10-2.png)
+![](/images/courses/10-figures/10-2.webp)
 
 *图 10.2 A2A 设计思想*
 
@@ -127,7 +127,7 @@ ANP 的设计哲学是"去中心化服务发现"。在一个包含成百上千�
 
 
 
-![](/images/courses/10-figures/10-3.png)
+![](/images/courses/10-figures/10-3.webp)
 
 *图 10.3 ANP 设计思想*
 
@@ -136,7 +136,7 @@ ANP 的设计哲学是"去中心化服务发现"。在一个包含成百上千�
 最后在表 10.1 中，让我们通过一个对比表格来更清晰地理解这三种协议的差异：
 
 <p>表 10.1 三种协议对比</p>
-  ![](/images/courses/10-figures/10-table-1.png)
+  ![](/images/courses/10-figures/10-table-1.webp)
 
 <strong>（4）如何选择合适的协议？</strong>
 
@@ -156,7 +156,7 @@ ANP 的设计哲学是"去中心化服务发现"。在一个包含成百上千�
 
 
 
-![](/images/courses/10-figures/10-4.png)
+![](/images/courses/10-figures/10-4.webp)
 
 *图 10.4 HelloAgents 通信协议设计*
 
@@ -256,7 +256,7 @@ MCP 协议采用 Host、Client、Servers 三层架构设计，让我们通过图
 
 
 
-![](/images/courses/10-figures/10-5.png)
+![](/images/courses/10-figures/10-5.webp)
 
 *图 10.5 MCP 案例演示*
 
@@ -279,7 +279,7 @@ MCP 协议采用 Host、Client、Servers 三层架构设计，让我们通过图
 如表 10.2 所示，MCP 协议提供了三大核心能力，构成完整的工具访问框架：
 
 <p>表 10.2 MCP 核心能力</p>
-  ![](/images/courses/10-figures/10-table-2.png)
+  ![](/images/courses/10-figures/10-table-2.webp)
 
 这三种能力的区别在于：<strong>Tools 是主动的</strong>（执行操作），<strong>Resources 是被动的</strong>（提供数据），<strong>Prompts 是指导性的</strong>（提供模板）。
 
@@ -289,7 +289,7 @@ MCP 协议采用 Host、Client、Servers 三层架构设计，让我们通过图
 
 
 
-![](/images/courses/10-figures/10-6.png)
+![](/images/courses/10-figures/10-6.webp)
 
 *图 10.6 MCP 案例演示*
 
@@ -321,7 +321,7 @@ MCP 协议采用 Host、Client、Servers 三层架构设计，让我们通过图
 很多开发者会问：<strong>我已经在用 Function Calling 了，为什么还需要 MCP？</strong> 让我们通过表 10.3 来理解它们的区别。
 
 <p>表 10.3 Function Calling 与 MCP 对比</p>
-  ![](/images/courses/10-figures/10-table-3.png)
+  ![](/images/courses/10-figures/10-table-3.webp)
 
 这里我们以智能体需要访问 GitHub 仓库和本地文件系统为例子来详细对比同一个任务的两种实现
 
@@ -621,7 +621,7 @@ MCP 协议的一个重要特性是<strong>传输层无关性</strong>（Transpor
 HelloAgents 的`MCPClient`支持五种传输方式，每种都有不同的使用场景，如表 10.4 所示：
 
 <p>表 10.4 MCP 传输方式对比</p>
-  ![](/images/courses/10-figures/10-table-4.png)
+  ![](/images/courses/10-figures/10-table-4.webp)
 
 <strong>（2）传输方式使用示例</strong>
 
@@ -1068,10 +1068,10 @@ MCP 协议的一个巨大优势是<strong>丰富的社区生态</strong>。Anthr
 表 10.5 和 10.6 给出常用的官方 MCP 服务器和社区热门 MCP 服务器：
 
 <p>表 10.5 常用官方 MCP 服务器</p>
-  ![](/images/courses/10-figures/10-table-5.png)
+  ![](/images/courses/10-figures/10-table-5.webp)
 
 <p>表 10.6 社区热门 MCP 服务器</p>
-  ![](/images/courses/10-figures/10-table-6.png)
+  ![](/images/courses/10-figures/10-table-6.webp)
 
 以下是一些特别有趣的案例 TODO 可供参考：
 
@@ -1136,13 +1136,13 @@ MCP 协议解决了智能体与工具的交互，而 A2A 协议则解决智能�
 A2A 协议采用点对点（P2P）架构（网状拓扑），允许智能体直接通信，从根本上解决了上述问题。它的核心是<strong>任务（Task）</strong>和<strong>工件（Artifact）</strong>这两个抽象概念，这是它与 MCP 最大的区别，如表 10.7 所示。
 
 <p>表 10.7 A2A 核心概念</p>
-  ![](/images/courses/10-figures/10-table-7.png)
+  ![](/images/courses/10-figures/10-table-7.webp)
 
 为实现对协作过程的管理，A2A 为任务定义了标准化的生命周期，包括创建、协商、代理、执行中、完成、失败等状态，可见图 10.7。
 
 
 
-![](/images/courses/10-figures/10-7.png)
+![](/images/courses/10-figures/10-7.webp)
 
 *图 10.7 A2A 任务周期*
 
@@ -1155,7 +1155,7 @@ A2A 请求生命周期是一个序列，详细说明了请求遵循的四个主�
 
 
 
-![](/images/courses/10-figures/10-8.png)
+![](/images/courses/10-figures/10-8.webp)
 
 *图 10.8 A2A 请求生命周期*
 
@@ -1689,13 +1689,13 @@ ANP 的设计目标就是提供一套标准化的机制，来解决上述的服�
 为实现其设计目标，ANP 定义了以下几个核心概念，如表 10.8 所示：
 
 <p>表 10.8 ANP 核心概念</p>
-  ![](/images/courses/10-figures/10-table-8.png)
+  ![](/images/courses/10-figures/10-table-8.webp)
 
 我们同样借用官方的[入门指南](https://github.com/agent-network-protocol/AgentNetworkProtocol/blob/main/docs/chinese/ANP入门指南.md)来介绍 ANP 的架构设计，如图 10.9 所示
 
 
 
-![](/images/courses/10-figures/10-9.png)
+![](/images/courses/10-figures/10-9.webp)
 
 *图 10.9 ANP 整体流程*
 
@@ -2306,7 +2306,7 @@ Dockerfile 配置说明：
 
 
 
-![](/images/courses/10-figures/10-10.png)
+![](/images/courses/10-figures/10-10.webp)
 
 *图 10.10 Smithery 发布成功页面 *
 
@@ -2360,7 +2360,7 @@ response = agent.run("北京今天天气怎么样？")
 
 
 
-![](/images/courses/10-figures/10-11.png)
+![](/images/courses/10-figures/10-11.webp)
 
 *图 10.11 Smithery 发布成功的 MCP 工具 *
 

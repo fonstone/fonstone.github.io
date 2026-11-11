@@ -17,19 +17,19 @@ tags: ["OS", "实时系统", "多核", "WCET", "混合关键性"]
 
 冲突的机理拆开是三件事，核间资源争抢、微架构非确定性、混合关键性隔离失效。Maiza 等人 2019 年在 ACM Computing Surveys 上综述多核时序验证，把共享资源干扰列为全领域最核心的障碍。图一是这三类不确定性的来源和干扰通道。
 
-![通用多核的三类时序不确定性来源与干扰通道（原创示意图，概念源自 Vestal 2007 与 Maiza 2019）](/images/multicore-hard-realtime/d1-interference.png)
+![通用多核的三类时序不确定性来源与干扰通道（原创示意图，概念源自 Vestal 2007 与 Maiza 2019）](/images/multicore-hard-realtime/d1-interference.webp)
 
 ### 原理
 
 三类不确定性的共同来源，是任务的时序变成了其他实体行为的函数。内存控制器把多个核的请求排进队列，一次访问的时延取决于 DRAM 的 bank 和行状态，也取决于队列里前面排了多少请求。负载越高，排队越长，每个请求等得越久，最坏情况因此没法用平均流量推算。乱序执行和投机又把局部的快慢颠倒。Lundqvist 和 Stenström 1999 年在动态调度处理器里发现，缓存未命中可能比命中执行得更快，局部慢事件改变了后续调度。Reineke 等人 2006 年给时序反常下了形式定义，图二就是论文里的调度型反常示意，任务 A 缓存命中提前完成，B 反而挡住 C 更久，整条时间线更长。缓存一致性协议最后补一刀，一个核的访存历史改写其他核看到的延迟，任务级分析的独立性假设，也就是单独分析每个任务再叠加，在共享资源上不再成立。
 
-![调度型时序反常示意，局部更快的执行反而让整条时间线更长（Reineke 2006 图 1）](/images/multicore-hard-realtime/reineke-fig1-scheduling-anomaly.jpg)
+![调度型时序反常示意，局部更快的执行反而让整条时间线更长（Reineke 2006 图 1）](/images/multicore-hard-realtime/reineke-fig1-scheduling-anomaly.webp)
 
 ### 实测数据
 
 把不确定性翻译成数字，有两组公开实验最常被引用。Kim 等人在 RTAS 2014 上发表的工作，平台是 Intel i7-2600 四核加 DDR3-1333 内存，跑 PARSEC 基准，每个核的 LLC 用软件分区做足，再往其他核上部署内存压力任务。结果，1 个共跑任务时目标核执行时间最高放大 5.5 倍，2 个共跑任务时 8.4 倍，3 个共跑任务时 12.0 倍，图三是论文数据的放大曲线，光做缓存分区就拉高了一个数量级。Valsan、Yun 和 Farshchi 在 RTAS 2016 上把实验推到极限，缓存分区做足、命中率几乎百分之百，WCET 仍然最高放大 21 倍，根因是一类容易被忽略的硬件表项，第六节有完整案例。
 
-![共跑任务对执行时间的放大效应（原创示意图，曲线数据为 Kim 2014 实测值）](/images/multicore-hard-realtime/d2-amplification.png)
+![共跑任务对执行时间的放大效应（原创示意图，曲线数据为 Kim 2014 实测值）](/images/multicore-hard-realtime/d2-amplification.webp)
 
 | 数据来源 | 平台 | 共跑任务 | WCET 放大 | 根因 |
 | --- | --- | --- | --- | --- |
@@ -42,7 +42,7 @@ tags: ["OS", "实时系统", "多核", "WCET", "混合关键性"]
 
 定量刻画干扰的代表是 MemGuard。Yun 等人在 RTAS 2013 上把 SPEC2006 的前台后台任务配成对跑在双核上，量出干扰曲线，图四是论文里的 IPC 减速图，两个核并发时性能最多跌一半，而且减速幅度和内存带宽占用不成比例，说明干扰来自队列和状态依赖。Nowotsch 和 Paulitsch 2012 年在 EDCC 上把同样的应用单独跑和多核并发跑对比，Freescale P4080 上 WCET 慢好几倍，倍数取决于任务对共享内存的依赖。SMT 把干扰推到极致，Osborne 和 Anderson 在 ECRTS 2020 上写，SMT 使能时任务执行时间取决于同核另一条线程在跑什么代码，实时社区为此基本放弃对 SMT 的 WCET 分析，坚持做的代价是换更窄的分析模型。
 
-![双核并发下的 IPC 减速，前台后台任务配对实测（MemGuard 论文图 1，SPEC2006）](/images/multicore-hard-realtime/memguard-fig1-interference.jpg)
+![双核并发下的 IPC 减速，前台后台任务配对实测（MemGuard 论文图 1，SPEC2006）](/images/multicore-hard-realtime/memguard-fig1-interference.webp)
 
 第三类不确定性破坏混合关键性的隔离。低关键性任务占用共享资源，会无约束地干扰高关键性任务的执行时序。ISO 26262 把 freedom from interference 定义为两个或更多元素之间不出现级联失效，第 6 部分 7.4.10 条要求，不同 ASIL 的软件要么全部按最高等级开发，要么证明相互无干扰，附录 D 把干扰细分成空间、时间、通信三类。CAST-32A 围绕 DO-178C 提出十个目标，其中一个关键立场是，多核上允许分别确定各应用 WCET 的前提是平台提供 robust partitioning。Vestal 2007 年在 RTSS 上提出另一条线索，对任务执行时间上界的置信度要求越高，这个上界就越保守，所以可以给不同关键性配不同的执行时间保证级别。
 
@@ -54,7 +54,7 @@ tags: ["OS", "实时系统", "多核", "WCET", "混合关键性"]
 
 先看 WCET 上界怎么算出来。任务执行时间的分布从最短（BCET）到最长（WCET），静态分析用抽象解释从程序结构推出安全上界，测量方法只能记录观测到的最大时间，图五是 Wilhelm 2008 综述里的经典示意，上界必须覆盖所有可能执行才算数。三层模型把这条分析链往下延伸。物理层处理工艺偏差、电压噪声、温度漂移和晶体管老化，门级时延随芯片个体、运行时间和环境温度分布。微架构层是乱序执行、缓存层次、互联调度和访存仲裁的主场。系统软件层再补上调度器、中断、自旋锁、页表与 TLB、虚拟化层，Brandenburg 和 Anderson 2009 年在 RTSS 上用 LITMUS^RT 实测，就绪队列的数据结构、事件驱动还是量子驱动、中断怎么处理，这些实现选择对可调度性的影响和调度理论层面的取舍一样大。每一层自身就有非确定性，三层还沿因果链逐级放大。
 
-![任务执行时间分布示意，BCET 到 WCET 之间覆盖所有可能执行（Wilhelm 2008 图 1）](/images/multicore-hard-realtime/wilhelm-fig1-timing-properties.jpg)
+![任务执行时间分布示意，BCET 到 WCET 之间覆盖所有可能执行（Wilhelm 2008 图 1）](/images/multicore-hard-realtime/wilhelm-fig1-timing-properties.webp)
 
 干扰的传播路径可以写成一条分解式。`T_exec = C_private + Σ I_r^shared + δ_env`，其中 C_private 是任务独占环境的执行时间，I_r 是共享资源 r 带来的干扰上界，δ_env 是电压温度老化这些环境漂移。难的是每一项上界怎么算，写出来反而是次要问题。跨层建模先把三层各自的非确定性源列清楚，再量化干扰从下往上的传播路径，最后用硬件性能计数器（PMU）和纳秒级时序测量反向校准每一层模型，把抽象分析和真实芯片之间的偏差量出来。perf 是常用的采集工具。
 
@@ -64,13 +64,13 @@ perf c2c record -g --all-user -- ./target_task
 perf c2c report -NN --stdio -g total
 ```
 
-![跨层时延模型与干扰传播路径（原创示意图，概念源自 Schoeberl 2009 与 Altmeyer 2015）](/images/multicore-hard-realtime/d3-layers.png)
+![跨层时延模型与干扰传播路径（原创示意图，概念源自 Schoeberl 2009 与 Altmeyer 2015）](/images/multicore-hard-realtime/d3-layers.webp)
 
 ### 典型工作
 
 静态分析的代表是 aiT。Wilhelm 2008 综述里给了它的架构图，图七是组成结构，输入是编译后的可执行文件和程序结构，经过路径分析和抽象解释，输出可证明的 WCET 上界。同类的还有 OTAWA、Chronos、Heptane 这些研究原型，思路都是抽象解释加路径分析，差别在建模的微架构范围和精度。测量这一支的代表是 MBPTA，Cucu-Grosjean 等人 2012 年在 ECRTS 上提出用极值理论从端到端测量推概率 WCET，先用统计检验确认观测独立同分布，再用分块最大值和指数尾检验判断分布形态。Davis 和 Cucu-Grosjean 2019 年在 LITES 上把静态概率、测量概率和混合三类方法统一整理。
 
-![aiT 静态 WCET 分析工具的架构（Wilhelm 2008 图 6）](/images/multicore-hard-realtime/wilhelm-fig6-ait-architecture.jpg)
+![aiT 静态 WCET 分析工具的架构（Wilhelm 2008 图 6）](/images/multicore-hard-realtime/wilhelm-fig6-ait-architecture.webp)
 
 把系统层一起算进去的代表是 isWCET。Nowotsch 等人在 ECRTS 2014 上提出，离线分析每个应用对共享互联和主存的使用，算出干扰延迟上界，配一个运行时资源容量强制把分析假设在运行期兑现。他们在 P4080 上配合 aiT 和 PikeOS 评测，多核 WCET 上界比朴素的最大争用方法最多降低 53%。这套工作打破了黑盒式的时序分析，让硬实时系统向物理时延极限靠近，也是后面所有确定性技术的前提。
 
@@ -84,9 +84,9 @@ perf c2c report -NN --stdio -g total
 
 工程上对时延上界有两个朴素诉求，不能过大，过大让系统过设计，不能被突破，突破意味着认证失败。所以学术界把设计时分析、部署时验证、运行时监控三段拼成一条完整流程，图九就是这条流程的示意。设计时的静态抽象解释推硬上界，部署时的测量概率方法给分位数上界。运行时则不同，PMU 计数和硬件时间监视单元做窗口级监控，越界就降级、隔离或重启分区，事件回流到设计时重新校准模型。
 
-![多核系统共享总线和内存的组合性视图（Hahn 2015 图 1）](/images/multicore-hard-realtime/hahn-fig1-compositionality.jpg)
+![多核系统共享总线和内存的组合性视图（Hahn 2015 图 1）](/images/multicore-hard-realtime/hahn-fig1-compositionality.webp)
 
-![确定性时延的端到端保障流程（原创示意图，概念源自 Cazorla 2013 与 Maiza 2019）](/images/multicore-hard-realtime/d4-flow.png)
+![确定性时延的端到端保障流程（原创示意图，概念源自 Cazorla 2013 与 Maiza 2019）](/images/multicore-hard-realtime/d4-flow.webp)
 
 覆盖设计到运行时的整套分析，由三类方法拼成。静态抽象解释给安全上界但往往过悲观，测量概率方法贴近真实硬件但依赖路径覆盖，模型检验则把处理器状态空间抽象成有限状态机逐状态验证。单独哪一种方法都不够，所以研究把静态推导、测量验证和运行时监控串成一条流程，用每一环补上一环的短板。
 
@@ -110,7 +110,7 @@ perf c2c report -NN --stdio -g total
 
 把原则落到芯片的代表是 Patmos 和 T-CREST。丹麦技术大学的 Patmos 是 32 位静态调度双发射处理器，所有指令延迟在指令集层面显式可见，方法缓存和栈缓存简化指令与数据缓存分析，非缓存指令让不可分析的数据访问绕过缓存。图十是 T-CREST 平台的构成，Patmos 节点通过时分复用的 Argo 网络互联，外部 SDRAM 交给可预测内存控制器。T-CREST 论文报告了两个工业用例，航电应用里不同核上的任务 WCET 互不干扰，铁路信号处理应用用三个核把 WCET 改善 1.8 倍，十五个核达到 5.7 倍，大部分硬件以 BSD 许可开源。
 
-![T-CREST 平台构成，Patmos 节点经 NoC 互联（Patmos 论文图 1）](/images/multicore-hard-realtime/patmos-fig1-tcrest-platform.jpg)
+![T-CREST 平台构成，Patmos 节点经 NoC 互联（Patmos 论文图 1）](/images/multicore-hard-realtime/patmos-fig1-tcrest-platform.webp)
 
 RISC-V 上还有更细的尝试。FlexPRET 是 Zimmer 等人在 RTAS 2014 上提出的细粒度多线程处理器，把线程分成硬实时线程（HRTT）和软实时线程（SRTT）两类，前者硬件保底，后者回收空闲周期。RT-Gang 是 Ali 和 Yun 在 RTAS 2019 上提出的实时帮派调度框架，让线程组同进同出，适合安全关键应用在多核上的整体调度。
 
@@ -126,7 +126,7 @@ echo $$ > /sys/fs/resctrl/hi/tasks
 
 内存控制器和互联里的仲裁器是另一个落点。Eindhoven 团队 2007 年在 CODES+ISSS 上提出可预测的 SDRAM 控制器 Predator。它把内存访问组织成预计算的命令组，每个命令组有已知效率和时延，再用带速率调节的静态优先级仲裁器调度，给每个请求者保证最小带宽和最大延迟界，图十一是论文里的控制器架构。六端口实现跑在 200MHz，面积只有 0.042 平方毫米，确定性调度直接固化进了固件层。
 
-![Predator 可预测内存控制器的架构（Akesson 2007 图 5）](/images/multicore-hard-realtime/predator-fig5-controller.jpg)
+![Predator 可预测内存控制器的架构（Akesson 2007 图 5）](/images/multicore-hard-realtime/predator-fig5-controller.webp)
 
 更高一层是软硬件配合的执行模型。Pellizzoni 等人在 RTAS 2011 上提出 PREM，任务被编译成可预测段和兼容段。可预测段先预取全部所需数据再执行，执行期缓存访问固定、耗时恒定，I/O 外设也在高一层和 CPU 一起调度，只有可预测段之间才放行外设流量。共享资源低层仲裁的不确定性被整体绕开，代价是编程要接受编译约束。
 
@@ -138,11 +138,11 @@ echo $$ > /sys/fs/resctrl/hi/tasks
 
 量化的思路是把共享资源的服务能力建模成曲线。Pellizzoni 等人在 DATE 2010 上提出的方法，给每个核画一条访存到达曲线，再结合目标任务的缓存行为，算出内存干扰的延迟上界。内存控制器对每个核的服务可以画成一条服务曲线，核的请求画成一条请求曲线，两条曲线的距离就是延迟上界。缓存隔离的机制是控制地址到缓存组的映射。物理地址的中间位决定缓存组索引，页面着色让操作系统分配物理页时把任务地址空间压进指定缓存区域，图十二是 Mancuso 论文里的地址结构示意。带宽隔离的原理更直接，把内存控制器服务能力按时间片或配额分给各核，每核分到的份额就是它不被打断的保证带宽。
 
-![物理地址在缓存控制器和操作系统眼中的结构，页面着色控制缓存组映射（Mancuso 2013 图 3）](/images/multicore-hard-realtime/mancuso-fig3-page-coloring.jpg)
+![物理地址在缓存控制器和操作系统眼中的结构，页面着色控制缓存组映射（Mancuso 2013 图 3）](/images/multicore-hard-realtime/mancuso-fig3-page-coloring.webp)
 
 隔离有一个容易漏掉的盲区。非阻塞缓存的 MSHR 表项跟踪未完成的缓存 miss，MSHR 被占满时缓存锁死，连命中都要排队，这个资源不归缓存路管，再细的路划分也压不住它的争用。多层隔离的代价可以用一条关系式描述，`U_loss = 1 - Σ q_i / B_peak`，B_peak 是系统物理访存峰值，q_i 是每核配额，U_loss 是牺牲掉的平均利用率。图十三画了隔离强度和可证性、利用率的关系，两条曲线在 0.65 附近交叉。工程经验值，隔离强度取 0.6 到 0.7，能换来大部分可证性，利用率牺牲控制在三成以内，这是经验数字，论文没有给出这样的曲线。
 
-![多层次隔离技术栈与隔离性、利用率权衡（原创示意图，概念源自 MemGuard、PALLOC 与 Maiza 2019）](/images/multicore-hard-realtime/d5-isolation.png)
+![多层次隔离技术栈与隔离性、利用率权衡（原创示意图，概念源自 MemGuard、PALLOC 与 Maiza 2019）](/images/multicore-hard-realtime/d5-isolation.webp)
 
 ### 典型工作
 
@@ -152,11 +152,11 @@ echo $$ > /sys/fs/resctrl/hi/tasks
 
 内存带宽这一支用 MemGuard 打底。它在操作系统层按核预留内存带宽，预留之和不超过算出的保证带宽，PC6400 DDR2 平台上实测是 1.2GB/s，图十四是论文里两个核的预留示例。再用预测性回收把没用完的预算转给需要的核，超出预算的部分按 best-effort 共享。论文用 SPEC2006 实测，开启回收后后台应用的 IPC 提升 3.8 倍，前台任务只损失 3%，软预留的误差率小于 5%，这是隔离有代价、回收能补回一部分的直接证据。
 
-![MemGuard 按核预留内存带宽的示例（MemGuard 论文图 5）](/images/multicore-hard-realtime/memguard-fig5-reservation.jpg)
+![MemGuard 按核预留内存带宽的示例（MemGuard 论文图 5）](/images/multicore-hard-realtime/memguard-fig5-reservation.webp)
 
 时间维度的隔离靠时间触发式调度。时间触发模型把不同关键性任务在时间上错开，从汽车 AUTOSAR 和航空 IMA 时代就有了，TTE、TTCAN、FlexRay 都是它的实现。T-CREST 的 Argo 网络用静态时分复用把数据包按时间槽发送，SurfNoC 是同一思路在片上网络的改进，图十五是 T-CREST 论文里传统时分复用网络的传输示意。时间分区把原本要在缓存和带宽上争的资源冲突，变成一张静态的时隙表，谁在什么时间能用哪段资源，分析时就能算清楚。
 
-![传统时分复用网络的数据传输，每个跳都要等自己的时间槽（T-CREST 论文图 3）](/images/multicore-hard-realtime/tcrest-fig3-tdm-noc.jpg)
+![传统时分复用网络的数据传输，每个跳都要等自己的时间槽（T-CREST 论文图 3）](/images/multicore-hard-realtime/tcrest-fig3-tdm-noc.webp)
 
 隔离的边界在代价。强隔离意味着给关键任务独享资源，其余核只能等，硬件利用率和延迟保证天然冲突。Nowotsch 2014 年在 isWCET 基础上加了 QoS 扩展，满足硬保证的前提下动态重算资源配置，把空出的资源分给需要的应用，避免一隔离就全系统低利用率。CAST-32A 从认证侧给隔离定了一杆秤，robust partitioning 一旦成立，就可以分别在多核上验证各应用的 WCET，这正是混合关键性单芯片部署需要的认证通道。
 

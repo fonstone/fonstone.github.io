@@ -236,7 +236,7 @@ END_FUNC(_start)
 **关键点解析**：
 - `mpidr_el1`（Multiprocessor Affinity Register）的低 8 位标识 CPU 核心 ID
 
-![ARM 架构参考手册 — mpidr_el1 寄存器说明](/images/chcore/arm-manual.png)
+![ARM 架构参考手册 — mpidr_el1 寄存器说明](/images/chcore/arm-manual.webp)
 
 - `cbz`（Compare and Branch if Zero）实现条件分支
 - 从核在 `_start` 处执行两次 `wait`：先等 BSS 清零，再等 `secondary_boot_flag` 置位
@@ -575,7 +575,7 @@ TCR_EL1 决定地址翻译的配置：
     TCR_EL1_RGN1_WBWA)                             \
 ```
 
-![AArch64 4 级页表结构示意图](/images/chcore/pt.png)
+![AArch64 4 级页表结构示意图](/images/chcore/pt.webp)
 
 ### 5.2 4 级页表翻译过程
 
@@ -647,7 +647,7 @@ flowchart TB
 
 文件：`kernel/arch/aarch64/boot/raspi3/init/mmu.c`
 
-![树莓派 3B+ 物理地址空间分布图](/images/chcore/pt2.png)
+![树莓派 3B+ 物理地址空间分布图](/images/chcore/pt2.webp)
 
 树莓派 3B+ 的物理地址空间布局：
 

@@ -4,6 +4,7 @@ description: "介绍虚拟地址、物理地址、IOVA 的概念及其在 RDMA �
 date: "2026-07-19"
 order: 17
 tags: ["RDMA", "内存地址", "IOVA", "IOMMU", "虚拟内存"]
+est_time: "40 分钟"
 ---
 # 内存地址基础知识
 

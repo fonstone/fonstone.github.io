@@ -42,7 +42,7 @@ Mendes、Souto 和 Diniz 在 2024 年 11 月挂出一篇预印本，用深度强
 
 结果方面，论文摘要写的是预算超支至少降低 50%。这个表述要拆开看。论文表格里，改善比率的分布很宽，中位数很大，最差的一组任务集是 1.5 倍，折算下来约 33%。摘要的原话是 at least up to 50%，带了 hedge。高关键任务的截止时间保证成立，前提是任务不超预算，这一点和 AMC 一致。论文没有正式发表，引用时标预印本。
 
-![DQN 开启前后的模式切换次数改善倍数，150 和 250 个 runnable 两组任务集（DRL-AMC 论文图 4）](/images/ultra-low-latency/drl-mode-changes.png)
+![DQN 开启前后的模式切换次数改善倍数，150 和 250 个 runnable 两组任务集（DRL-AMC 论文图 4）](/images/ultra-low-latency/drl-mode-changes.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">DQN 开启前后的模式切换次数改善倍数，150 和 250 个 runnable 两组任务集（DRL-AMC 论文图 4）</p>
 
@@ -56,13 +56,13 @@ Versal AI Engine 是 AMD 的自适应计算平台，片上有一阵列向量计�
 
 AIE 的结构值得展开一点。每个 tile 有自己的向量单元、标量单元和本地内存，tile 之间通过片上网络和共享内存通信。数据流图把计算节点映射到 tile，边映射到缓冲区或者网络通路。静态映射的好处是时序可预测，坏处是资源利用率低，一个任务占着 tile 不用，别的任务也进不来。动态分发的难点在于，改变映射要动数据通路，而数据通路的配置不是随便就能改的。论文的做法是保留静态数据流图，只在任务级别做分配，tile 内部的配置不变。
 
-![Versal AI Engine 阵列，每个 tile 包含 AI Engine、内存和互连，下面是与 PL 和 NoC 的接口（Versal AIE 论文图 1）](/images/ultra-low-latency/versal-aie-array.png)
+![Versal AI Engine 阵列，每个 tile 包含 AI Engine、内存和互连，下面是与 PL 和 NoC 的接口（Versal AIE 论文图 1）](/images/ultra-low-latency/versal-aie-array.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">Versal AI Engine 阵列，每个 tile 包含 AI Engine、内存和互连，下面是与 PL 和 NoC 的接口（Versal AIE 论文图 1）</p>
 
 Sprave、Wilhelm、Passaretti、Garcia-Ortiz 和 Pionteck 在 2026 年 4 月挂出一篇预印本，给 AIE 加了一层动态任务分发。三个 tile 分工不同，第一个只跑高关键任务，第二个由高关键和低关键共享，第三个留给低关键任务。分发器在运行时按截止时间和空闲状态分配任务，高关键任务优先，低关键任务填剩余空间。
 
-![动态任务分发基础设施，高优先级和低优先级队列经 dispatcher 分配到三个 compute tile（Versal AIE 论文图 2）](/images/ultra-low-latency/versal-dispatcher.png)
+![动态任务分发基础设施，高优先级和低优先级队列经 dispatcher 分配到三个 compute tile（Versal AIE 论文图 2）](/images/ultra-low-latency/versal-dispatcher.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">动态任务分发基础设施，高优先级和低优先级队列经 dispatcher 分配到三个 compute tile（Versal AIE 论文图 2）</p>
 
@@ -76,7 +76,7 @@ Sprave、Wilhelm、Passaretti、Garcia-Ortiz 和 Pionteck 在 2026 年 4 月挂�
 
 传感器融合系统里，任务按时完成不代表结果有用。一帧十毫秒前的摄像头图像，在高速场景下可能已经过期。Shaik 在 2026 年 4 月的一篇期刊论文里提出新鲜度驱动调度，把数据时效性写进调度决策。任务的价值随数据年龄衰减，调度器优先处理价值高的作业，过期的作业直接丢弃。
 
-![数据新鲜度悖论，摄像头在 t=0 采集、t=100 毫秒完成，截止时间满足但数据已经过期（FDS 论文图 1）](/images/ultra-low-latency/fds-stale-data.png)
+![数据新鲜度悖论，摄像头在 t=0 采集、t=100 毫秒完成，截止时间满足但数据已经过期（FDS 论文图 1）](/images/ultra-low-latency/fds-stale-data.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">数据新鲜度悖论，摄像头在 t=0 采集、t=100 毫秒完成，截止时间满足但数据已经过期（FDS 论文图 1）</p>
 

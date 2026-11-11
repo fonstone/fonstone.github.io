@@ -4,6 +4,7 @@ description: "详解通过 Socket 建立 RDMA 连接的完整流程，包括资�
 date: "2026-07-19"
 order: 24
 tags: ["RDMA", "Socket", "建链", "连接管理"]
+est_time: "40 分钟"
 ---
 # Socket 建链
 

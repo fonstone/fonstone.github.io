@@ -28,7 +28,7 @@ tags: ["AI", "Agent", "RAG", "Context", "OpenViking", "VikingFS", "向量检索"
       no_skill["技能经验无法沉淀"]
 `}/>
 
-AI Agent 的能力受制于上下文质量。传统 RAG 把所有内容压扁成向量片段，在一个平坦的索引上做相似度匹配——这在简单问答下可用，但在 Agent 长任务中暴露四大困境：
+AI Agent 的能力受制于上下文质量。传统 RAG 把所有内容压扁成向量片段，在一个平坦的索引上做相似度匹配，这在简单问答下可用，但在 Agent 长任务中暴露四大困境。
 
 | 困境 | 根因 | 后果 |
 |------|------|------|
@@ -37,9 +37,9 @@ AI Agent 的能力受制于上下文质量。传统 RAG 把所有内容压扁成
 | 检索黑盒 | 传统 RAG 检索链路不可观察 | 出错时无法调试、无法优化 |
 | 记忆停滞 | 只记录用户交互、无任务记忆 | Agent 无法从任务执行中积累经验 |
 
-**OpenViking 的核心命题**：把"给 Agent 准备上下文"从零散的向量库/脚本，升级为一套可运营的基础设施——**上下文数据库**。
+**OpenViking 的核心命题**，把"给 Agent 准备上下文"从零散的向量库/脚本，升级为一套可运营的基础设施，**上下文数据库**。
 
-## 2. 核心设计理念：文件系统范式
+## 2. 核心设计理念，文件系统范式
 
 <MermaidDiagram chart={`flowchart LR
     subgraph TraditionalRAG["传统 RAG"]
@@ -67,7 +67,7 @@ AI Agent 的能力受制于上下文质量。传统 RAG 把所有内容压扁成
     style OpenViking fill:#c8e6c9
 `}/>
 
-OpenViking 创新性地采用**文件系统范式**管理上下文。核心抽象是 `viking://` 协议的虚拟文件系统，所有上下文类型被映射为目录和文件：
+OpenViking 创新性地采用**文件系统范式**管理上下文。核心抽象是 `viking://` 协议的虚拟文件系统，所有上下文类型被映射为目录和文件。
 
 ```
 viking://
@@ -227,7 +227,7 @@ viking://
     style SessionFlow fill:#fff9c4
 `}/>
 
-## 4. L0/L1/L2：分层上下文加载
+## 4. L0/L1/L2，分层上下文加载
 
 ### 4.1 三层结构
 
@@ -254,7 +254,7 @@ viking://
     style EP fill:#ffcdd2
 `}/>
 
-每一层的设计意图与 token 消耗：
+每一层的设计意图与 token 消耗。
 
 | 层级 | 内容 | Token 量 | 使用场景 | 何时加载 |
 |------|------|---------|---------|---------|
@@ -283,7 +283,7 @@ viking://
     style LayeredLoading fill:#c8e6c9
 `}/>
 
-实测效果（基于 LoCoMo 长对话评测，1540 个用例；数据来自 OpenViking README_CN 的评测结果汇总）：
+实测效果（基于 LoCoMo 长对话评测，1540 个用例；数据来自 OpenViking README_CN 的评测结果汇总）。
 
 | 实验组 | 任务完成率 | 输入 Token 总量 |
 |--------|----------|---------------|
@@ -292,11 +292,11 @@ viking://
 | OpenClaw + OpenViking（禁用原生记忆） | **51.23%** | **2,099,622** |
 | OpenClaw + OpenViking（启用原生记忆） | **52.08%** | **4,264,396** |
 
-关键发现：
-- 相比原生 OpenClaw：任务完成率提升 **43%**，Token 成本降低 **91%**
-- 相比 LanceDB：任务完成率提升 **17%**，Token 成本降低 **92-96%**
+关键发现。
+- 相比原生 OpenClaw，任务完成率提升 **43%**，Token 成本降低 **91%**
+- 相比 LanceDB，任务完成率提升 **17%**，Token 成本降低 **92-96%**
 
-## 5. 目录递归检索：从粗到细
+## 5. 目录递归检索，从粗到细
 
 ### 5.1 检索流程
 
@@ -333,7 +333,7 @@ viking://
 
 ### 5.3 检索轨迹可视化
 
-OpenViking 的每条检索都保留完整的目录浏览和文件定位轨迹，用户可以清楚观察到检索链路：
+OpenViking 的每条检索都保留完整的目录浏览和文件定位轨迹，用户可以清楚观察到检索链路。
 
 ```
 查询: "OpenViking 的检索机制"
@@ -379,7 +379,7 @@ OpenViking 的每条检索都保留完整的目录浏览和文件定位轨迹，
 
 ### 6.1 资源 (resources)
 
-资源是 Agent 的"知识库"——项目文档、代码仓库、网页内容等外部材料。通过 `add-resource` 命令导入：
+资源是 Agent 的"知识库"，项目文档、代码仓库、网页内容等外部材料。通过 `add-resource` 命令导入。
 
 ```bash
 # 导入 GitHub 仓库
@@ -396,7 +396,7 @@ ov add-resource https://docs.example.com/api
 
 ### 6.2 用户记忆 (user/memories)
 
-用户记忆存储个人偏好、习惯和项目上下文。会话结束后由系统自动提取并更新：
+用户记忆存储个人偏好、习惯和项目上下文。会话结束后由系统自动提取并更新。
 
 ```bash
 # 查看用户偏好
@@ -408,7 +408,7 @@ ov read viking://user/memories/preferences/coding_habits
 
 ### 6.3 Agent 上下文 (agent/)
 
-Agent 上下文包括技能（skills）、任务记忆（memories）和指令（instructions），是 Agent 自我演化的核心：
+Agent 上下文包括技能（skills）、任务记忆（memories）和指令（instructions），是 Agent 自我演化的核心。
 
 ```bash
 # 查看 Agent 已掌握的技能
@@ -418,7 +418,7 @@ ov ls viking://agent/skills/
 ov find "代码搜索" --uri viking://agent/skills/
 ```
 
-## 7. 会话自迭代：Agent 越用越聪明
+## 7. 会话自迭代，Agent 越用越聪明
 
 <MermaidDiagram chart={`sequenceDiagram
     participant U as 用户
@@ -448,15 +448,15 @@ ov find "代码搜索" --uri viking://agent/skills/
     A-->>U: 更好的结果
 `}/>
 
-会话自迭代的三个关键步骤：
+会话自迭代的三个关键步骤。
 
-1. **会话记录**：记录完整对话、工具调用、推理过程
-2. **记忆提取**：异步分析任务结果和用户反馈，提取偏好、实体、事件
-3. **记忆更新**：自动写入 `viking://user/memories/` 和 `viking://agent/memories/`
+1. **会话记录**，记录完整对话、工具调用、推理过程
+2. **记忆提取**，异步分析任务结果和用户反馈，提取偏好、实体、事件
+3. **记忆更新**，自动写入 `viking://user/memories/` 和 `viking://agent/memories/`
 
 ### 7.1 Session 的两阶段提交（commit）
 
-OpenViking 的 `session.commit()` 可以理解为“把一段对话固化为可检索资产 + 提取长期记忆”的事务入口。它拆为同步与异步两阶段：
+OpenViking 的 `session.commit()` 可以理解为“把一段对话固化为可检索资产 + 提取长期记忆”的事务入口。它拆为同步与异步两阶段。
 
 <MermaidDiagram chart={`flowchart TD
     A["commit()"] --> P1["Phase 1（同步）<br/>归档消息 → 清空当前会话"]
@@ -469,11 +469,11 @@ OpenViking 的 `session.commit()` 可以理解为“把一段对话固化为可�
     style DONE fill:#c8e6c9
 `}/>
 
-好处是：调用方立刻得到可追踪的 `task_id`，而耗时的摘要/记忆提取在后台完成，避免阻塞主流程。
+好处是，调用方立刻得到可追踪的 `task_id`，而耗时的摘要/记忆提取在后台完成，避免阻塞主流程。
 
-### 7.2 记忆提取：8 类记忆与去重决策
+### 7.2 记忆提取，8 类记忆与去重决策
 
-OpenViking 把长期记忆按归属与形态分为 8 类（用户维度 + Agent 维度），并在写入前做“向量预过滤 + LLM 去重决策”：
+OpenViking 把长期记忆按归属与形态分为 8 类（用户维度 + Agent 维度），并在写入前做“向量预过滤 + LLM 去重决策”。
 
 | 分类 | 归属 | 说明 | 可合并 |
 |------|------|------|--------|
@@ -543,18 +543,18 @@ openviking-server doctor
 
 ### 8.3 多租户与鉴权（生产推荐）
 
-OpenViking 的多租户模型用 `account`、`user`、`agent` 三层边界在同一个服务实例内完成隔离与共享：
+OpenViking 的多租户模型用 `account`、`user`、`agent` 三层边界在同一个服务实例内完成隔离与共享。
 
-- account：团队/工作区边界；`resources` 通常在 account 内共享
-- user：用户边界；用户记忆与会话按 user 隔离
-- agent：Agent 边界；用于隔离不同 Agent 的技能、指令与 agent 级记忆
+- account，团队/工作区边界；`resources` 通常在 account 内共享
+- user，用户边界；用户记忆与会话按 user 隔离
+- agent，Agent 边界；用于隔离不同 Agent 的技能、指令与 agent 级记忆
 
-服务端常用两种认证模式：
+服务端常用两种认证模式。
 
-- `api_key`：标准方式。配置 `server.root_api_key` 后进入正式多租户模式（Root key 管理 account/user；业务请求用 user key）
-- `trusted`：部署在受信网关后，由上游注入 `X-OpenViking-Account` / `X-OpenViking-User`
+- `api_key`，标准方式。配置 `server.root_api_key` 后进入正式多租户模式（Root key 管理 account/user；业务请求用 user key）
+- `trusted`，部署在受信网关后，由上游注入 `X-OpenViking-Account` / `X-OpenViking-User`
 
-最小多租户配置示例：
+最小多租户配置示例。
 
 ```json
 {
@@ -565,7 +565,7 @@ OpenViking 的多租户模型用 `account`、`user`、`agent` 三层边界在同
 }
 ```
 
-业务侧推荐用 user key（服务端可从 key 反解出 account/user 身份）：
+业务侧推荐用 user key（服务端可从 key 反解出 account/user 身份）。
 
 ```bash
 curl "http://localhost:1933/api/v1/fs/ls?uri=viking://" \
@@ -573,7 +573,7 @@ curl "http://localhost:1933/api/v1/fs/ls?uri=viking://" \
   -H "X-OpenViking-Agent: coding-agent"
 ```
 
-Root key 访问“租户级数据 API”时需要显式指定目标租户头：
+Root key 访问“租户级数据 API”时需要显式指定目标租户头。
 
 ```bash
 curl "http://localhost:1933/api/v1/fs/ls?uri=viking://" \
@@ -644,7 +644,7 @@ ov memcommit
     style OV fill:#e8f5e9
 `}/>
 
-**VikingBot 快速启动**：
+**VikingBot 快速启动**。
 
 ```bash
 # 安装 VikingBot
@@ -659,7 +659,7 @@ ov chat
 
 ### 8.6 与 OpenCode / Claude Code 集成
 
-OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的记忆后端：
+OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的记忆后端。
 
 1. OpenViking Server 与 OpenCode 同进程启动
 2. Agent 通过 `memsearch`、`memread`、`membrowse` 等工具访问 `viking://` URI
@@ -697,7 +697,7 @@ OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的�
     style Index fill:#fff9c4
 `}/>
 
-各后端的适用场景：
+各后端的适用场景。
 
 | 后端 | 语言 | 适用场景 | 持久化 |
 |------|------|---------|--------|
@@ -707,7 +707,7 @@ OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的�
 | s3fs | Rust | 大规模、云端部署 | 是 |
 | queuefs | Rust | 异步任务队列 | 是 |
 
-## 10. OpenViking vs 传统 RAG：什么时候选什么
+## 10. OpenViking vs 传统 RAG，什么时候选什么
 
 <MermaidDiagram chart={`flowchart TD
     START{"选择上下文方案"} --> Q1{"上下文类型是否多样<br/>(资源+记忆+技能)?"}
@@ -752,25 +752,25 @@ OpenViking 提供 MCP 端点，可以直接作为 OpenCode 或 Claude Code 的�
     end
 
     D1 --> OUT1["告别上下文碎片化"]
-    D2 --> OUT2["降低 Token 成本（LoCoMo：-83%~-96%）"]
-    D3 --> OUT3["提升完成率（LoCoMo：+15%~+49%）"]
+    D2 --> OUT2["降低 Token 成本（LoCoMo，-83%~-96%）"]
+    D3 --> OUT3["提升完成率（LoCoMo，+15%~+49%）"]
     D4 --> OUT4["检索链路可调试"]
     D5 --> OUT5["Agent 越用越聪明"]
 
     style CorePhilosophy fill:#e1f5fe
 `}/>
 
-OpenViking 把 Agent 的上下文管理从"散装 RAG"升级为"可运营的基础设施"。五个核心设计对应五个核心问题：
+OpenViking 把 Agent 的上下文管理从"散装 RAG"升级为"可运营的基础设施"。五个核心设计对应五个核心问题。
 
 1. **文件系统范式** → 统一管理 → 解决碎片化
 2. **L0/L1/L2 分层** → 按需加载 → 降低 Token 成本
 3. **目录递归检索** → 先粗后细 → 提高检索精度
-4. **轨迹可视化** → 全链路追溯 → 可观测、可调试
+4. **轨迹可视化** → 全流程追溯 → 可观测、可调试
 5. **会话自迭代** → 记忆演化 → Agent 越用越聪明
 
 ---
 
-**参考资源：**
+**参考资源**
 
 - [OpenViking GitHub 仓库](https://github.com/volcengine/OpenViking)
 - [OpenViking 官网](https://www.openviking.ai)

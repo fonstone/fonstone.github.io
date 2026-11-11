@@ -1,4 +1,4 @@
-﻿---
+---
 title: "多模态与实时交互"
 description: "语音 Agent 三种架构范式，Computer Use GUI 自动化，VLA 机器人控制，快慢思考架构设计。"
 date: "2026-07-29"

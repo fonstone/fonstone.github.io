@@ -29,7 +29,7 @@ kAgent 在 kGym 之上复刻了内核开发者的排查循环。看执行日志�
 
 kGym++ 的解法是对象缓存 kCache，只重编被修改的文件，论文报告内核构建时间平均缩短 42.69%。
 
-![可复现验证环](/images/kernel-agent/verify-loop.png)
+![可复现验证环](/images/kernel-agent/verify-loop.webp)
 
 KernelGPT 的验证反馈更轻。它生成 syzkaller 规格后，用 syz-extract 和 syz-generate 的报错信息定位不准确的描述，让 LLM 照着错误修。Live-kBench 评测补丁时崩溃不确定，连跑 25 次复现确认补丁真的消除了崩溃。三套系统殊途同归，agent 的每次修改都要过一遍可复现的执行证据。
 
@@ -39,7 +39,7 @@ KernelGPT 的验证反馈更轻。它生成 syzkaller 规格后，用 syz-extrac
 
 KernelGPT 的切入点是 syscall 规格。它先定位 syscall 的 handler 函数，从内核源码里取出相关类型定义喂给 LLM，生成 syzkaller 描述。遇到嵌套类型就标记为未知，下一轮再分析。作者的洞见是，LLM 预训练阶段见过海量内核代码和文档，规格生成需要的知识已经在那里面，剩下的是把它引导出来。生成与校验的循环见图，报错直接送回模型改。
 
-![KernelGPT 规格生成与校验流程](/images/kernel-agent/kernelgpt-flow.png)
+![KernelGPT 规格生成与校验流程](/images/kernel-agent/kernelgpt-flow.webp)
 
 SyzGPT 把检索做成了依赖驱动。它先用 LLM 从文档里提取 syscall 之间的依赖关系，再按依赖检索代码生成种子，论文报告种子有效率 87.84%。
 
@@ -53,7 +53,7 @@ kAgent 是 workflow-based agent，编排顺序按内核开发者排查崩溃的�
 
 RGym 用两个 agent 配合。Function Exploration Agent 自主看代码，形成自己对根因的理解，Simple Agent 按 bug 类型用调用栈定位直接出补丁，两者共用 GPT-4o 基线。两个 agent 单独通过率都是 15.38%，组合到 30%，其中 12 个只有探索 agent 能解，说明不同策略能互补。分工见图。
 
-![RGym 双 agent 分工](/images/kernel-agent/rgym-orchestration.png)
+![RGym 双 agent 分工](/images/kernel-agent/rgym-orchestration.webp)
 
 编排解决不了的问题在定位。定位是决定修复成败的前置环节，多文件崩溃尤其吃这一环，细节见应用一节。
 
@@ -72,7 +72,7 @@ RGym 用两个 agent 配合。Function Exploration Agent 自主看代码，形�
 
 Live-kBench 发现了一个更尖锐的问题。模型在知识截止前见过的 bug 上表现好得多，等效补丁率高约 25%，静态基准因此会高估 agent 处理新鲜 bug 的能力。它靠每周从 syzbot 抓新 bug 对冲，bug 筛选用 5 次复现尝试，补丁评测跑 25 次复现。这些细节决定数字能不能信。筛选链和污染对冲画在一起。
 
-![评测数据筛选与污染对冲](/images/kernel-agent/benchmark-filter.png)
+![评测数据筛选与污染对冲](/images/kernel-agent/benchmark-filter.webp)
 
 ## 三、典型应用
 
@@ -119,7 +119,7 @@ Torvalds 的态度 2026 年变得很明确。5 月他在 7.1-rc4 邮件里警告
 
 Greg Kroah-Hartman 在 2026 年 8 月给 staging 子系统定了更严的规矩，LLM 生成的 staging 补丁一律拒收，除非是真实安全修复且必须在真实硬件上测试过。他说哪怕最好的工具，结果里至少三分之一是错的或有害的。政策推进的时间线见图。
 
-![社区政策时间线](/images/kernel-agent/community-timeline.png)
+![社区政策时间线](/images/kernel-agent/community-timeline.webp)
 
 ## 四、边界与结论
 

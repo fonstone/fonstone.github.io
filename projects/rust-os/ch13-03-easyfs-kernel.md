@@ -4,7 +4,7 @@ description: "上节实现了 easy-fs 文件系统，并能在用户态来进行
 date: "2026-07-12"
 order: 87
 tags: ["easy-fs", "内核", "系统调用", "文件", "接入"]
-est_time: "45分钟"
+est_time: "45 分钟"
 ---
 ## 本节导读
 

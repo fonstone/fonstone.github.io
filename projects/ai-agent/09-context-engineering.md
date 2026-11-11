@@ -1,4 +1,4 @@
-﻿---
+---
 title: "上下文工程"
 description: "上下文组装与优化方法论，可复用可度量的提示拼装策略。"
 date: "2026-07-12"
@@ -2066,7 +2066,7 @@ context = context_builder.build(
 
 
 
-![](/images/courses/9-figures/9-3.png)
+![](/images/courses/9-figures/9-3.webp)
 
 *图 9.3 代码库维护助手三层架构*
 

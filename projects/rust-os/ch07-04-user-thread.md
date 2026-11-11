@@ -4,7 +4,7 @@ description: "在本章的起始介绍中，给出了线程的基本定义，但
 date: "2026-07-12"
 order: 46
 tags: ["用户态线程", "线程", "协程", "用户库"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 本节导读
 
@@ -337,7 +337,7 @@ unsafe extern "C" {
 
 这里需要注意两个细节。第一个是寄存器集合的保存数量。在保存通用寄存器集合时，并没有保存所有的通用寄存器，其原因是根据RISC-V的函数调用约定，有一部分寄存器是由调用函数 Caller 来保存的，所以就不需要被调用函数 switch 来保存了。第二个是当前指令指针(PC)的切换。在具体切换过程中，是基于函数返回地址来进行切换的。即首先把 switch 的函数返回地址 ra (即 x1 )寄存器保存在 TaskContext 中，随后恢复切换后要执行线程的函数返回地址并跳转过去。这里将 switch 放在独立的汇编文件中，并通过 global\_asm! 引入和 extern "C" 声明提供给 Rust 调用，从而避免依赖 naked\_functions 等 nightly 特性。
 
-![thread-switch.png](/images/rust-os/rcore/chapter8/thread-switch.png)
+![thread-switch.png](/images/rust-os/rcore/chapter8/thread-switch.webp)
 
 ### 开始执行
 

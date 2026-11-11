@@ -35,7 +35,7 @@ PonyTail 把尾请求的成因分成三类，这个分类是后面所有分析�
 
 PonyTail 的工具叫 ponyrun，分 record 和 report 两个阶段。record 阶段在服务里调用 ponylib 的接口划定请求边界，采集三类数据。tracing 用 Intel Processor Trace 记录控制流，sampling 用 PEBS 采硬件事件，statistics 按请求累计用户指定的性能计数器。report 阶段离线分析，把程序级数据拆成请求级数据。
 
-![PonyTail 的两阶段设计，record 阶段在应用里划定请求边界并采集控制流、事件和计数器，report 阶段离线还原请求级足迹（PonyTail 论文图 2）](/images/ultra-low-latency/ponytail-design.png)
+![PonyTail 的两阶段设计，record 阶段在应用里划定请求边界并采集控制流、事件和计数器，report 阶段离线还原请求级足迹（PonyTail 论文图 2）](/images/ultra-low-latency/ponytail-design.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">PonyTail 的两阶段设计，record 阶段在应用里划定请求边界并采集控制流、事件和计数器，report 阶段离线还原请求级足迹（PonyTail 论文图 2）</p>
 
@@ -57,7 +57,7 @@ PonyTail 的工具叫 ponyrun，分 record 和 report 两个阶段。record 阶�
 
 代码足迹用动态基本块表示。动态基本块是一段连续退休的指令，中间没有跳入，也没有跳出的条件分支，边界可以直接从 Processor Trace 里切出来，不需要反汇编二进制。把每个请求的动态基本块按服务时间排序画成热图，慢请求如果聚集在某个地址区间，StCo 就出现了。微架构足迹用请求级的 TMA 分解，把流水线槽位归到前端、后端、内存等类别，慢请求如果聚在某一类，uarch 就有了线索。两类都不聚集，剩下的解释通常是 DyCo，需要回到循环次数和调用栈上找相关性。
 
-![silo 服务的请求级 DBBL 热图，横轴是按服务时间排序的请求，深色区域标出慢请求集中执行的代码路径（PonyTail 论文图 4a）](/images/ultra-low-latency/ponytail-heatmap.png)
+![silo 服务的请求级 DBBL 热图，横轴是按服务时间排序的请求，深色区域标出慢请求集中执行的代码路径（PonyTail 论文图 4a）](/images/ultra-low-latency/ponytail-heatmap.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">silo 服务的请求级 DBBL 热图，横轴是按服务时间排序的请求，深色区域标出慢请求集中执行的代码路径（PonyTail 论文图 4a）</p>
 
@@ -71,7 +71,7 @@ PonyTail 的工具叫 ponyrun，分 record 和 report 两个阶段。record 阶�
 
 SysOM-AI 是阿里和 UC Santa Cruz 合作的系统，2026 年 3 月挂在 arXiv。它在生产集群里部署了八万多张 GPU，跑了一年多，确认了 94 个问题，把中位诊断时间从几天压到大约 10 分钟。采集开销在 10% 采样率下是 0.33%，全采样 1.72%。这些数字来自 Llama-3.2-1B-Instruct、两张 A100-80GB、PyTorch 2.1、NCCL 2.18 的评测环境。
 
-![SysOM-AI 的节点代理与中心分析服务，CPU、GPU 和 NCCL 三类数据在节点侧聚合后上传（SysOM-AI 论文图 1）](/images/ultra-low-latency/sysom-architecture.png)
+![SysOM-AI 的节点代理与中心分析服务，CPU、GPU 和 NCCL 三类数据在节点侧聚合后上传（SysOM-AI 论文图 1）](/images/ultra-low-latency/sysom-architecture.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">SysOM-AI 的节点代理与中心分析服务，CPU、GPU 和 NCCL 三类数据在节点侧聚合后上传（SysOM-AI 论文图 1）</p>
 
@@ -79,7 +79,7 @@ SysOM-AI 是阿里和 UC Santa Cruz 合作的系统，2026 年 3 月挂在 arXiv
 
 论文里的第二个案例很能说明问题。某个训练任务周期性变慢，火焰图显示 NCCL 通信线程被抢占。继续往下看，网络接收软中断 NET_RX_SOFTIRQ 绑在了和通信线程同一个 CPU 核上，中断处理路径是 asm_common_interrupt 到 do_softirq，再到 net_rx_action，virtnet_poll，virtnet_receive，napi_gro_receive，采样占比 1.74%。健康 rank 的同一条路径不到 0.1%。处理办法是改 /proc/irq 下的 smp_affinity，把软中断挪走。从告警到根因，论文记录的时间是 10 分钟。
 
-![SysOM-AI 案例中的 CPU 差分火焰图，底部红色帧是慢 rank 独有的 NET_RX_SOFTIRQ 到 napi_gro_receive 调用链（SysOM-AI 论文图 7）](/images/ultra-low-latency/sysom-cpu-flamegraph.png)
+![SysOM-AI 案例中的 CPU 差分火焰图，底部红色帧是慢 rank 独有的 NET_RX_SOFTIRQ 到 napi_gro_receive 调用链（SysOM-AI 论文图 7）](/images/ultra-low-latency/sysom-cpu-flamegraph.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">SysOM-AI 案例中的 CPU 差分火焰图，底部红色帧是慢 rank 独有的 NET_RX_SOFTIRQ 到 napi_gro_receive 调用链（SysOM-AI 论文图 7）</p>
 

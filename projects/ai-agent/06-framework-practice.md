@@ -1,4 +1,4 @@
-﻿---
+---
 title: "框架开发实践"
 description: "AutoGen、AgentScope、LangGraph 等主流智能体框架实战。"
 date: "2026-07-12"
@@ -39,7 +39,7 @@ est_time: "70 分钟"
 在本章的后续实战中，我们将聚焦于四个在这些前沿领域极具代表性的框架：AutoGen、AgentScope、CAMEL 和 LangGraph。它们的设计理念各不相同，分别代表了实现复杂智能体系统的不同技术路径，如表6.1所示。
 
 <p>表 6.1 四种智能体框架对比</p>
-  ![](/images/courses/6-figures/01.png)
+  ![](/images/courses/6-figures/01.webp)
 
 
 - <strong>AutoGen</strong>：AutoGen 的核心思想是通过对话实现协作<sup>[1]</sup>。它将多智能体系统抽象为一个由多个“可对话”智能体组成的群聊。开发者可以定义不同角色（如 `Coder`, `ProductManager`, `Tester`），并设定它们之间的交互规则（例如，`Coder` 写完代码后由 `Tester` 自动接管）。任务的解决过程，就是这些智能体在群聊中通过自动化消息传递，不断对话、协作、迭代直至最终目标达成的过程。
@@ -59,7 +59,7 @@ est_time: "70 分钟"
 
 
 
-![](/images/courses/6-figures/02.png)
+![](/images/courses/6-figures/02.webp)
 
 *图 6.1 AutoGen架构图*
 
@@ -418,7 +418,7 @@ model_client = OpenAIChatCompletionClient(
 
 
 
-![](/images/courses/6-figures/03.png)
+![](/images/courses/6-figures/03.webp)
 
 *图 6.2 AgentScope架构图*
 
@@ -745,7 +745,7 @@ CAMEL 实现自主协作的基石是两大核心概念：<strong>角色扮演 (R
 
 
 
-![](/images/courses/6-figures/04.png)
+![](/images/courses/6-figures/04.webp)
 
 *图 6.3 CAMEL创建股票机器人交易*
 

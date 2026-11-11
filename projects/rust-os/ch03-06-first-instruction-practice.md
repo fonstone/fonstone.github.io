@@ -4,7 +4,7 @@ description: "承接上一节，本节我们将实践在 Qemu 上执行内核的
 date: "2026-07-12"
 order: 19
 tags: ["第一条指令", "内核入口", "汇编", "RISC-V", "QEMU"]
-est_time: "45分钟"
+est_time: "45 分钟"
 ---
 ## 本节导读
 
@@ -158,7 +158,7 @@ target/riscv64gc-unknown-none-elf/release/os: ELF 64-bit LSB executable, UCB RIS
 
 **丢弃元数据前后的内核可执行文件被加载到 Qemu 上的情形**
 
-![load-into-qemu.png](/images/rust-os/rcore/chapter1/load-into-qemu.png)
+![load-into-qemu.png](/images/rust-os/rcore/chapter1/load-into-qemu.webp)
 
 图中，红色的区域表示内核可执行文件中的元数据，深蓝色的区域表示各个段（包括代码段和数据段），而浅蓝色区域则表示内核被执行的第一条指令，它位于深蓝色区域的开头。图示的上半部分中，我们直接将内核可执行文件 os 提交给 Qemu ，而 Qemu 会将整个可执行文件不加处理的加载到 Qemu 内存的 0x80200000 处，由于内核可执行文件的开头是一段元数据，这会导致 Qemu 内存 0x80200000 处无法找到内核第一条指令，也就意味着 RustSBI 无法正常将计算机控制权转交给内核。相反，图示的下半部分中，将元数据丢弃得到的内核镜像 os.bin 被加载到 Qemu 之后，则可以在 0x80200000 处正确找到内核第一条指令。如果想要深入了解这些元数据的内容，可以参考 index 。
 
@@ -380,7 +380,7 @@ log 等级推荐
 
 我们可以输出比设定输出等级以及更高输出等级的信息，如设置 LOG = INFO，则输出 ERROR、WARN、INFO 等级的信息。简单 demo 如下，输出等级为 INFO:
 
-![color-demo.png](/images/rust-os/rcore/chapter1/color-demo.png)
+![color-demo.png](/images/rust-os/rcore/chapter1/color-demo.webp)
 
 为了方便使用彩色输出，我们要求同学们实现彩色输出的宏或者函数，用以代替 print 完成输出内核信息的功能，它们有着和 prinf 十分相似的使用格式，要求支持可变参数解析，形如：
 

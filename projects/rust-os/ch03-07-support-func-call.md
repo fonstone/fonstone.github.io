@@ -4,7 +4,7 @@ description: "上一节我们成功在 Qemu 上执行了内核的第一条指令
 date: "2026-07-12"
 order: 20
 tags: ["函数调用", "栈", "调用约定", "ABI", "内核"]
-est_time: "40分钟"
+est_time: "40 分钟"
 ---
 ## 本节导读
 
@@ -33,7 +33,7 @@ est_time: "40分钟"
 
 另一种控制流结构则显得更为复杂： **函数调用** (Function Call)。我们大概清楚调用函数整个过程中代码执行的顺序，如果是从源代码级的视角来看，我们会去执行被调用函数的代码，等到它返回之后，我们会回到调用函数对应语句的下一行继续执行。那么我们如何用汇编指令来实现这一过程？首先在调用的时候，需要有一条指令跳转到被调用函数的位置，这个看起来和其他控制结构没什么不同；但是在被调用函数返回的时候，我们却需要返回那条跳转过来的指令的下一条继续执行。这次用来返回的跳转究竟跳转到何处，在对应的函数调用发生之前是不知道的。比如，我们在两个不同的地方调用同一个函数，显然函数返回之后会回到不同的地址。这是一个很大的不同：其他控制流都只需要跳转到一个 *编译期固定下来* 的地址，而函数调用的返回跳转是跳转到一个 *运行时确定* （确切地说是在函数调用发生的时候）的地址。
 
-![function-call.png](/images/rust-os/rcore/chapter1/function-call.png)
+![function-call.png](/images/rust-os/rcore/chapter1/function-call.webp)
 
 对此，指令集必须给用于函数调用的跳转指令一些额外的能力，而不只是单纯的跳转。在 RISC-V 架构上，有两条指令即符合这样的特征：
 
@@ -125,7 +125,7 @@ RISC-V 函数调用跳转指令
 **函数调用与栈帧：如图所示，我们能够看到在程序依次调用 a、调用 b、调用 c、c 返回、b 返回整个过程中栈帧的分配/回收以及 sp 寄存器的变化。
 图中标有 a/b/c 的块分别代表函数 a/b/c 的栈帧。**
 
-![CallStack.png](/images/rust-os/rcore/chapter1/CallStack.png)
+![CallStack.png](/images/rust-os/rcore/chapter1/CallStack.webp)
 > **Note**
 >
 > **数据结构中的栈与实现函数调用所需要的栈**
@@ -138,7 +138,7 @@ RISC-V 函数调用跳转指令
 
 **函数栈帧中的内容**
 
-![StackFrame.png](/images/rust-os/rcore/chapter1/StackFrame.png)
+![StackFrame.png](/images/rust-os/rcore/chapter1/StackFrame.webp)
 
 它的开头和结尾分别在 sp(x2) 和 fp(s0) 所指向的地址。按照地址从高到低分别有以下内容，它们都是通过 sp 加上一个偏移量来访问的：
 
@@ -212,7 +212,7 @@ boot_stack_top:
 
 我们在第 11 行在内核的内存布局中预留了一块大小为 4096 \* 16 字节也就是 $64text{KiB}$ 的空间用作接下来要运行的程序的栈空间。在 RISC-V 架构上，栈是从高地址向低地址增长。因此，最开始的时候栈为空，栈顶和栈底位于相同的位置，我们用更高地址的符号 boot\_stack\_top 来标识栈顶的位置。同时，我们用更低地址的符号 boot\_stack\_lower\_bound 来标识栈能够增长到的下限位置，它们都被设置为全局符号供其他目标文件使用。如下图所示：
 
-![boot_stack.png](/images/rust-os/rcore/chapter1/boot_stack.png)
+![boot_stack.png](/images/rust-os/rcore/chapter1/boot_stack.webp)
 
 第 8 行可以看到我们将这块空间放置在一个名为 .bss.stack 的段中，在链接脚本 linker.ld 中可以看到 .bss.stack 段最终会被汇集到 .bss 段中：
 

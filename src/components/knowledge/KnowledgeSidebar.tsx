@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useEffect } from "react";
 import clsx from "clsx";
+import TagCloud from "./TagCloud";
 
 export type KnowledgeSidebarData = Array<{
   category: string;
@@ -135,35 +136,17 @@ export default function KnowledgeSidebar({ data, tags }: Props) {
         <h3 className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">
           标签
         </h3>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col gap-2">
           {activeTag && (
             <button
               type="button"
               onClick={clearTagFilter}
-              className="rounded-full border border-red-300 dark:border-red-400 bg-red-50 dark:bg-red-500/10 px-3 py-1 text-xs text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+              className="w-fit rounded-full border border-red-300 dark:border-red-400 bg-red-50 dark:bg-red-500/10 px-3 py-1 text-xs text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
             >
               ✕ 清除筛选
             </button>
           )}
-          {tags.map((tagInfo) => {
-            const isActive = activeTag === tagInfo.tag;
-            return (
-              <button
-                key={tagInfo.tag}
-                type="button"
-                onClick={() => handleTagClick(tagInfo.tag)}
-                className={clsx(
-                  "rounded-full border px-3 py-1 text-xs transition-colors",
-                  isActive
-                    ? "border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                    : "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 hover:text-slate-900 dark:hover:text-slate-100"
-                )}
-              >
-                {tagInfo.tag}
-                <span className="ml-1 opacity-60">{tagInfo.count}</span>
-              </button>
-            );
-          })}
+          <TagCloud tags={tags} activeTag={activeTag} onTagClick={handleTagClick} dense />
         </div>
       </div>
     </nav>

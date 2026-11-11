@@ -5,9 +5,9 @@ date: "2026-05-23"
 tags: ["AUTOSAR", "RTOS", "ERIKA3", "TriCore", "TC38x", "车载OS", "任务调度", "中断管理", "多核"]
 ---
 
-> 本文基于开源项目 [erika3-tc38x](https://github.com/wentasah/erika3-tc38x)，从 AUTOSAR OS 规范出发，逐层深入到 ERIKA Enterprise v3 在 Infineon AURIX TC38x 平台上的具体实现，涵盖任务调度、报警机制、资源管理、事件同步、中断处理、多核扩展等核心机制，并结合实战案例进行全链路解析。
+> 本文基于开源项目 [erika3-tc38x](https://github.com/wentasah/erika3-tc38x)，从 AUTOSAR OS 规范出发，逐层深入到 ERIKA Enterprise v3 在 Infineon AURIX TC38x 平台上的具体实现，涵盖任务调度、报警机制、资源管理、事件同步、中断处理、多核扩展等核心机制，并结合实战案例进行全流程解析。
 
-相关阅读：[深入浅出车载以太网核心：SOME/IP协议全景解析](/knowledge/autonomous-driving/someip-protocol-panoramic-analysis)
+相关阅读，[深入浅出车载以太网核心，SOME/IP协议全景解析](/knowledge/autonomous-driving/someip-protocol-panoramic-analysis)
 
 ## 1. AUTOSAR OS 规范概览
 
@@ -27,7 +27,7 @@ AUTOSAR（AUTomotive Open System ARchitecture）OS 是 AUTOSAR 经典平台（Cl
     SWC --> RTE --> BSW --> OS --> MCU --> HW
 `} />
 
-AUTOSAR OS 在整个软件栈中的职责：
+AUTOSAR OS 在整个软件栈中的职责。
 
 | 职责 | 说明 |
 |------|------|
@@ -41,7 +41,7 @@ AUTOSAR OS 在整个软件栈中的职责：
 
 ### 1.2 一致性类（Conformance Classes）
 
-AUTOSAR OS 定义了四种一致性类，从简单到复杂递增：
+AUTOSAR OS 定义了四种一致性类，从简单到复杂递增。
 
 <MermaidDiagram chart={`graph LR
     BCC1 -->|+多激活| BCC2
@@ -60,7 +60,7 @@ AUTOSAR OS 定义了四种一致性类，从简单到复杂递增：
 | ECC1 | 1激活/任务 | 支持（1激活） | 1 |
 | ECC2 | 多激活/任务 | 支持（多激活） | 多次 |
 
-**选择原则**：
+**选择原则**。
 - 简单事件驱动场景选 BCC1（最小 ROM/RAM 开销）
 - 需要等待事件的场景选 ECC1/ECC2
 - 需要多激活场景（如报警周期激活同一任务）选 BCC2/ECC2
@@ -87,10 +87,10 @@ AUTOSAR OS 定义了四种一致性类，从简单到复杂递增：
 
 [ERIKA Enterprise v3](https://github.com/wentasah/erika3-tc38x) 是由 Evidence Srl 开发的开源 RTOS，实现了 AUTOSAR OS 和 OSEK/VDX API 规范，广泛应用于汽车电子和白电领域。`erika3-tc38x` 是其针对 Infineon AURIX TC38x 处理器的适配分支。
 
-**关键特性**：
-- 双许可：GPL + 商业许可
+**关键特性**。
+- 双许可，GPL + 商业许可
 - 支持 AUTOSAR OS 一致性类 BCC1/BCC2/ECC1/ECC2
-- 多架构：TriCore、ARM Cortex-R/M、AArch64、RISC-V 等
+- 多架构，TriCore、ARM Cortex-R/M、AArch64、RISC-V 等
 - 多核支持（Partitioned / Global 调度策略）
 - OSEK OIL 配置语言 + 动态 API
 - 与 Infineon ISAR MCAL 集成
@@ -225,10 +225,10 @@ erika3-tc38x/
     OsEE_CounterDB --> OsEE_TriggerDB : triggers/alarms
 `} />
 
-**设计理念**：
-- **DB/CB 分离**：Descriptor Block（只读配置）与 Control Block（运行时可变）分离，支持 ROM 常量优化
-- **Per-core 分区**：`OsEE_CDB/CCB` 每核独立，减少多核竞争
-- **全局 DB**：`OsEE_KDB/KCB` 管理跨核调度和同步
+**设计理念**。
+- **DB/CB 分离**，Descriptor Block（只读配置）与 Control Block（运行时可变）分离，支持 ROM 常量优化
+- **Per-core 分区**，`OsEE_CDB/CCB` 每核独立，减少多核竞争
+- **全局 DB**，`OsEE_KDB/KCB` 管理跨核调度和同步
 
 ---
 
@@ -238,7 +238,7 @@ erika3-tc38x/
 
 #### 3.1.1 规范要求
 
-AUTOSAR OS 定义了两种任务类型：
+AUTOSAR OS 定义了两种任务类型。
 
 | 特性 | 基本任务（Basic Task） | 扩展任务（Extended Task） |
 |------|----------------------|------------------------|
@@ -247,7 +247,7 @@ AUTOSAR OS 定义了两种任务类型：
 | 释放资源 | 只能由自身或报警激活 | 可由事件唤醒 |
 | 开销 | 较小（无事件掩码） | 较大（需要事件掩码和等待队列） |
 
-任务状态机：
+任务状态机。
 
 <MermaidDiagram chart={`stateDiagram-v2
     [*] --> SUSPENDED : 系统启动
@@ -262,7 +262,7 @@ AUTOSAR OS 定义了两种任务类型：
 
 #### 3.1.2 ERIKA3 实现
 
-**任务类型定义**（`pkg/kernel/oo/ee_api_types.h`）：
+**任务类型定义**（`pkg/kernel/oo/ee_api_types.h`）。
 
 ```c
 typedef enum {
@@ -282,7 +282,7 @@ typedef enum {
 } OsEE_task_status;
 ```
 
-**任务描述符块（TDB）与控制块（TCB）**（`pkg/kernel/oo/ee_kernel_types.h`）：
+**任务描述符块（TDB）与控制块（TCB）**（`pkg/kernel/oo/ee_kernel_types.h`）。
 
 ```c
 /* 任务描述符块 - ROM 常量配置 */
@@ -316,9 +316,9 @@ struct OsEE_TCB_tag {
 
 #### 3.1.3 调度器实现
 
-ERIKA3 支持两种就绪队列实现：
+ERIKA3 支持两种就绪队列实现。
 
-**链表就绪队列（OSEE_RQ_LL）**：
+**链表就绪队列（OSEE_RQ_LL）**。
 
 <MermaidDiagram chart={`graph LR
     subgraph ll["优先级排序链表"]
@@ -327,7 +327,7 @@ ERIKA3 支持两种就绪队列实现：
     RQ_HEAD["Ready Queue Head"] --> SN3
 `} />
 
-**多队列就绪队列（OSEE_RQ_MULTIPLEQUEUE）**：
+**多队列就绪队列（OSEE_RQ_MULTIPLEQUEUE）**。
 
 <MermaidDiagram chart={`graph LR
     subgraph bm["优先级位图"]
@@ -338,7 +338,7 @@ ERIKA3 支持两种就绪队列实现：
     BMBIT --> Q1["Queue[1]&lt;br&gt;Task_C"]
 `} />
 
-多队列实现使用优先级位图加速查找最高优先级就绪任务，时间复杂度 O(1)：
+多队列实现使用优先级位图加速查找最高优先级就绪任务，时间复杂度 O(1)。
 
 ```c
 /* 调度节点插入 - 优先级排序 */
@@ -369,7 +369,7 @@ OsEE_SN * osEE_sn_priority_insert(OsEE_SN *p_head, OsEE_SN *p_sn) {
 }
 ```
 
-**调度核心流程**（`ee_oo_scheduler.c`）：
+**调度核心流程**（`ee_oo_scheduler.c`）。
 
 <MermaidDiagram chart={`flowchart TD
     A[任务激活/事件设置<br/>ActivateTask/SetEvent] --> B{当前运行任务<br/>优先级 vs 新任务优先级?}
@@ -387,7 +387,7 @@ OsEE_SN * osEE_sn_priority_insert(OsEE_SN *p_head, OsEE_SN *p_sn) {
     style H fill:#FF9800,color:white
 `} />
 
-**任务激活的完整调用链**：
+**任务激活的完整调用链**。
 
 ```c
 /* 用户调用 */
@@ -438,7 +438,7 @@ void osEE_scheduler_task_preemption_point() {
 
 #### 3.2.2 ERIKA3 实现
 
-**计数器数据结构**（`pkg/kernel/oo/ee_kernel_types.h`）：
+**计数器数据结构**（`pkg/kernel/oo/ee_kernel_types.h`）。
 
 ```c
 /* 计数器控制块 - 运行时可变 */
@@ -476,7 +476,7 @@ typedef enum {
 } OsEE_action_type;
 ```
 
-**报警设置流程**（`ee_oo_alarm.c`）：
+**报警设置流程**（`ee_oo_alarm.c`）。
 
 <MermaidDiagram chart={`sequenceDiagram
     participant App as 应用
@@ -502,7 +502,7 @@ typedef enum {
     end
 `} />
 
-**关键实现细节**：
+**关键实现细节**。
 
 ```c
 /* osEE_counter_insert_abs_trigger - 按绝对时间插入触发器 */
@@ -544,7 +544,7 @@ void osEE_counter_insert_abs_trigger(
 
 #### 3.3.1 规范要求
 
-AUTOSAR OS 的资源（Resource）机制用于保护共享数据，采用 **优先级 Ceiling 协议（IPCP）** 防止优先级反转：
+AUTOSAR OS 的资源（Resource）机制用于保护共享数据，采用 **优先级 Ceiling 协议（IPCP）** 防止优先级反转。
 
 - 每个资源有一个 Ceiling 优先级，等于所有可能访问该资源的任务中最高优先级加一
 - `GetResource()` 将任务优先级提升到 Ceiling 优先级
@@ -575,7 +575,7 @@ struct OsEE_MDB_tag {
 };
 ```
 
-**GetResource 流程**：
+**GetResource 流程**。
 
 <MermaidDiagram chart={`flowchart TD
     A[GetResource ResID] --> B{ResID 有效?}
@@ -595,7 +595,7 @@ struct OsEE_MDB_tag {
     style J fill:#4CAF50,color:white
 `} />
 
-**ReleaseResource 流程**：
+**ReleaseResource 流程**。
 
 ```c
 /* ReleaseResource 核心逻辑 */
@@ -620,7 +620,7 @@ StatusType ReleaseResource(ResourceType ResID) {
 }
 ```
 
-**锁链示意图**：
+**锁链示意图**。
 
 <MermaidDiagram chart={`graph LR
     subgraph tcb_chain["任务 TCB 锁链"]
@@ -638,7 +638,7 @@ StatusType ReleaseResource(ResourceType ResID) {
 
 #### 3.4.1 规范要求
 
-事件（Event）仅适用于扩展任务，用于任务间同步：
+事件（Event）仅适用于扩展任务，用于任务间同步。
 
 - `SetEvent(TaskID, EventMask)` - 设置指定任务的事件
 - `WaitEvent(EventMask)` - 当前任务等待事件（阻塞）
@@ -698,7 +698,7 @@ StatusType WaitEvent(EventMaskType Mask) {
 }
 ```
 
-**事件同步流程图**：
+**事件同步流程图**。
 
 <MermaidDiagram chart={`sequenceDiagram
     participant T1 as Task_高优先级
@@ -725,7 +725,7 @@ StatusType WaitEvent(EventMaskType Mask) {
 
 #### 3.5.1 规范要求
 
-AUTOSAR OS 区分两类中断服务程序：
+AUTOSAR OS 区分两类中断服务程序。
 
 | 特性 | ISR Category 1 | ISR Category 2 |
 |------|---------------|----------------|
@@ -737,7 +737,7 @@ AUTOSAR OS 区分两类中断服务程序：
 
 #### 3.5.2 ERIKA3 的 ISR2 优先级映射
 
-ERIKA3 将 ISR2 的虚拟优先级映射到 TriCore 硬件优先级：
+ERIKA3 将 ISR2 的虚拟优先级映射到 TriCore 硬件优先级。
 
 ```
 虚拟优先级范围:
@@ -777,7 +777,7 @@ static inline void osEE_hal_set_ipl(TaskPrio prio) {
 
 #### 3.5.3 ISR2 入口/出口封装
 
-ERIKA3 为每个 ISR2 生成封装函数：
+ERIKA3 为每个 ISR2 生成封装函数。
 
 ```c
 /* ISR2 声明宏 (pkg/arch/tricore/ee_hal_internal.h) */
@@ -817,11 +817,11 @@ void osEE_isr2_exit(TaskPrio isr_prio) {
 
 #### 3.6.1 规范要求
 
-Schedule Table 是 AUTOSAR OS 对 OSEK 的扩展，提供精确定时的周期性动作调度：
+Schedule Table 是 AUTOSAR OS 对 OSEK 的扩展，提供精确定时的周期性动作调度。
 
 - 由若干 **Expiry Point** 组成，每个 Expiry Point 有一个偏移量
 - 每个 Expiry Point 可以触发多个动作（ActivateTask / SetEvent）
-- 支持三种同步方式：无同步、隐式同步、显式同步
+- 支持三种同步方式，无同步、隐式同步、显式同步
 - 支持 NextScheduleTable 实现无缝切换
 
 <MermaidDiagram chart={`graph LR
@@ -863,7 +863,7 @@ struct OsEE_SchedTabCB_tag {
 
 ### 4.1 TriCore 架构特性
 
-Infineon AURIX TC38x 是一款多核汽车级 MCU，具有以下关键特性：
+Infineon AURIX TC38x 是一款多核汽车级 MCU，具有以下关键特性。
 
 | 特性 | 描述 |
 |------|------|
@@ -875,7 +875,7 @@ Infineon AURIX TC38x 是一款多核汽车级 MCU，具有以下关键特性：
 | 保护 | 优先级 Ceiling + MPU + Watchdog |
 | 存储 | 3.5MB SRAM + 16MB Flash |
 
-**TriCore 关键寄存器**：
+**TriCore 关键寄存器**。
 
 | 寄存器 | 功能 | ERIKA3 用途 |
 |--------|------|-------------|
@@ -888,7 +888,7 @@ Infineon AURIX TC38x 是一款多核汽车级 MCU，具有以下关键特性：
 
 ### 4.2 CSA 上下文保存与恢复
 
-TriCore 使用硬件 CSA（Context Save Area）机制进行上下文保存：
+TriCore 使用硬件 CSA（Context Save Area）机制进行上下文保存。
 
 <MermaidDiagram chart={`graph TD
     subgraph csa_chain["CSA链式结构"]
@@ -905,7 +905,7 @@ TriCore 使用硬件 CSA（Context Save Area）机制进行上下文保存：
     style CSA2 fill:#E8F5E9
 `} />
 
-**ERIKA3 的 CSA 管理**（`pkg/arch/tricore/ee_tc_ctx.c`）：
+**ERIKA3 的 CSA 管理**（`pkg/arch/tricore/ee_tc_ctx.c`）。
 
 ```c
 /* 分配上下文空间 */
@@ -934,7 +934,7 @@ void osEE_hal_restore_ctx(OsEE_TDB *p_tdb) {
 }
 ```
 
-**上下文切换完整流程**：
+**上下文切换完整流程**。
 
 <MermaidDiagram chart={`sequenceDiagram
     participant TaskA as Task_A(低优先级)
@@ -960,9 +960,9 @@ void osEE_hal_restore_ctx(OsEE_TDB *p_tdb) {
 
 ### 4.3 中断控制与 SRC 配置
 
-**Service Request Node (SRC) 配置**：
+**Service Request Node (SRC) 配置**。
 
-TC38x 的每个中断源都有独立的 SRC 寄存器：
+TC38x 的每个中断源都有独立的 SRC 寄存器。
 
 ```c
 /* SRC 基地址 */
@@ -988,7 +988,7 @@ TC38x 的每个中断源都有独立的 SRC 寄存器：
 #define OSEE_TC_SRC_CLEAR_REQUEST(src) ((src) &= ~(1U))
 ```
 
-**OIL 配置中的 ISR2 声明**：
+**OIL 配置中的 ISR2 声明**。
 
 ```
 ISR Can0_Tx {
@@ -1001,7 +1001,7 @@ ISR Can0_Tx {
 
 ### 4.4 多核 HAL 适配
 
-**核心间同步**（`pkg/arch/tricore/ee_tc_hal_mc.c`）：
+**核心间同步**（`pkg/arch/tricore/ee_tc_hal_mc.c`）。
 
 ```c
 /* 多核启动 */
@@ -1029,11 +1029,11 @@ void osEE_shutdown_os(StatusType error) {
 
 ---
 
-## 5. 实战：从 OIL 配置到任务运行
+## 5. 实战，从 OIL 配置到任务运行
 
 ### 5.1 OIL 配置文件（conf.oil）
 
-以下完整示例来自 ERIKA3 TC38x 的 CAN MCAL 示例，展示了如何配置一个完整的 AUTOSAR OS 应用：
+以下完整示例来自 ERIKA3 TC38x 的 CAN MCAL 示例，展示了如何配置一个完整的 AUTOSAR OS 应用。
 
 ```
 CPU mySystem {
@@ -1236,7 +1236,7 @@ void idle_hook(void) {
     style HEX fill:#FCE4EC
 `} />
 
-**构建命令**：
+**构建命令**。
 
 ```bash
 # 设置环境变量
@@ -1252,7 +1252,7 @@ make -f makefile build
 
 ### 5.4 运行时调度时序图
 
-以下展示了 TC38x 上 CAN 示例的典型调度时序：
+以下展示了 TC38x 上 CAN 示例的典型调度时序。
 
 <MermaidDiagram chart={`gantt
     title ERIKA3 on TC38x - CAN 示例调度时序
@@ -1282,7 +1282,7 @@ make -f makefile build
 
 ### 6.1 多核架构
 
-ERIKA3 支持 AUTOSAR OS 的多核扩展：
+ERIKA3 支持 AUTOSAR OS 的多核扩展。
 
 <MermaidDiagram chart={`graph TB
     subgraph Core_0["Core 0 - 主核"]
@@ -1313,7 +1313,7 @@ ERIKA3 支持 AUTOSAR OS 的多核扩展：
     style KDB fill:#FFF9C4
 `} />
 
-**两种多核调度策略**：
+**两种多核调度策略**。
 
 | 策略 | 描述 | 适用场景 |
 |------|------|---------|
@@ -1409,3 +1409,11 @@ StatusType ShutdownAllCores(void) {
 ---
 
 > 本文基于 ERIKA3-TC38x 开源项目（GPL 许可）源码分析编写，所有代码引用均遵循原项目许可协议。AUTOSAR 是 AUTOSAR Development Partnership 的注册商标。Infineon 和 AURIX 是 Infineon Technologies AG 的商标。TriCore 是 Infineon Technologies AG 的注册商标。
+
+---
+
+{/* course-crosslink */}
+
+## 配套课程
+
+上面拆的是 ERIKA3 在 TC38x 上的源码实现。要把 OSEK 任务调度、ISR 与资源锁自己配一遍，[《AUTOSAR & 功能安全互动教程》](/projects/autosar-functional-safety) 用 12 章从 OSEK/VDX 一路做到 ISO 26262 的 ASIL 分解。车载以太网这一层可接着读 [SOME/IP 协议全景解析](/knowledge/autonomous-driving/someip-protocol-panoramic-analysis)。

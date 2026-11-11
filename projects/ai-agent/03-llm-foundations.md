@@ -1,4 +1,4 @@
-﻿---
+---
 title: "大语言模型基础"
 description: "Transformer 架构解析，提示工程方法论，主流 LLM 对比与能力局限。"
 date: "2026-07-12"
@@ -26,7 +26,7 @@ $$P(S)=P(w_1,w_2,…,w_m)=P(w_1)⋅P(w_2∣w_1)⋅P(w_3∣w_1,w_2)⋯P(w_m∣w_1
 
 
 
-![](/images/courses/3-figures/1757249275674-0.png)
+![](/images/courses/3-figures/1757249275674-0.webp)
 
 *图 3.1 马尔可夫假设示意图*
 
@@ -126,7 +126,7 @@ N-gram 模型的根本缺陷在于它将词视为孤立、离散的符号。为�
 
 
 
-![](/images/courses/3-figures/1757249275674-1.png)
+![](/images/courses/3-figures/1757249275674-1.webp)
 
 *图 3.2 神经网络语言模型架构示意图*
 
@@ -186,7 +186,7 @@ king - man + woman 的结果向量: [0.9 0.2]
 
 
 
-![](/images/courses/3-figures/1757249275674-2.png)
+![](/images/courses/3-figures/1757249275674-2.webp)
 
 *图 3.3 RNN 结构示意图*
 
@@ -210,7 +210,7 @@ king - man + woman 的结果向量: [0.9 0.2]
 
 
 
-![](/images/courses/3-figures/1757249275674-3.png)
+![](/images/courses/3-figures/1757249275674-3.webp)
 
 *图 3.4 Transformer 整体架构图*
 
@@ -333,7 +333,7 @@ $$\text{Attention}(Q,K,V)=\text{softmax}\left(\frac{QK^{T}}{\sqrt{d_{k}}}\right)
 
 
 
-![](/images/courses/3-figures/1757249275674-4.png)
+![](/images/courses/3-figures/1757249275674-4.webp)
 
 *图 3.5 多头注意力机制*
 
@@ -712,7 +712,7 @@ How are you?
 <strong>案例演示：</strong> 假设我们的迷你语料库是 `{"hug": 1, "pug": 1, "pun": 1, "bun": 1}`，并且我们想构建一个大小为 10 的词表。BPE 的训练过程可以用下表3.1来表示：
 
 <p>表 3.1  BPE 算法合并过程示例</p>
-  ![](/images/courses/3-figures/1757249275674-5.png)
+  ![](/images/courses/3-figures/1757249275674-5.webp)
 
 训练结束后，词表大小达到 10，我们就得到了新的分词规则。现在，对于一个未见过的词 "bug"，分词器会先查找 "bug" 是否在词表中，发现不在；然后查找 "bu"，发现不在；最后查找 "b" 和 "ug"，发现都在，于是将其切分为 `['b', 'ug']`。
 
@@ -1237,7 +1237,7 @@ KV Cache 的效率取决于上下文结构的稳定性。有两类 Attention 现
 
 解决方案：将 `Current time: {{now}}` 移动到消息列表的末尾，作为一条 user 或 tool 消息注入。这样 system prompt 保持不变，KV Cache 得以复用。
 
-![](/images/courses/ai-agent/fig2-7.png)
+![](/images/courses/ai-agent/fig2-7.webp)
 
 *图 3.12 System Prompt 不变 vs 变化的 KV Cache 命中率对比*
 

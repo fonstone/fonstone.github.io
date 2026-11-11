@@ -4,7 +4,7 @@ description: "本节主要介绍了与操作系统无关的基本virtioblk设备
 date: "2026-07-12"
 order: 29
 tags: ["virtio-blk", "块设备", "驱动", "磁盘"]
-est_time: "45分钟"
+est_time: "45 分钟"
 ---
 ## 本节导读
 

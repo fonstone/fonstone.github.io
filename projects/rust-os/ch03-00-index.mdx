@@ -4,7 +4,7 @@ description: "从零启动到 Rust main 函数的完整流程"
 date: "2026-07-12"
 order: 13
 tags: ["裸机", "bare-metal", "启动流程", "Cortex-R52", "no_std", "reset vector"]
-est_time: "15分钟"
+est_time: "15 分钟"
 ---
 
 # 本章目标
@@ -193,7 +193,7 @@ Hello, world! 前后有一些额外的动态运行信息，最后是一系列 ke
 
 三叶虫LibOS操作系统的总体结构如下图所示：
 
-![../../os-lectures/lec2/figs/lib-os-detail.png](/images/rust-os/rcore/chapter1/lib-os-detail.png)
+![../../os-lectures/lec2/figs/lib-os-detail.png](/images/rust-os/rcore/chapter1/lib-os-detail.webp)
 
 通过上图，大致可以看出Qemu把包含app和三叶虫LibOS的image镜像加载到内存中，RustSBI（bootloader）完成基本的硬件初始化后，跳转到三叶虫LibOS起始位置，三叶虫LibOS首先进行app执行前的初始化工作，即建立栈空间和清零bss段，然后跳转到app去执行。app在执行过程中，会通过函数调用的方式得到三叶虫LibOS提供的OS服务，如输出字符串等，避免了app与硬件直接交互的繁琐过程。
 

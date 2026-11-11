@@ -4,7 +4,7 @@ description: "共享内存、SPSC 环形缓冲区与消息队列"
 date: "2026-07-12"
 order: 64
 tags: ["IPC", "进程间通信", "微内核", "消息传递", "设计"]
-est_time: "20分钟"
+est_time: "20 分钟"
 ---
 
 # IPC 设计原则
@@ -72,7 +72,7 @@ IPC（Inter-Process Communication，进程间通信）是操作系统中不同�
 
 其实在 **UNIX** 的早期发展历史中，也碰到了同样的问题，每个程序专注在完成一件事情上，但缺少把多个程序联合在一起完成复杂功能的机制。直到1975年UNIX v6中引入了让人眼前一亮的创新机制-- **I/O重定向** 与 **管道（pipe）** 。基于这两种机制，操作系统在不用改变应用程序的情况下，可以将一个程序的输出重新定向到另外一个程序的输入中，这样程序之间就可以进行任意的连接，并组合出各种灵活的复杂功能。
 
-![interprocess-communication.png](/images/rust-os/rcore/chapter7/interprocess-communication.png)
+![interprocess-communication.png](/images/rust-os/rcore/chapter7/interprocess-communication.webp)
 
 > **Note**
 >
@@ -169,11 +169,11 @@ Shell: Process 2 exited with code 0
 
 迅猛龙操作系统 -- IPCOS的总体结构如下图所示：
 
-![../../os-lectures/lec10/figs/ipc-os-detail-2.png](/images/rust-os/rcore/chapter7/ipc-os-detail-2.png)
+![../../os-lectures/lec10/figs/ipc-os-detail-2.png](/images/rust-os/rcore/chapter7/ipc-os-detail-2.webp)
 
 通过上图，大致可以看出迅猛龙操作系统 -- IPCOS增加了两种通信机制，一种是交换数据的管道（Pipe）机制，另外一种是发送异步通知事件的信号（signal）机制，应用程序通过新增的管道和信号相关的系统调用可以完成进程间通信。这两种机制所对应的资源都被进程管理，如下图所示。
 
-![../../os-lectures/lec10/figs/tcb-ipc-standard-file.png](/images/rust-os/rcore/chapter7/tcb-ipc-standard-file.png)
+![../../os-lectures/lec10/figs/tcb-ipc-standard-file.png](/images/rust-os/rcore/chapter7/tcb-ipc-standard-file.webp)
 
 这里把管道看成是一种特殊的内存文件，并在进程的打开文件表 fd\_talbe 中被管理，而且进程通过文件读写系统调用就可以很方便地基于管道实现进程间的数据交换。而信号是进程管理的一种资源，发送信号的进程可以通过系统调用给接收信号的目标进程控制块中的 signal 结构更新所发信号信息，操作系统再通过扩展 trap\_handler 中从内核态返回到用户态的处理流程， 改变了接收信号的目标进程的执行上下文，从而让接收信号的目标进程可以优先执行处理信号事件的预设函数 signal\_handler ，在处理完信号后，再继续执行之前暂停的工作。
 

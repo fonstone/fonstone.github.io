@@ -66,7 +66,7 @@ KV cache 是自回归的第一个工程产物。推理时每个注意力头的 k
 
 MoE 稀疏专家架构负责参数量扩容。稀疏门控专家的想法来自 [Shazeer 等人（2017）](https://arxiv.org/abs/1701.06538)，[Mixtral 8x7B（2023 年 12 月，Apache 2.0）](https://arxiv.org/abs/2401.04088)把它带到开源模型的主流。8 个专家，每个 token 由门控路由选 2 个，总参数 46.7B，每 token 激活 12.9B，官方报告的 MT-Bench 分数 8.30。激活参数决定推理算力，总参数决定显存占用，这组数字直接解释了为什么 MoE 训练和推理都在跟通信和访存较劲。MoE 省算力不省显存，70B 稠密模型的显存账本在这里换成了一张更大的稀疏账本。[DeepSeek-V3（2024 年 12 月）](https://arxiv.org/abs/2412.19437)把稀疏度推到 671B 总参、37B 激活，[Gemma 3（2025 年 3 月）](https://arxiv.org/abs/2503.19786)用 MoE 做小尺寸模型。
 
-![Mixtral 8x7B 稀疏 MoE 层结构，来源 Mixtral of Experts 论文 Figure 1](/images/ai-algorithm-technology-sandbox/mixtral-moe-fig1.jpg)
+![Mixtral 8x7B 稀疏 MoE 层结构，来源 Mixtral of Experts 论文 Figure 1](/images/ai-algorithm-technology-sandbox/mixtral-moe-fig1.webp)
 
 *图 1，Mixtral 8x7B 的稀疏 MoE 层。门控路由把每个输入向量分给 8 个专家中的 2 个，输出按路由权重加权求和。来源 Mixtral of Experts 论文 Figure 1。*
 
@@ -95,7 +95,7 @@ Agent 场景的结构分三段，推理架构、工具调用、多智能体协�
 
 推理架构解决怎么把一个问题想明白。思维链 CoT（[Wei 等人，2022](https://arxiv.org/abs/2201.11903)）让模型先把中间步骤写出来再落答案，这是后续所有推理优化的起点。思维树 ToT（[Yao 等人，2023](https://arxiv.org/abs/2305.10601)）把推理展开成树，在不同分支上搜索，适合需要多步尝试的问题。思维图 GoT（[Besta 等人，2023](https://arxiv.org/abs/2308.09687)）更进一步，允许不同推理链合并和互相引用。三者的共同代价是 token，思考的每一步都要真的生成，一个 Agent 任务的 token 消耗是单轮对话的几倍到几十倍，这决定了系统层要把缓存和调度放在什么位置。
 
-![ReAct 四种提示方法对比，来源 ReAct 论文 Figure 1](/images/ai-algorithm-technology-sandbox/react-fig1.jpg)
+![ReAct 四种提示方法对比，来源 ReAct 论文 Figure 1](/images/ai-algorithm-technology-sandbox/react-fig1.webp)
 
 *图 2，ReAct 对比四种提示方法。标准提示、思维链、纯行动和 ReAct 交替推理与行动，在 HotpotQA 问题上只有 ReAct 拿到了正确答案。来源 ReAct 论文 Figure 1。*
 
@@ -109,7 +109,7 @@ Agent 场景的结构分三段，推理架构、工具调用、多智能体协�
 
 跨模态对齐解决不同模态怎么进同一个向量空间。[CLIP（Radford 等人，2021）](https://arxiv.org/abs/2103.00020)用对比学习把图像和文本编码进同一空间，配对样本拉近、负样本推远，这个双塔结构成了视觉语言模型的通用起点。[Flamingo（Alayrac 等人，2022）](https://arxiv.org/abs/2204.14198)的 Perceiver Resampler 把变长的视觉特征压缩成固定数量的 token，再喂给语言模型，是视觉特征怎么进语言模型的标准答案之一。[LLaVA（2023）](https://arxiv.org/abs/2304.08485)的两阶段训练沿同一条路，第一步对齐视觉编码器和语言模型主干，第二步端到端微调。
 
-![CLIP 对比预训练与零样本迁移，来源 CLIP 论文 Figure 1](/images/ai-algorithm-technology-sandbox/clip-fig1.jpg)
+![CLIP 对比预训练与零样本迁移，来源 CLIP 论文 Figure 1](/images/ai-algorithm-technology-sandbox/clip-fig1.webp)
 
 *图 3，CLIP 的做法。左侧对比预训练把图像和文本编码进同一空间，拉近配对样本，右侧把学到的表征零样本迁移到下游分类任务。来源 CLIP 论文 Figure 1。*
 
@@ -123,7 +123,7 @@ Agent 场景的结构分三段，推理架构、工具调用、多智能体协�
 
 [PINN（Raissi 等人，2019）](https://arxiv.org/abs/1711.10561)把偏微分方程的残差直接写进损失函数。网络输出解场，自动微分算出方程项，损失由数据、方程残差和边界条件三部分构成，训练一只网络就是解一个初边值问题。好处是网格无关，解场可以任意分辨率采样。
 
-![PINN 求解 Burgers 方程，来源 PINN 论文 Figure 1](/images/ai-algorithm-technology-sandbox/pinn-fig1.jpg)
+![PINN 求解 Burgers 方程，来源 PINN 论文 Figure 1](/images/ai-algorithm-technology-sandbox/pinn-fig1.webp)
 
 *图 4，PINN 求解 Burgers 方程。上方是预测解场和初始边界训练数据的位置，下方是绝对误差，网络输出直接覆盖整个时空域。来源 PINN 论文 Figure 1。*
 
@@ -139,7 +139,7 @@ Agent 场景的结构分三段，推理架构、工具调用、多智能体协�
 
 语言大模型走 RLHF 加直接偏好优化。RLHF 是 InstructGPT（[Ouyang 等人，2022](https://arxiv.org/abs/2203.02155)）定下的三段式，先 SFT，再训奖励模型，最后用 [PPO（Schulman 等人，2017）](https://arxiv.org/abs/1707.06347)优化策略，ChatGPT 2022 年 11 月上线用的就是这套。[DPO（Rafailov 等人，2023）](https://arxiv.org/abs/2305.18290)把偏好优化写成直接损失，跳过奖励模型和在线采样，训练成本大幅下降。[ORPO（2024）](https://arxiv.org/abs/2403.07691)把 SFT 和偏好优化合成一步。[IPO（Azar 等人，2023）](https://arxiv.org/abs/2310.12036)修 DPO 在重复偏好数据上的过拟合。[RRHF（Yuan 等人，2023）](https://arxiv.org/abs/2304.05302)用拒绝采样从好输出里学。这一系方法的共同目标一致，差别在用什么样的信号、几步走完。
 
-![InstructGPT 三段式 RLHF 流程，来源 InstructGPT 论文 Figure 2](/images/ai-algorithm-technology-sandbox/rlhf-fig2.jpg)
+![InstructGPT 三段式 RLHF 流程，来源 InstructGPT 论文 Figure 2](/images/ai-algorithm-technology-sandbox/rlhf-fig2.webp)
 
 *图 5，InstructGPT 的三段式。先 SFT 微调，再训奖励模型，最后用 PPO 优化策略，这是 RLHF 的标准流程。来源 InstructGPT 论文 Figure 2。*
 
@@ -153,7 +153,7 @@ Agent 场景的对齐信号来自环境。PPO 直接做任务规划的策略优�
 
 语言大模型这一格的关键词是低成本迭代。[LoRA（Hu 等人，2021）](https://arxiv.org/abs/2106.09685)冻结原权重，只训练低秩增量，一张消费级显卡就能微调几十亿参数的模型。[QLoRA（Dettmers 等人，2023）](https://arxiv.org/abs/2305.14314)把权重压到 4bit 再训，单卡门槛进一步降低。[DoRA（2024）](https://arxiv.org/abs/2402.09353)把权重拆成幅度和方向分别更新，效果更接近全量微调。持续预训练和领域预训练解决新知识注入，知识蒸馏（[Hinton 等人，2015](https://arxiv.org/abs/1503.02531)）把大模型的能力压进小模型。
 
-![LoRA 低秩重参数化，来源 LoRA 论文 Figure 1](/images/ai-algorithm-technology-sandbox/lora-fig1.jpg)
+![LoRA 低秩重参数化，来源 LoRA 论文 Figure 1](/images/ai-algorithm-technology-sandbox/lora-fig1.webp)
 
 *图 6，LoRA 的重参数化。冻结原权重 W，只训练低秩矩阵 A 和 B，增量等于两者乘积，微调成本大幅下降。来源 LoRA 论文 Figure 1。*
 
@@ -171,7 +171,7 @@ Agent 场景从演示和轨迹里学。少样本上下文学习（[GPT-3 论文]
 
 语言大模型的量化是这套体系里最成熟的。[GPTQ（Frantar 等人，2022）](https://arxiv.org/abs/2210.17323)逐层最小化量化误差，把 175B 的 OPT 压到 3 到 4 bit 还能用。[AWQ（Lin 等人，2023）](https://arxiv.org/abs/2306.00978)按激活幅度保护重要通道，4bit 量化在边缘设备上跑成了主流，MLC-LLM 和 vLLM 都把它当默认选项。[SmoothQuant（Xiao 等人，2022）](https://arxiv.org/abs/2211.10438)把激活里的离群值平移一部分到权重侧，让 INT8 全量化在 175B 规模上基本无损。[LLM.int8()（Dettmers 等人，2022）](https://arxiv.org/abs/2208.07339)把离群列单独用高精度算。权重量化解决的是显存放不下，70B 模型 FP16 要 140GB，INT4 后约 35GB，单张 80GB 卡从放不下到放下，这是量化对部署最直接的一次改变。KV cache 还能再压一层，[KIVI（2024）](https://arxiv.org/abs/2402.02750)用非对称 2bit 量化 KV cache，长上下文场景的吞吐收益明显。
 
-![SmoothQuant 激活离群值问题，来源 SmoothQuant 论文 Figure 2](/images/ai-algorithm-technology-sandbox/smoothquant-fig2.jpg)
+![SmoothQuant 激活离群值问题，来源 SmoothQuant 论文 Figure 2](/images/ai-algorithm-technology-sandbox/smoothquant-fig2.webp)
 
 *图 7，SmoothQuant 的动机。激活里的离群值把量化范围撑大，正常值只剩很少的量化档位，这就是激活难以量化的原因。来源 SmoothQuant 论文 Figure 2。*
 
@@ -183,7 +183,7 @@ Agent 场景从演示和轨迹里学。少样本上下文学习（[GPT-3 论文]
 
 算子的代表是 [FlashAttention（Dao 等人，2022）](https://arxiv.org/abs/2205.14135)。它把注意力计算按 IO 感知分块，中间矩阵不写回显存，论文报告在 GPT-2 上比标准 PyTorch 注意力实现快约 3 倍。[FlashAttention-2（2023）](https://arxiv.org/abs/2307.08691)把并行度补齐，FlashDecoding（2023）让解码阶段跨序列并行，长序列场景收益明显。算子融合把 MLP 的多个 kernel 合成一次调用，减少 kernel 启动开销。
 
-![FlashAttention 分块策略与显存对比，来源 FlashAttention 论文 Figure 1](/images/ai-algorithm-technology-sandbox/flashattn-fig1.jpg)
+![FlashAttention 分块策略与显存对比，来源 FlashAttention 论文 Figure 1](/images/ai-algorithm-technology-sandbox/flashattn-fig1.webp)
 
 *图 8，FlashAttention 的分块策略。左图 tiling 把 N×N 的注意力矩阵分块计算，避免整块写回显存，右图是显存占用对比。来源 FlashAttention 论文 Figure 1。*
 
@@ -215,7 +215,7 @@ Agent 场景的通信在消息层。多智能体消息压缩把特征编码压�
 
 投机解码是这一格最出名的技术。思路是用一个草稿模型快速预测一串 token，大模型并行验证，验证通过就一次接受一串，解码延迟降 2 到 3 倍。[Leviathan 等人（2022 年投稿，ICML 2023）](https://arxiv.org/abs/2211.17192)和 [Chen 等人（2023）](https://arxiv.org/abs/2308.04623)同期独立提出。[Medusa（Cai 等人，2023）](https://arxiv.org/abs/2401.10774)在大模型头上挂多个解码头，免掉草稿模型。[EAGLE（2024）](https://arxiv.org/abs/2401.15077)在特征层面做草稿，误差比 token 层面小。[EAGLE-2（2024）](https://arxiv.org/abs/2406.16858)引入动态草稿树，[EAGLE-3（2025，NeurIPS 2025）](https://arxiv.org/abs/2503.01840)用训练时测试把草稿模型的训练和推理对齐。投机解码和量化可以叠加，Kimi K3 的 MTP 层就同时做了 MXFP4 量化。
 
-![投机解码迭代过程，来源 Speculative Decoding 论文 Figure 1](/images/ai-algorithm-technology-sandbox/speculative-fig1.jpg)
+![投机解码迭代过程，来源 Speculative Decoding 论文 Figure 1](/images/ai-algorithm-technology-sandbox/speculative-fig1.webp)
 
 *图 9，投机解码的迭代过程。每一行是一轮迭代，草稿模型先预测一串候选 token，目标模型并行验证，接受一致的前缀，其余重新采样。来源 Speculative Decoding 论文 Figure 1。*
 

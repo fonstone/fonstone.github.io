@@ -9,17 +9,17 @@ tags: ["AI", "Claude", "Skills", "工具调用", "LLM"]
 
 Claude Code Skills 是 Anthropic 为 Claude Code CLI 工具设计的一套**结构化能力扩展系统**。它允许开发者通过编写简单的 Markdown 文件（`SKILL.md`），将特定领域知识、工作流程和工具调用授权注入到 Claude 的上下文中，使其能够自主决定何时以及如何使用这些技能。
 
-可以把 Skills 理解为给 Claude 装上的"专业技能包"——每个 Skill 都有明确的用途描述、参数规则和执行指令，Claude 根据用户意图自动匹配并调用合适的 Skill，也可以通过 `/skill-name` 手动触发。
+可以把 Skills 理解为给 Claude 装上的"专业技能包"，每个 Skill 都有明确的用途描述、参数规则和执行指令，Claude 根据用户意图自动匹配并调用合适的 Skill，也可以通过 `/skill-name` 手动触发。
 
 ![Skill 目录结构](/images/claude-code-skills/skill-structure.svg)
 
-## 核心必填文件：SKILL.md
+## 核心必填文件，SKILL.md
 
-每个 Skill 必须包含一个 `SKILL.md` 文件，这是 Skill 的核心定义文件。它由两部分组成：
+每个 Skill 必须包含一个 `SKILL.md` 文件，这是 Skill 的核心定义文件。它由两部分组成。
 
 ### 1. YAML Frontmatter（前置配置）
 
-Frontmatter 位于文件开头的 `---` 之间，用于配置 Skill 的行为属性：
+Frontmatter 位于文件开头的 `---` 之间，用于配置 Skill 的行为属性。
 
 ```yaml
 ---
@@ -33,7 +33,7 @@ effort: high
 ---
 ```
 
-各字段说明：
+各字段说明。
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
@@ -52,9 +52,9 @@ effort: high
 
 ### 2. Markdown 内容（执行指令）
 
-Frontmatter 之后是 Claude 执行该 Skill 时遵循的具体指令。支持以下特殊语法：
+Frontmatter 之后是 Claude 执行该 Skill 时遵循的具体指令。支持以下特殊语法。
 
-**变量替换：**
+**变量替换**
 
 | 变量 | 说明 |
 |------|------|
@@ -63,9 +63,9 @@ Frontmatter 之后是 Claude 执行该 Skill 时遵循的具体指令。支持�
 | `${CLAUDE_SESSION_ID}` | 当前会话 ID |
 | `${CLAUDE_SKILL_DIR}` | SKILL.md 所在目录路径 |
 
-**动态上下文注入（`` !`command` ``）：**
+**动态上下文注入（`` !`command` ``）**
 
-在 Skill 内容中嵌入 shell 命令，命令在 Skill 加载时执行，输出替换占位符：
+在 Skill 内容中嵌入 shell 命令，命令在 Skill 加载时执行，输出替换占位符。
 
 ````markdown
 ## 当前 PR 变更
@@ -86,12 +86,12 @@ git log --oneline -10
 
 ````markdown
 ---
-name: code-review
+name， code-review
 description: "对指定文件或 PR 进行深度代码审查，输出改进建议"
 argument-hint: "[file-or-pr-url]"
-allowed-tools: Read Grep Glob Bash(gh *)
-context: fork
-agent: Explore
+allowed-tools， Read Grep Glob Bash(gh *)
+context， fork
+agent， Explore
 ---
 
 ## 代码审查任务
@@ -102,7 +102,7 @@ agent: Explore
 
 1. 使用 Glob 和 Grep 定位相关文件
 2. 仔细阅读每个文件的实现逻辑
-3. 检查以下方面：
+3. 检查以下方面。
    - 代码正确性和边界情况
    - 错误处理是否完善
    - 性能问题
@@ -111,12 +111,12 @@ agent: Explore
 
 ### 审查范围
 
-- PR diff: !`gh pr diff $ARGUMENTS`
-- 变更文件: !`gh pr diff --name-only $ARGUMENTS`
+- PR diff， !`gh pr diff $ARGUMENTS`
+- 变更文件， !`gh pr diff --name-only $ARGUMENTS`
 
 ### 输出格式
 
-请按以下结构输出审查结果：
+请按以下结构输出审查结果。
 
 1. **严重问题**（必须修复）
 2. **建议改进**（推荐修复）
@@ -172,8 +172,8 @@ my-skill/
 <!-- template.md -->
 ## 代码审查报告
 
-**文件**: {{file_path}}
-**日期**: {{date}}
+**文件**， {{file_path}}
+**日期**， {{date}}
 
 ### 严重问题
 {{critical_issues}}
@@ -238,11 +238,11 @@ mkdir -p ~/.claude/skills/my-skill
 
 ````markdown
 ---
-name: commit-gen
+name， commit-gen
 description: "根据暂存区变更自动生成规范的 Git commit message，遵循 Conventional Commits 规范"
 argument-hint: "[scope]"
-allowed-tools: Bash(git diff *) Bash(git status *) Bash(git log *)
-disable-model-invocation: true
+allowed-tools， Bash(git diff *) Bash(git status *) Bash(git log *)
+disable-model-invocation， true
 ---
 
 ## 任务
@@ -251,24 +251,24 @@ disable-model-invocation: true
 
 ### 步骤
 
-1. 查看当前暂存区变更：
+1. 查看当前暂存区变更。
    ```!
    git diff --cached --stat
    ```
 
-2. 查看详细变更内容：
+2. 查看详细变更内容。
    ```!
    git diff --cached
    ```
 
-3. 参考最近的提交风格：
+3. 参考最近的提交风格。
    ```!
    git log --oneline -5
    ```
 
 4. 分析变更类型（feat/fix/docs/refactor/test/chore 等），如果用户提供了 $ARGUMENTS 作为 scope，请将其纳入。
 
-5. 输出一条 commit message，格式为：
+5. 输出一条 commit message，格式为。
    ```
    <type>(<scope>): <subject>
 
@@ -281,7 +281,7 @@ disable-model-invocation: true
 
 ### 示例
 
-以下情况应生成：
+以下情况应生成。
 
 - 新增功能 → `feat(api): add user authentication endpoint`
 - 修复 bug → `fix(auth): resolve token refresh race condition`
@@ -295,7 +295,7 @@ disable-model-invocation: true
 
 ## 格式
 
-<type>(<scope>): <subject>
+<type>(<scope>)， <subject>
 
 <body>
 
@@ -303,21 +303,21 @@ disable-model-invocation: true
 
 ## Type 列表
 
-- feat: 新功能
-- fix: 修复 bug
-- docs: 文档变更
-- style: 代码格式（不影响逻辑）
-- refactor: 重构（不是新功能也不是修复）
-- perf: 性能优化
-- test: 添加或修改测试
-- chore: 构建工具或辅助工具变更
+- feat， 新功能
+- fix， 修复 bug
+- docs， 文档变更
+- style， 代码格式（不影响逻辑）
+- refactor， 重构（不是新功能也不是修复）
+- perf， 性能优化
+- test， 添加或修改测试
+- chore， 构建工具或辅助工具变更
 
 ## 规则
 
 1. subject 不超过 50 字符
 2. subject 使用祈使句
 3. body 每行不超过 72 字符
-4. breaking change 在 footer 中标注BREAKING CHANGE:
+4. breaking change 在 footer 中标注BREAKING CHANGE
 ```
 
 ### 步骤四：添加自定义子代理（可选）
@@ -326,22 +326,22 @@ disable-model-invocation: true
 
 ```markdown
 <!-- .claude/agents/review.md -->
-你是一个专业的代码审查助手。你的职责是：
+你是一个专业的代码审查助手。你的职责是。
 
 1. 仔细阅读代码变更
 2. 识别潜在的安全、性能和正确性问题
 3. 提供具体可操作的改进建议
 
-输出时请使用 file_path:line_number 格式引用代码。
+输出时请使用 file_path，line_number 格式引用代码。
 ```
 
 然后在 SKILL.md 中引用：
 
 ```yaml
 ---
-name: code-review
-context: fork
-agent: review
+name， code-review
+context， fork
+agent， review
 ---
 ```
 
@@ -372,11 +372,11 @@ agent: review
 
 ````markdown
 ---
-name: api-doc
+name， api-doc
 description: "为指定的 API 路由生成 OpenAPI 格式文档"
 argument-hint: "[route-file]"
-allowed-tools: Read Glob Grep
-context: fork
+allowed-tools， Read Glob Grep
+context， fork
 ---
 
 ## 任务
@@ -415,21 +415,21 @@ paths:
 
 ```markdown
 ---
-name: perf-analyze
+name， perf-analyze
 description: "分析代码中的性能瓶颈，提供优化建议"
 paths: "src/**/*.ts,src/**/*.tsx,src/**/*.js"
-user-invocable: false
+user-invocable， false
 ---
 
-当被要求分析性能或优化代码时，请遵循以下规范：
+当被要求分析性能或优化代码时，请遵循以下规范。
 
 ## 性能分析检查清单
 
-1. **算法复杂度**：是否有 O(n²) 或更高复杂度的热路径？
-2. **内存分配**：是否有不必要的对象创建或大数组拷贝？
-3. **异步阻塞**：是否有 await 在循环内使用？
-4. **缓存策略**：重复计算是否可以缓存？
-5. **渲染性能**（前端）：是否有不必要的 re-render？
+1. **算法复杂度**，是否有 O(n²) 或更高复杂度的热路径？
+2. **内存分配**，是否有不必要的对象创建或大数组拷贝？
+3. **异步阻塞**，是否有 await 在循环内使用？
+4. **缓存策略**，重复计算是否可以缓存？
+5. **渲染性能**（前端），是否有不必要的 re-render？
 
 请参考 [性能优化模式](references/perf-patterns.md)。
 ```
@@ -438,13 +438,13 @@ user-invocable: false
 
 ```markdown
 ---
-name: deploy
+name， deploy
 description: "部署应用到指定环境，自动执行测试、构建和发布"
 argument-hint: "[environment] [service]"
-allowed-tools: Bash(npm *) Bash(docker *) Bash(kubectl *)
-disable-model-invocation: true
-context: fork
-effort: high
+allowed-tools， Bash(npm *) Bash(docker *) Bash(kubectl *)
+disable-model-invocation， true
+context， fork
+effort， high
 ---
 
 ## 部署任务
@@ -453,23 +453,23 @@ effort: high
 
 ### 步骤
 
-1. 验证目标环境：$0（仅支持 staging / production）
-2. 运行测试：
+1. 验证目标环境，$0（仅支持 staging / production）
+2. 运行测试。
    ```!
    npm test -- --coverage
    ```
 
-3. 构建服务：
+3. 构建服务。
    ```!
    npm run build:$0
    ```
 
-4. 推送镜像并部署：
+4. 推送镜像并部署。
    ```!
    kubectl set image deployment/$1 $1=registry/$1:$0-latest --namespace=$0
    ```
 
-5. 验证部署状态：
+5. 验证部署状态。
    ```!
    kubectl rollout status deployment/$1 --namespace=$0
    ```
@@ -479,27 +479,27 @@ effort: high
 
 ```markdown
 ---
-name: deep-research
+name， deep-research
 description: "深入研究代码库中的特定主题，汇总所有相关实现"
-context: fork
-agent: Explore
+context， fork
+agent， Explore
 ---
 
 ## 研究任务
 
-深入研究 $ARGUMENTS:
+深入研究 $ARGUMENTS
 
 1. 使用 Glob 查找所有相关文件
 2. 使用 Grep 搜索关键词和模式
 3. 逐个阅读和分析每个相关文件
-4. 汇总发现，引用具体的 file_path:line_number
+4. 汇总发现，引用具体的 file_path，line_number
 
 ### 输出结构
 
-- **概述**：主题的宏观理解
-- **核心实现**：关键代码及其位置
-- **依赖关系**：模块间的调用链
-- **改进建议**：基于发现的优化方向
+- **概述**，主题的宏观理解
+- **核心实现**，关键代码及其位置
+- **依赖关系**，模块间的调用链
+- **改进建议**，基于发现的优化方向
 ```
 
 ## 调用控制机制
@@ -551,13 +551,13 @@ code-review/
 
 ```yaml
 # 仅授权只读工具
-allowed-tools: Read Grep Glob
+allowed-tools， Read Grep Glob
 
 # 授权特定 Bash 命令
-allowed-tools: Bash(git diff *) Bash(git log *) Bash(npm test)
+allowed-tools， Bash(git diff *) Bash(git log *) Bash(npm test)
 
-# 部署场景：限制操作范围
-allowed-tools: Bash(kubectl *) Bash(docker *)
+# 部署场景，限制操作范围
+allowed-tools， Bash(kubectl *) Bash(docker *)
 ```
 
 ### 4. 使用 paths 限制自动激活范围
@@ -579,9 +579,9 @@ paths: "src/api/**,src/routes/**"
 ````markdown
 ## 当前 PR 上下文
 
-变更文件: !`gh pr diff --name-only`
-最近提交: !`git log --oneline -5`
-当前分支: !`git branch --show-current`
+变更文件， !`gh pr diff --name-only`
+最近提交， !`git log --oneline -5`
+当前分支， !`git branch --show-current`
 ````
 
 ### 6. 组合使用 context: fork 和 agent
@@ -590,9 +590,9 @@ paths: "src/api/**,src/routes/**"
 
 ```yaml
 ---
-name: deep-research
-context: fork
-agent: Explore
+name， deep-research
+context， fork
+agent， Explore
 ---
 ```
 
@@ -600,12 +600,12 @@ agent: Explore
 
 ## 总结
 
-Claude Code Skills 是将 Claude Code 从通用编程助手扩展为领域专家的关键机制。核心要点：
+Claude Code Skills 是将 Claude Code 从通用编程助手扩展为领域专家的关键机制。核心要点。
 
-- **SKILL.md 是必填核心**：通过 YAML frontmatter 配置行为，Markdown 内容定义指令
-- **references 目录是知识仓库**：将详细参考从 SKILL.md 中分离，保持精简
-- **变量和动态注入是连接器**：`$ARGUMENTS` 接收参数，`` !`command` `` 获取实时上下文
-- **调用控制是安全阀**：`disable-model-invocation` 防止误触发，`allowed-tools` 限定权限
-- **fork 模式是隔离器**：独立上下文执行，不影响主对话
+- **SKILL.md 是必填核心**，通过 YAML frontmatter 配置行为，Markdown 内容定义指令
+- **references 目录是知识仓库**，将详细参考从 SKILL.md 中分离，保持精简
+- **变量和动态注入是连接器**，`$ARGUMENTS` 接收参数，`` !`command` `` 获取实时上下文
+- **调用控制是安全阀**，`disable-model-invocation` 防止误触发，`allowed-tools` 限定权限
+- **fork 模式是隔离器**，独立上下文执行，不影响主对话
 
 掌握 Skills 的编写与组织，是高效使用 Claude Code 的必备能力。

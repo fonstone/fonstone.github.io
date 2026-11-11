@@ -11,14 +11,14 @@ tags: ["Linux", "嵌入式", "ARM64", "内核启动"]
 
 Linux 内核的链接文件位于 `arch/arm64/kernel/vmlinux.lds.S`，编译时会据此生成 `vmlinux.lds`，用于最终链接生成内核镜像 `vmlinux`。
 
-在该文件的开头指定了输出的架构和内核入口地址：
+在该文件的开头指定了输出的架构和内核入口地址。
 
 ```
 OUTPUT_ARCH(aarch64)
 ENTRY(_text)
 ```
 
-`_text` 是代码段的起始地址，定义在 `SECTIONS` 部分：
+`_text` 是代码段的起始地址，定义在 `SECTIONS` 部分。
 
 ```
 . = KIMAGE_VADDR + TEXT_OFFSET;
@@ -29,19 +29,19 @@ ENTRY(_text)
 }
 ```
 
-其中 `KIMAGE_VADDR` 和 `TEXT_OFFSET` 定义在 `arch/arm64/include/asm/memory.h` 中：
+其中 `KIMAGE_VADDR` 和 `TEXT_OFFSET` 定义在 `arch/arm64/include/asm/memory.h` 中。
 
-![KIMAGE_VADDR 和 TEXT_OFFSET 宏定义](/images/linux-kernel-boot/kimage-vaddr.png)
+![KIMAGE_VADDR 和 TEXT_OFFSET 宏定义](/images/linux-kernel-boot/kimage-vaddr.webp)
 
 ## 2. 内核启动第一阶段（汇编阶段）
 
 ### 2.1 内核启动入口点
 
-将编译好的 `vmlinux` ELF 文件反汇编后，可以查看入口地址：
+将编译好的 `vmlinux` ELF 文件反汇编后，可以查看入口地址。
 
-![vmlinux 入口地址反汇编结果](/images/linux-kernel-boot/vmlinux-entry.png)
+![vmlinux 入口地址反汇编结果](/images/linux-kernel-boot/vmlinux-entry.webp)
 
-Linux 内核的第一条指令是 `add x13, x18, #0x16`，对应符号在 `.head.text` 段。在 `include/linux/init.h` 中有如下定义：
+Linux 内核的第一条指令是 `add x13, x18, #0x16`，对应符号在 `.head.text` 段。在 `include/linux/init.h` 中有如下定义。
 
 ```c
 /* For assembly routines */
@@ -49,7 +49,7 @@ Linux 内核的第一条指令是 `add x13, x18, #0x16`，对应符号在 `.head
 #define __INIT       .section ".init.text","ax"
 ```
 
-`__HEAD` 宏代表 `.head.text` 段，在 `arch/arm64/kernel/head.S` 中使用：
+`__HEAD` 宏代表 `.head.text` 段，在 `arch/arm64/kernel/head.S` 中使用。
 
 ```asm
 __HEAD
@@ -121,7 +121,7 @@ SYM_CODE_END(primary_entry)
     style F fill:#e8f5e9
 `} />
 
-`primary_entry` 依次调用以下函数：
+`primary_entry` 依次调用以下函数。
 
 #### 2.2.1 preserve_boot_args
 
@@ -141,7 +141,7 @@ SYM_CODE_END(preserve_boot_args)
 
 #### 2.2.2 init_kernel_el
 
-这段代码根据当前异常级别（EL2 或 EL1）对处理器进行初始化：
+这段代码根据当前异常级别（EL2 或 EL1）对处理器进行初始化。
 
 ```asm
 SYM_FUNC_START(init_kernel_el)
@@ -186,14 +186,14 @@ SYM_FUNC_END(init_kernel_el)
     style C fill:#fff9c4
 `} />
 
-主要步骤：
+主要步骤。
 
 1. 配置 EL1 的系统控制寄存器 `sctlr_el1`
 2. 读取当前异常级别
-3. 若为 EL1：配置 PSTATE 和异常链接寄存器后 `eret` 返回
-4. 若为 EL2：配置 HCR 寄存器、初始化 EL2 状态、设置异常向量表后 `eret` 返回
+3. 若为 EL1，配置 PSTATE 和异常链接寄存器后 `eret` 返回
+4. 若为 EL2，配置 HCR 寄存器、初始化 EL2 状态、设置异常向量表后 `eret` 返回
 
-常量定义：
+常量定义。
 
 ```c
 // arch/arm64/include/asm/virt.h
@@ -282,14 +282,14 @@ SYM_FUNC_END(__create_page_tables)
     style E fill:#e8f5e9
 `} />
 
-主要功能：缓存无效化 → 页表清空 → 虚拟地址配置 → 内核映射。创建两类映射：
+主要功能，缓存无效化 → 页表清空 → 虚拟地址配置 → 内核映射。创建两类映射。
 
-- **恒等映射（identity mapping）**：使 MMU 开启前后物理地址和虚拟地址一致
-- **内核线性映射**：映射内核镜像本身
+- **恒等映射（identity mapping）**，使 MMU 开启前后物理地址和虚拟地址一致
+- **内核线性映射**，映射内核镜像本身
 
 #### 2.2.5 __cpu_setup
 
-`__cpu_setup` 定义在 `arch/arm64/mm/proc.S` 中，负责在开启 MMU 前初始化处理器：
+`__cpu_setup` 定义在 `arch/arm64/mm/proc.S` 中，负责在开启 MMU 前初始化处理器。
 
 1. 无效化本地 TLB（`tlbi vmalle1`）
 2. 启用浮点和 SIMD 单元（`cpacr_el1`）
@@ -370,7 +370,7 @@ SYM_FUNC_START_LOCAL(__primary_switched)
 SYM_FUNC_END(__primary_switched)
 ```
 
-此函数在 MMU 启用后执行，完成以下工作：
+此函数在 MMU 启用后执行，完成以下工作。
 
 <MermaidDiagram chart={`flowchart TD
     A["设置内核栈<br/>init_thread_union"] --> B["加载异常向量表<br/>vbar_el1"]
@@ -520,7 +520,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 }
 ```
 
-`start_kernel` 依次调用了数十个初始化函数，涵盖了内核的各个核心子系统：
+`start_kernel` 依次调用了数十个初始化函数，涵盖了内核的各个核心子系统。
 
 | 阶段 | 关键初始化函数 | 说明 |
 |------|---------------|------|
@@ -607,13 +607,21 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     style Q fill:#a5d6a7
 `} />
 
-整体启动流程可以概括为三个阶段：
+整体启动流程可以概括为三个阶段。
 
-1. **汇编阶段**（`_head` → `__primary_switched`）：MMU 关闭状态下完成硬件初始化、建立页表、启用 MMU，并跳转到 C 语言入口
-2. **C 语言阶段**（`start_kernel`）：依次初始化各内核子系统（内存、调度、中断、时间、VFS、安全等）
-3. **用户空间启动**（`rest_init` → `kernel_init`）：创建 init 进程和 kthreadd 内核线程，最终启动用户空间
+1. **汇编阶段**（`_head` → `__primary_switched`），MMU 关闭状态下完成硬件初始化、建立页表、启用 MMU，并跳转到 C 语言入口
+2. **C 语言阶段**（`start_kernel`），依次初始化各内核子系统（内存、调度、中断、时间、VFS、安全等）
+3. **用户空间启动**（`rest_init` → `kernel_init`），创建 init 进程和 kthreadd 内核线程，最终启动用户空间
 
 ## 参考
 
 - [Linux内核启动流程-基于ARM64 | Mshrimp blog](https://mshrimp.github.io/2020/04/19/Linux%E5%86%85%E6%A0%B8%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B-%E5%9F%BA%E4%BA%8EARM64/)
 - [05 Linux 内核 - 飞书云文档](https://b2qtatgfkp.feishu.cn/docx/CttXdvBEuomVmmxQcw5cqh5jnJg)
+
+---
+
+{/* course-crosslink */}
+
+## 配套课程
+
+启动流程的每一段都能在模拟器里单步验证，[《QEMU & CPU 架构互动教程》](/projects/qemu) 从注册一块自定义虚拟板卡开始，经 OpenSBI、U-Boot、VirtIO 一路走到 Linux shell。设备树描述硬件的写法见 [Linux 设备树详解](/knowledge/os/device-tree-guide)。

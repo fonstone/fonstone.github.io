@@ -4,7 +4,7 @@ description: "页表 PageTable 只能以页为单位帮助我们维护一个虚�
 date: "2026-07-12"
 order: 76
 tags: ["内核地址空间", "应用地址空间", "映射", "页表切换"]
-est_time: "40分钟"
+est_time: "40 分钟"
 ---
 ## 本节导读
 
@@ -240,7 +240,7 @@ impl MapArea {
 
 下图是软件看到的 64 位地址空间在 SV39 分页模式下实际可能通过 MMU 检查的最高 $256text{GiB}$ （之前在 这里 中解释过最高和最低 $256text{GiB}$ 的问题）：
 
-![kernel-as-high.png](/images/rust-os/rcore/chapter4/kernel-as-high.png)
+![kernel-as-high.png](/images/rust-os/rcore/chapter4/kernel-as-high.webp)
 
 可以看到，跳板放在最高的一个虚拟页面中。接下来则是从高到低放置每个应用的内核栈，内核栈的大小由 config 子模块的 KERNEL\_STACK\_SIZE 给出。它们的映射方式为 MapPermission 中的 rw 两个标志位，意味着这个逻辑段仅允许 CPU 处于内核态访问，且只能读或写。
 
@@ -248,7 +248,7 @@ impl MapArea {
 
 下面则给出了内核地址空间的低 $256text{GiB}$ 的布局：
 
-![kernel-as-low.png](/images/rust-os/rcore/chapter4/kernel-as-low.png)
+![kernel-as-low.png](/images/rust-os/rcore/chapter4/kernel-as-low.webp)
 
 内核的四个逻辑段 .text/.rodata/.data/.bss 被恒等映射到物理内存，这使得我们在无需调整内核内存布局 os/src/linker.ld 的情况下就仍能象启用页表机制之前那样访问内核的各个段。注意我们借用页表机制对这些逻辑段的访问方式做出了限制，这都是为了在硬件的帮助下能够尽可能发现内核中的 bug ，在这里：
 
@@ -373,7 +373,7 @@ SECTIONS
 
 下图展示了应用地址空间的布局：
 
-![app-as-full.png](/images/rust-os/rcore/chapter4/app-as-full.png)
+![app-as-full.png](/images/rust-os/rcore/chapter4/app-as-full.webp)
 
 左侧给出了应用地址空间最低 $256text{GiB}$ 的布局：从 $text{0x10000}$ 开始向高地址放置应用内存布局中的各个逻辑段，最后放置带有一个保护页面的用户栈。这些逻辑段都是以 Framed 方式映射到物理内存的，从访问方式上来说都加上了 U 标志位代表 CPU 可以在 U 特权级也就是执行应用代码的时候访问它们。右侧则给出了最高的 $256text{GiB}$ ，可以看出它只是和内核地址空间一样将跳板放置在最高页，还将 Trap 上下文放置在次高页中。这两个虚拟页面虽然位于应用地址空间，但是它们并不包含 U 标志位，事实上它们在地址空间切换的时候才会发挥作用，请同样参考本章的最后一节。
 

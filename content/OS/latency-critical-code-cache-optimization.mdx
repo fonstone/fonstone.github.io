@@ -13,7 +13,7 @@ tags: ["OS", "超低时延", "缓存", "编译器", "WCET"]
 
 实时任务的最坏执行时间由指令数、流水线停顿和访存延迟共同决定。缓存命中时，访存只花流水线等待的时间；缺失时，请求要走到下一级存储。级别越深，等待越长，而且等待时间受邻居核影响，不是一个固定值。
 
-![Intel 至强处理器的缓存层次，L1 和 L2 由核私有，L3 由多核共享（Intel CAT 白皮书图 1）](/images/ultra-low-latency/cat-cache-hierarchy.png)
+![Intel 至强处理器的缓存层次，L1 和 L2 由核私有，L3 由多核共享（Intel CAT 白皮书图 1）](/images/ultra-low-latency/cat-cache-hierarchy.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">Intel 至强处理器的缓存层次，L1 和 L2 由核私有，L3 由多核共享（Intel CAT 白皮书图 1）</p>
 
@@ -72,7 +72,7 @@ tags: ["OS", "超低时延", "缓存", "编译器", "WCET"]
 
 第二种是页着色加锁定。Colored Lockdown 把物理页映射到指定的缓存组，再把热点页锁在缓存里。它比纯硬件锁定灵活，因为操作系统可以按任务分配页。代价是需要控制物理页分配，页着色的粒度受缓存组数限制。Kessler 和 Hill 在 1992 年的论文里就指出，任意的页放置会带来最多 30% 的不必要冲突，页着色的目的就是消掉这部分冲突。
 
-![物理地址在缓存控制器和操作系统眼中的结构，页帧号里的颜色位参与缓存组索引，页着色就作用在这几位上（Colored Lockdown 论文图 3）](/images/ultra-low-latency/colored-lockdown-address.png)
+![物理地址在缓存控制器和操作系统眼中的结构，页帧号里的颜色位参与缓存组索引，页着色就作用在这几位上（Colored Lockdown 论文图 3）](/images/ultra-low-latency/colored-lockdown-address.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">物理地址在缓存控制器和操作系统眼中的结构，页帧号里的颜色位参与缓存组索引，页着色就作用在这几位上（Colored Lockdown 论文图 3）</p>
 

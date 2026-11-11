@@ -1,4 +1,4 @@
-﻿---
+---
 title: "基于低代码平台的智能体搭建"
 description: "Coze、Dify、n8n 等低代码智能体平台介绍与实战。"
 date: "2026-07-12"
@@ -68,7 +68,7 @@ est_time: "50 分钟"
 
 
 
-![](/images/courses/5-figures/coze-01.png)
+![](/images/courses/5-figures/coze-01.webp)
 
 *图 5.1 扣子智能智能体平台整体示意图*
 
@@ -79,7 +79,7 @@ est_time: "50 分钟"
 首先我们点击左边侧栏的加号就可以看到创建智能体的入口了，这里目前有两类AI应用，一种是创建智能体，另一种叫应用。其中智能体又分为单智能体自主规划模式、单智能体对话流模式和多智能体模式。AI应用也分两种不仅能设计桌面网页端的用户界面，还能轻松搭建小程序和 H5 端的界面，如图5.2所示。
 
 
-![](/images/courses/5-figures/coze-02.png)
+![](/images/courses/5-figures/coze-02.webp)
 
 *图 5.2 扣子智能体创建入口*
 
@@ -87,7 +87,7 @@ est_time: "50 分钟"
 项目空间里是你的智能体仓库，这里放着你所有开发的智能体或复制的智能体/应用，也是在扣子进行智能体开发你最经常来到的地方，如图5.3所示。
 
 
-![](/images/courses/5-figures/coze-03.png)
+![](/images/courses/5-figures/coze-03.webp)
 
 *图 5.3 扣子智能体项目空间*
 
@@ -95,7 +95,7 @@ est_time: "50 分钟"
 资源库是你开发扣子智能体的核心武器库，资源库就会存放你的工作流，知识库，卡片，提示词库等等一系列开发智能体的工具。你能做出什么样的智能体，首先取决于模型的能力，但是最重要的还是要看你怎么给智能体搭配“出装和技能”。模型决定了智能体的下限，但是扣子资源库给了你智能体的能力的无穷上限，让你能够按照自己的想法，开发想象力和脑洞进行智能体的开发，如图5.4所示。
 
 
-![](/images/courses/5-figures/coze-04.png)
+![](/images/courses/5-figures/coze-04.webp)
 
 *图 5.4 扣子智能体资源库*
 
@@ -103,7 +103,7 @@ est_time: "50 分钟"
 空间配置包含智能体、插件、工作流和发布渠道的一个统一的管理频道，以及模型管理就是你可以在这里看到你调用的各种大模型，如图5.5所示。
 
 
-![](/images/courses/5-figures/coze-05.png)
+![](/images/courses/5-figures/coze-05.webp)
 
 *图 5.5 扣子智能体发布渠道*
 
@@ -144,21 +144,21 @@ est_time: "50 分钟"
 
 
 
-![](/images/courses/5-figures/coze-06.png)
+![](/images/courses/5-figures/coze-06.webp)
 
 *图 5.6 媒体平台的RSS源插件*
 
 
 
 
-![](/images/courses/5-figures/coze-07.png)
+![](/images/courses/5-figures/coze-07.webp)
 
 *图 5.7 GitHub插件*
 
 
 
 
-![](/images/courses/5-figures/coze-08.png)
+![](/images/courses/5-figures/coze-08.webp)
 
 *图 5.8 Arxiv插件*
 
@@ -190,7 +190,7 @@ Arxiv插件配置
 3.  <strong>编排连接:</strong> 在智能体的可视化编排界面中，将这些已配置的信息源插件（例如 `rss_24Hbj`、`searchRepository`、`arxiv` 等）作为数据输入节点，并将其连接至后续的逻辑处理模块（例如<strong>大模型</strong>模块），以构建完整的数据处理路径，如图5.9所示。
 
 
-![](/images/courses/5-figures/coze-09.png)
+![](/images/courses/5-figures/coze-09.webp)
 
 *图 5.9 每日AI简报编排流程图*
 
@@ -291,7 +291,7 @@ Arxiv插件配置
 
 
 
-![](/images/courses/5-figures/coze-10.png)
+![](/images/courses/5-figures/coze-10.webp)
 
 *图 5.10 扣子平台的多元发布渠道*
 
@@ -301,7 +301,7 @@ Arxiv插件配置
 
 
 
-![](/images/courses/5-figures/coze-11.png)
+![](/images/courses/5-figures/coze-11.webp)
 
 *图 5.11 AI智能体-每日AI新闻*
 
@@ -310,7 +310,7 @@ Arxiv插件配置
 更进一步的，我们可以点击这个[体验链接](https://www.coze.cn/store/project/7458678213078777893?from=store_search_suggestion&bid=6gu3cmr7k5g1i)查看在AI应用中的每日AI新闻。
 
 
-![](/images/courses/5-figures/coze-12.png)
+![](/images/courses/5-figures/coze-12.webp)
 
 *图 5.12 AI应用中的每日AI新闻*
 
@@ -319,14 +319,14 @@ Arxiv插件配置
 
 
 
-![](/images/courses/5-figures/coze-13.png)
+![](/images/courses/5-figures/coze-13.webp)
 
 *图 5.13 为智能体配置基础信息*
 
 
 
 
-![](/images/courses/5-figures/coze-14.png)
+![](/images/courses/5-figures/coze-14.webp)
 
 *图 5.14 为智能体配置开场白和预设问题*
 
@@ -360,7 +360,7 @@ Dify 对模型高度中立且兼容性强：无论开源或商业模型，用户
 
 
 
-![](/images/courses/5-figures/dify-01.png)
+![](/images/courses/5-figures/dify-01.webp)
 
 *图 5.15 Dify官网*
 
@@ -370,7 +370,7 @@ Marketplace 插件生态：​Dify Marketplace 提供了一站式插件管理和
 
 
 
-![](/images/courses/5-figures/dify-02.png)
+![](/images/courses/5-figures/dify-02.webp)
 
 *图 5.16 Dify Marketplace插件生态*
 
@@ -401,35 +401,35 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-14.png)
+![](/images/courses/5-figures/dify-14.webp)
 
 *图 5.17 Dify 智能体搭建主页*
 
 
 
 
-![](/images/courses/5-figures/dify-18.png)
+![](/images/courses/5-figures/dify-18.webp)
 
 *图 5.18 Dify 官方模板库*
 
 
 
 
-![](/images/courses/5-figures/dify-15.png)
+![](/images/courses/5-figures/dify-15.webp)
 
 *图 5.19 Dify 知识库*
 
 
 
 
-![](/images/courses/5-figures/dify-16.png)
+![](/images/courses/5-figures/dify-16.webp)
 
 *图 5.20 Dify 插件市场*
 
 
 
 
-![](/images/courses/5-figures/dify-17.png)
+![](/images/courses/5-figures/dify-17.webp)
 
 *图 5.21 Dify 大模型配置*
 
@@ -441,7 +441,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-19.png)
+![](/images/courses/5-figures/dify-19.webp)
 
 *图 5.22 Dify 插件安装配置*
 
@@ -453,7 +453,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-20.png)
+![](/images/courses/5-figures/dify-20.webp)
 
 *图 5.23 魔搭社区mcp市场*
 
@@ -463,7 +463,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-21.png)
+![](/images/courses/5-figures/dify-21.webp)
 
 *图 5.24 高德mcp配置示例*
 
@@ -483,7 +483,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-12.png)
+![](/images/courses/5-figures/dify-12.webp)
 
 *图 5.25 智能体编排*
 
@@ -560,7 +560,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-03.png)
+![](/images/courses/5-figures/dify-03.webp)
 
 *图 5.26 日常助手*
 
@@ -603,7 +603,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-04.png)
+![](/images/courses/5-figures/dify-04.webp)
 
 *图 5.27 文案助手*
 
@@ -625,14 +625,14 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-13.png)
+![](/images/courses/5-figures/dify-13.webp)
 
 *图 5.28 生图设置*
 
 
 
 
-![](/images/courses/5-figures/dify-05.png)
+![](/images/courses/5-figures/dify-05.webp)
 
 *图 5.29 生图助手*
 
@@ -640,7 +640,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 视频生成的效果如图5.30所示。
 
-![](/images/courses/5-figures/dify-06.png)
+![](/images/courses/5-figures/dify-06.webp)
   <p>图 5.30 视频助手</p>
 
   <p><a href="https://pub-f5ed2046361c4244878e5984bdb564de.r2.dev/9af7c33d-5c82-4b14-8fb3-a4e426e8ee5a.mp4">点击观看视频演示</a></p>
@@ -658,7 +658,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-22.png)
+![](/images/courses/5-figures/dify-22.webp)
 
 *图 5.31 数据库配置*
 
@@ -694,7 +694,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-07.png)
+![](/images/courses/5-figures/dify-07.webp)
 
 *图 5.32 数据查询助手*
 
@@ -732,7 +732,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-08.png)
+![](/images/courses/5-figures/dify-08.webp)
 
 *图 5.33 数据分析助手*
 
@@ -753,7 +753,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-23.png)
+![](/images/courses/5-figures/dify-23.webp)
 
 *图 5.34 智能体的mcp配置*
 
@@ -763,7 +763,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-09.png)
+![](/images/courses/5-figures/dify-09.webp)
 
 *图 5.35 高德助手*
 
@@ -771,7 +771,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-10.png)
+![](/images/courses/5-figures/dify-10.webp)
 
 *图 5.36 饮食助手*
 
@@ -779,7 +779,7 @@ Dify 为插件开发者提供了强大的开发支持，包括远程调试功能
 
 
 
-![](/images/courses/5-figures/dify-11.png)
+![](/images/courses/5-figures/dify-11.webp)
 
 *图 5.37 新闻助手*
 
@@ -827,7 +827,7 @@ FastGPT 是一个开源的、基于大语言模型的知识库问答平台与 Ag
 
 
 
-![](/images/courses/5-figures/fastgpt-01.png)
+![](/images/courses/5-figures/fastgpt-01.webp)
 
 *图 5.38 FastGPT 官网首页*
 
@@ -837,7 +837,7 @@ FastGPT 是一个开源的、基于大语言模型的知识库问答平台与 Ag
 
 
 
-![](/images/courses/5-figures/fastgpt-02.png)
+![](/images/courses/5-figures/fastgpt-02.webp)
 
 *图 5.39 FastGPT 平台主界面*
 
@@ -847,7 +847,7 @@ FastGPT 是一个开源的、基于大语言模型的知识库问答平台与 Ag
 
 
 
-![](/images/courses/5-figures/fastgpt-03.png)
+![](/images/courses/5-figures/fastgpt-03.webp)
 
 *图 5.40 FastGPT 免费版套餐与用量*
 
@@ -857,7 +857,7 @@ FastGPT 最核心的竞争力在于其强大的知识库能力。平台支持多
 
 
 
-![](/images/courses/5-figures/fastgpt-12.png)
+![](/images/courses/5-figures/fastgpt-12.webp)
 
 *图 5.41 FastGPT 知识库文件管理*
 
@@ -867,7 +867,7 @@ FastGPT 最核心的竞争力在于其强大的知识库能力。平台支持多
 
 
 
-![](/images/courses/5-figures/fastgpt-14.png)
+![](/images/courses/5-figures/fastgpt-14.webp)
 
 *图 5.42 知识库数据处理参数设置*
 
@@ -877,7 +877,7 @@ FastGPT 最核心的竞争力在于其强大的知识库能力。平台支持多
 
 
 
-![](/images/courses/5-figures/fastgpt-13.png)
+![](/images/courses/5-figures/fastgpt-13.webp)
 
 *图 5.43 知识库文件分块详情与元数据*
 
@@ -887,7 +887,7 @@ FastGPT 最核心的竞争力在于其强大的知识库能力。平台支持多
 
 
 
-![](/images/courses/5-figures/fastgpt-04.png)
+![](/images/courses/5-figures/fastgpt-04.webp)
 
 *图 5.44 FastGPT MCP 工具管理*
 
@@ -910,7 +910,7 @@ FastGPT 最核心的竞争力在于其强大的知识库能力。平台支持多
 
 
 
-![](/images/courses/5-figures/fastgpt-05.png)
+![](/images/courses/5-figures/fastgpt-05.webp)
 
 *图 5.45 魔搭社区可视化图表 MCP Server*
 
@@ -920,7 +920,7 @@ FastGPT 最核心的竞争力在于其强大的知识库能力。平台支持多
 
 
 
-![](/images/courses/5-figures/fastgpt-06.png)
+![](/images/courses/5-figures/fastgpt-06.webp)
 
 *图 5.46 阿里云百炼 MCP 管理*
 
@@ -936,7 +936,7 @@ FastGPT 最核心的竞争力在于其强大的知识库能力。平台支持多
 
 
 
-![](/images/courses/5-figures/fastgpt-07.png)
+![](/images/courses/5-figures/fastgpt-07.webp)
 
 *图 5.47 智能投顾助手工作流编排*
 
@@ -988,7 +988,7 @@ FastGPT 最核心的竞争力在于其强大的知识库能力。平台支持多
 
 
 
-![](/images/courses/5-figures/fastgpt-08.png)
+![](/images/courses/5-figures/fastgpt-08.webp)
 
 *图 5.48 智能投顾助手对话界面*
 
@@ -1005,7 +1005,7 @@ FastGPT 最核心的竞争力在于其强大的知识库能力。平台支持多
 
 
 
-![](/images/courses/5-figures/fastgpt-09.png)
+![](/images/courses/5-figures/fastgpt-09.webp)
 
 *图 5.49 投资策略分析报告*
 
@@ -1015,7 +1015,7 @@ FastGPT 最核心的竞争力在于其强大的知识库能力。平台支持多
 
 
 
-![](/images/courses/5-figures/fastgpt-10.png)
+![](/images/courses/5-figures/fastgpt-10.webp)
 
 *图 5.50 实时股票行情查询*
 
@@ -1025,7 +1025,7 @@ FastGPT 最核心的竞争力在于其强大的知识库能力。平台支持多
 
 
 
-![](/images/courses/5-figures/fastgpt-11.png)
+![](/images/courses/5-figures/fastgpt-11.webp)
 
 *图 5.51 市盈率与市净率概念解析*
 
@@ -1076,7 +1076,7 @@ n8n 的真正威力在于其强大的“连接”能力。它可以将原本孤�
 
 
 
-![](/images/courses/5-figures/n8n-01.png)
+![](/images/courses/5-figures/n8n-01.webp)
 
 *图 5.52 一体化智能邮件 Agent 架构示意图*
 
@@ -1104,7 +1104,7 @@ n8n 的真正威力在于其强大的“连接”能力。它可以将原本孤�
 
 
 
-![](/images/courses/5-figures/n8n-02.png)
+![](/images/courses/5-figures/n8n-02.webp)
 
 *图 5.53 在 Code 节点中定义知识源*
 
@@ -1136,7 +1136,7 @@ return [
 
 
 
-![](/images/courses/5-figures/n8n-03.png)
+![](/images/courses/5-figures/n8n-03.webp)
 
 *图 5.54 对 Code 中数据进行向量化*
 
@@ -1153,7 +1153,7 @@ return [
 
 
 
-![](/images/courses/5-figures/n8n-04.png)
+![](/images/courses/5-figures/n8n-04.webp)
 
 *图 5.55 对 Code 中数据存入向量存储*
 
@@ -1163,7 +1163,7 @@ return [
 
 
 
-![](/images/courses/5-figures/n8n-05.png)
+![](/images/courses/5-figures/n8n-05.webp)
 
 *图 5.56 完整的知识库加载工作流*
 
@@ -1179,7 +1179,7 @@ return [
 
 
 
-![](/images/courses/5-figures/n8n-06.png)
+![](/images/courses/5-figures/n8n-06.webp)
 
 *图 5.57 新建Gmail节点图*
 
@@ -1189,7 +1189,7 @@ return [
 
 
 
-![](/images/courses/5-figures/n8n-07.png)
+![](/images/courses/5-figures/n8n-07.webp)
 
 *图 5.58 Gmail账号加载成功图*
 
@@ -1199,7 +1199,7 @@ return [
 
 
 
-![](/images/courses/5-figures/n8n-08.png)
+![](/images/courses/5-figures/n8n-08.webp)
 
 *图 5.59 获取实时邮件图*
 
@@ -1217,7 +1217,7 @@ return [
 
 
 
-![](/images/courses/5-figures/n8n-09.png)
+![](/images/courses/5-figures/n8n-09.webp)
 
 *图 5.60 AI Agent节点设置图*
 
@@ -1229,7 +1229,7 @@ return [
 
 
 
-![](/images/courses/5-figures/n8n-10.png)
+![](/images/courses/5-figures/n8n-10.webp)
 
 *图 5.61 AI Agent 节点详解图*
 
@@ -1300,7 +1300,7 @@ return [
 
 
 
-![](/images/courses/5-figures/n8n-11.png)
+![](/images/courses/5-figures/n8n-11.webp)
 
 *图 5.62 Simple Vector Store工具配置*
 
@@ -1326,7 +1326,7 @@ Description参数即AI Agent调用该工具时，对该工具的描述定义，�
 
 
 
-![](/images/courses/5-figures/n8n-12.png)
+![](/images/courses/5-figures/n8n-12.webp)
 
 *图 5.63 最终回复工具图示*
 
@@ -1336,7 +1336,7 @@ Description参数即AI Agent调用该工具时，对该工具的描述定义，�
 
 
 
-![](/images/courses/5-figures/n8n-13.png)
+![](/images/courses/5-figures/n8n-13.webp)
 
 *图 5.64 个人邮箱返回邮件格式*
 
@@ -1349,7 +1349,7 @@ Description参数即AI Agent调用该工具时，对该工具的描述定义，�
 通过前面从零到一构建智能邮件助手的实践，我们已经对 n8n 的工作模式有了直观的感受。作为一个强大的低代码自动化平台，n8n 在赋能 Agent 应用开发方面表现出色，但它也并非万能。如表5.1所示，我们将客观地分析其优势与潜在的局限性。
 
 <p>表 5.2 n8n 平台的优势与局限性总结</p>
-  ![](/images/courses/5-figures/n8n-14.png)
+  ![](/images/courses/5-figures/n8n-14.webp)
 
 首先，n8n 最显著的优势在于其<strong>开发效率</strong>。它将复杂的逻辑抽象为直观的可视化工作流，无论是邮件的接收、AI 的决策，还是工具的调用和最终的回复，整个数据流和处理链路都在画布上一目了然。这种低代码的特性极大地降低了技术门槛，让开发者能够快速搭建和验证 Agent 的核心逻辑，极大地缩短了从想法到原型的距离。
 

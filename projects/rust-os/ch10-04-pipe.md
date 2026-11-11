@@ -4,7 +4,7 @@ description: "在上一节，我们实现了基于文件接口的标准输入和
 date: "2026-07-12"
 order: 68
 tags: ["管道", "pipe", "进程间通信", "数据流"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 本节导读
 
@@ -53,7 +53,7 @@ pub fn pipe(pipe_fd: &mut [usize]) -> isize { sys_pipe(pipe_fd) }
 
 只有当一个管道的所有读端文件/写端文件都被关闭之后，管道占用的资源才会被回收，因此我们需要通过关闭文件的系统调用 sys\_close （它会在用户库中被包装为 close 函数。） ，来尽可能早的关闭之后不再用到的读端的文件和写端的文件。
 
-![pipe-syscall.png](/images/rust-os/rcore/chapter7/pipe-syscall.png)
+![pipe-syscall.png](/images/rust-os/rcore/chapter7/pipe-syscall.webp)
 
 我们来从简单的管道测例 pipetest 中介绍管道的使用方法：
 

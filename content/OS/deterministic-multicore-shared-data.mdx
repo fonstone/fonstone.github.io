@@ -54,7 +54,7 @@ RT-Gang++ 解决的是另一类问题。SLAM 这类负载由多个线程组成�
 
 RT-Gang 最早是 Ali 和 Yun 在 RTAS 2019 提出的，RT-Gang++ 是期刊扩展版，加了两件事。一是分区化 gang 调度，允许不同优先级的多个 gang 同时运行。二是 LLC 和集成 GPU 的带宽节流，防止邻居把共享资源吃光。论文里的配置是三个核给 SLAM gang，一个核加 iGPU 给 DNN gang，L2 用 PALLOC 做页着色，SLAM 拿两个分区，其余任务共享另外两个分区。
 
-![分区化 gang 调度，t1 和 t2 组成一个 gang，t3 占另外两个核，t4 作为后台任务填充剩余时间（RT-Gang++ 论文图 1）](/images/ultra-low-latency/rtgang-partitioned.png)
+![分区化 gang 调度，t1 和 t2 组成一个 gang，t3 占另外两个核，t4 作为后台任务填充剩余时间（RT-Gang++ 论文图 1）](/images/ultra-low-latency/rtgang-partitioned.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">分区化 gang 调度，t1 和 t2 组成一个 gang，t3 占另外两个核，t4 作为后台任务填充剩余时间（RT-Gang++ 论文图 1）</p>
 
@@ -81,7 +81,7 @@ RT-Gang 最早是 Ali 和 Yun 在 RTAS 2019 提出的，RT-Gang++ 是期刊扩�
 
 效果分三组看。论文报告，开启 RT-Gang++ 后 SLAM 恢复生成完整轨迹，20Hz 的帧率要求得到满足。MH04 场景的绝对轨迹误差中位数，不开 iGPU 节流是 2.86 米，两个节流全开降到 0.29 米。DNN 平均推理延迟从单独运行的 34.23 毫秒升到共跑时的 36.32 毫秒，再加节流是 48.69 毫秒，仍然在 50 毫秒预算内。换到 Raspberry Pi 4 上，中位误差降到约 0.05 米，单独运行是 0.04 米。
 
-![干扰下的帧处理率，Solo、+DoS 和 +DNN 都在 97% 以上，+DNN&DoS 掉到约 26%（RT-Gang++ 论文图 6）](/images/ultra-low-latency/rtgang-frames-dropped.png)
+![干扰下的帧处理率，Solo、+DoS 和 +DNN 都在 97% 以上，+DNN&DoS 掉到约 26%（RT-Gang++ 论文图 6）](/images/ultra-low-latency/rtgang-frames-dropped.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">干扰下的帧处理率，Solo、+DoS 和 +DNN 都在 97% 以上，+DNN&DoS 掉到约 26%（RT-Gang++ 论文图 6）</p>
 
@@ -97,7 +97,7 @@ RT-Gang++ 的资源划分是人工定的。任务集一变，三个核给 SLAM�
 
 实验平台是 AMD UltraScale+ ZCU102，四个 Cortex-A53 共享 1MB LLC，Jailhouse 做缓存集分区，MemGuard 做带宽调节，基准用 SD-VBS 和 PARSEC。论文报告，在 SD-VBS 上比当时的 SOTA 算法 CaM 多找出 62.67% 的可调度任务集，在 PARSEC 上多 50.34%。
 
-![内存带宽和缓存分区对 mser-qcif 减速的影响，b=1、k=1 时减速 25.3 倍，资源充足时回到 1 到 2 倍（ECRTS 2025 MMO 论文图 1）](/images/ultra-low-latency/mmo-slowdown.png)
+![内存带宽和缓存分区对 mser-qcif 减速的影响，b=1、k=1 时减速 25.3 倍，资源充足时回到 1 到 2 倍（ECRTS 2025 MMO 论文图 1）](/images/ultra-low-latency/mmo-slowdown.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">内存带宽和缓存分区对 mser-qcif 减速的影响，b=1、k=1 时减速 25.3 倍，资源充足时回到 1 到 2 倍（ECRTS 2025 MMO 论文图 1）</p>
 
@@ -115,7 +115,7 @@ Sullivan 和 Yun 所在的团队在 RTAS 2026 上把方法推到 DRAM。论文�
 
 实验在 FireSim 加 Xilinx VCU118 上做，调节周期 1 毫秒，预算 53MB/s。best-effort 负载平均吞吐比 bank-oblivious 方法高 5.74 倍，八个 bank 时到 7.74 倍。单 bank 写攻击下，受害者被限制在单独运行的 1.1 倍以内。
 
-![per-bank 调节的吞吐随 bank 数扩展，6 个 bank 为 5.74 倍，8 个 bank 为 7.74 倍（RTAS 2026 论文图 7）](/images/ultra-low-latency/perbank-scaling.png)
+![per-bank 调节的吞吐随 bank 数扩展，6 个 bank 为 5.74 倍，8 个 bank 为 7.74 倍（RTAS 2026 论文图 7）](/images/ultra-low-latency/perbank-scaling.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">per-bank 调节的吞吐随 bank 数扩展，6 个 bank 为 5.74 倍，8 个 bank 为 7.74 倍（RTAS 2026 论文图 7）</p>
 

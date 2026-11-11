@@ -4,7 +4,7 @@ description: "可以在 5setup-devel-env 中下载编译好的二进制（版本
 date: "2026-07-12"
 order: 11
 tags: ["附录", "工具", "QEMU", "GDB", "调试"]
-est_time: "20分钟"
+est_time: "20 分钟"
 ---
 ## 调试工具的使用
 
@@ -79,7 +79,7 @@ echo "Done!"
 
 3. 在右上角点击 Edit Configurations ,新增一个 GDB Remote Debug ,并如图配置：
 
-![clion_config.jpg](/images/rust-os/rcore/appendix-b/clion_config.jpg)
+![clion_config.jpg](/images/rust-os/rcore/appendix-b/clion_config.webp)
 
 第 1 个红框中选择你的自己编译的gdb路径
 第 3, 4 个红框中根据你的代码路径做适当修改

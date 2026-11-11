@@ -4,6 +4,7 @@ description: "kgdb 调试 Linux 内核与驱动模块，qemu gdbstub 早期调�
 date: "2026-06-27"
 order: 8
 tags: ["kgdb", "gdb", "qemu", "调试", "CAN", "ifplugd", "profile", "Quard-Star"]
+est_time: "25 分钟"
 ---
 
 本篇对应原教程 6 篇扩展文章（ext1–ext6）。前面 7 篇把系统从零搭到了一个可用的 Linux 发行版，本篇聚焦调试、性能分析、qemu 参数速查与几个实际项目常用的扩展主题。
@@ -54,7 +55,7 @@ source ./linux-5.10.42/vmlinux-gdb.py
 target remote :3442
 ```
 
-![kgdb 三终端调试](/images/qemu/ext1-0.png)
+![kgdb 三终端调试](/images/qemu/ext1-0.webp)
 
 ### 1.4 调试技巧
 
@@ -79,7 +80,7 @@ void __attribute__((no_instrument_function)) _mcount(uint64_t caller_ra) {
 }
 ```
 
-![profile 输出](/images/qemu/ext2-0.png)
+![profile 输出](/images/qemu/ext2-0.webp)
 
 ## 3. qemu 常用参数选项说明（ext3）
 
@@ -214,9 +215,9 @@ set_link net0 off
 set_link net0 on
 ```
 
-![ifplugd 检测 up](/images/qemu/ext6-0.png)
+![ifplugd 检测 up](/images/qemu/ext6-0.webp)
 
-![ifplugd 检测 down](/images/qemu/ext6-1.png)
+![ifplugd 检测 down](/images/qemu/ext6-1.webp)
 
 ## 7. 全系列总结
 

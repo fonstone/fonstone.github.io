@@ -4,7 +4,7 @@ description: "参考文献"
 date: "2026-07-12"
 order: 63
 tags: ["附录", "Peterson", "内存顺序", "并发", "互斥"]
-est_time: "20分钟"
+est_time: "20 分钟"
 ---
 参考文献
 

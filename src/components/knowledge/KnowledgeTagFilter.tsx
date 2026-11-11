@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useEffect, Suspense } from "react";
 import type { KnowledgePost, KnowledgeCategory, KnowledgeTagInfo } from "@/lib/knowledge/knowledge";
+import TagCloud from "./TagCloud";
 
 type Props = {
   allPosts: KnowledgePost[];
@@ -84,26 +85,7 @@ function KnowledgeTagFilterContent({ allPosts, categories, allTags }: Props) {
       </header>
 
       {allTags.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {allTags.map((tagInfo) => {
-            const isActive = activeTag === tagInfo.tag;
-            return (
-              <button
-                key={tagInfo.tag}
-                type="button"
-                onClick={() => handleTagClick(tagInfo.tag)}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors cursor-pointer ${
-                  isActive
-                    ? "border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                    : "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 hover:text-slate-900 dark:hover:text-slate-100"
-                }`}
-              >
-                {tagInfo.tag}
-                <span className="ml-1 opacity-60">{tagInfo.count}</span>
-              </button>
-            );
-          })}
-        </div>
+        <TagCloud tags={allTags} activeTag={activeTag} onTagClick={handleTagClick} />
       )}
 
       <div className="flex flex-col gap-8">

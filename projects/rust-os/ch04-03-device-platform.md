@@ -4,7 +4,7 @@ description: "现在我们有了对设备的基本了解，接下来就要考虑
 date: "2026-07-12"
 order: 26
 tags: ["设备树", "Device Tree", "外设平台", "virtio", "QEMU"]
-est_time: "25分钟"
+est_time: "25 分钟"
 ---
 ## 本节导读
 
@@ -49,7 +49,7 @@ $ less riscv64-virt.dts
 
 一个典型的设备树如下图所示：
 
-![device-tree.png](/images/rust-os/rcore/chapter9/device-tree.png)
+![device-tree.png](/images/rust-os/rcore/chapter9/device-tree.webp)
 > **Note**
 >
 > **设备树与设备节点属性**
@@ -120,7 +120,7 @@ $ make qemu
 [ INFO] Device features CTRL_GUEST_OFFLOADS | MAC | MRG_RXBUF | STATUS | CTRL_VQ | CTRL_RX | CTRL_VLAN | CTRL_RX_EXTRA | GUEST_ANNOUNCE | CTL_MAC_ADDR | RING_INDIRECT_DESC | RING_EVENT_IDX | VERSION_1
 ```
 
-![virtio-test-example2.png](/images/rust-os/rcore/chapter9/virtio-test-example2.png)
+![virtio-test-example2.png](/images/rust-os/rcore/chapter9/virtio-test-example2.webp)
 
 在上述输出中，我们看到了 type 为 Block 、 GPU 、Input 和 Network 的设备，所以我们的测例确实通过发现了这些设备，还通过 GPU 设备进行操作，让我们终于可以看到图形了。
 

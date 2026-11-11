@@ -4,7 +4,7 @@ description: "接下来两节我们将进行构建“三叶虫”操作系统的
 date: "2026-07-12"
 order: 18
 tags: ["第一条指令", "链接脚本", "内存布局", "RISC-V", "内核入口"]
-est_time: "35分钟"
+est_time: "35 分钟"
 ---
 ## 本节导读
 
@@ -87,7 +87,7 @@ $ qemu-system-riscv64 \
 
 **一种典型的程序相对内存布局**
 
-![MemoryLayout.png](/images/rust-os/rcore/chapter1/MemoryLayout.png)
+![MemoryLayout.png](/images/rust-os/rcore/chapter1/MemoryLayout.webp)
 
 在上图中可以看到，代码部分只有代码段 .text 一个段，存放程序的所有汇编代码。而数据部分则还可以继续细化：
 
@@ -121,7 +121,7 @@ $ qemu-system-riscv64 \
 
 **来自不同目标文件的段的重新排布**
 
-![link-sections.png](/images/rust-os/rcore/chapter1/link-sections.png)
+![link-sections.png](/images/rust-os/rcore/chapter1/link-sections.webp)
 
 - 第二件事情是将符号替换为具体地址。这里的符号指什么呢？我们知道，在我们进行模块化编程的时候，每个模块都会提供一些向其他模块公开的全局变量、函数等供其他模块访问，也会访问其他模块向它公开的内容。要访问一个变量或者调用一个函数，在源代码级别我们只需知道它们的名字即可，这些名字被我们称为符号。取决于符号来自于模块内部还是其他模块，我们还可以进一步将符号分成内部符号和外部符号。然而，在机器码级别（也即在目标文件或可执行文件中）我们并不是通过符号来找到索引我们想要访问的变量或函数，而是直接通过变量或函数的地址。例如，如果想调用一个函数，那么在指令的机器码中我们可以找到函数入口的绝对地址或者相对于当前 PC 的相对地址。
 

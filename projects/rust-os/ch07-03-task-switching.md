@@ -4,7 +4,7 @@ description: "在上一节实现的二叠纪“锯齿螈”操作系统还是比
 date: "2026-07-12"
 order: 45
 tags: ["任务切换", "context switch", "RISC-V", "寄存器保存"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 本节导读
 
@@ -47,7 +47,7 @@ est_time: "30分钟"
 
 事实上，任务切换是来自两个不同应用在内核中的 Trap 控制流之间的切换。当一个应用 Trap 到 S 模式的操作系统内核中进行进一步处理（即进入了操作系统的 Trap 控制流）的时候，其 Trap 控制流可以调用一个特殊的 \_\_switch 函数。这个函数表面上就是一个普通的函数调用：在 \_\_switch 返回之后，将继续从调用该函数的位置继续向下执行。但是其间却隐藏着复杂的控制流切换过程。具体来说，调用 \_\_switch 之后直到它返回前的这段时间，原 Trap 控制流 *A* 会先被暂停并被切换出去， CPU 转而运行另一个应用在内核中的 Trap 控制流 *B* 。然后在某个合适的时机，原 Trap 控制流 *A* 才会从某一条 Trap 控制流 *C* （很有可能不是它之前切换到的 *B* ）切换回来继续执行并最终返回。不过，从实现的角度讲， \_\_switch 函数和一个普通的函数之间的核心差别仅仅是它会 **换栈** 。
 
-![task-context.png](/images/rust-os/rcore/chapter3/task-context.png)
+![task-context.png](/images/rust-os/rcore/chapter3/task-context.webp)
 
 当 Trap 控制流准备调用 \_\_switch 函数使任务从运行状态进入暂停状态的时候，让我们考察一下它内核栈上的情况。如上图左侧所示，在准备调用 \_\_switch 函数之前，内核栈上从栈底到栈顶分别是保存了应用执行状态的 Trap 上下文以及内核在对 Trap 处理的过程中留下的调用栈信息。由于之后还要恢复回来执行，我们必须保存 CPU 当前的某些寄存器，我们称它们为 **任务上下文** (Task Context)。我们会在稍后介绍里面需要包含哪些寄存器。至于上下文保存的位置，下一节在我们会介绍任务管理器 TaskManager ，在里面能找到一个数组 tasks ，其中的每一项都是一个任务控制块即 TaskControlBlock ，它负责保存一个任务的状态，而任务上下文 TaskContext 被保存在任务控制块中。在内核运行时我们会初始化 TaskManager 的全局实例 TASK\_MANAGER ，因此所有任务上下文实际保存在在 TASK\_MANAGER 中，从内存布局来看则是放在内核的全局数据 .data 段中。当我们将任务上下文保存完毕之后则转化为下图右侧的状态。当要从其他任务切换回来继续执行这个任务的时候，CPU 会读取同样的位置并从中恢复任务上下文。
 
@@ -60,7 +60,7 @@ TaskContext *next_task_cx_ptr    = &tasks[next].task_cx;
 
 接下来我们同样从栈上内容的角度来看 \_\_switch 的整体流程：
 
-![switch.png](/images/rust-os/rcore/chapter3/switch.png)
+![switch.png](/images/rust-os/rcore/chapter3/switch.webp)
 
 Trap 控制流在调用 \_\_switch 之前就需要明确知道即将切换到哪一条目前正处于暂停状态的 Trap 控制流，因此 \_\_switch 有两个参数，第一个参数代表它自己，第二个参数则代表即将切换到的那条 Trap 控制流。这里我们用上面提到过的 current\_task\_cx\_ptr 和 next\_task\_cx\_ptr 作为代表。在上图中我们假设某次 \_\_switch 调用要从 Trap 控制流 A 切换到 B，一共可以分为四个阶段，在每个阶段中我们都给出了 A 和 B 内核栈上的内容。
 

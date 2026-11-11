@@ -4,6 +4,7 @@ description: "详解 iWARP 协议栈中的 RDMAP 层——远程直接内存访�
 date: "2026-07-19"
 order: 22
 tags: ["RDMA", "iWARP", "RDMAP", "协议"]
+est_time: "40 分钟"
 ---
 # iWARP 之 RDMAP
 
@@ -42,7 +43,7 @@ iWARP协议栈由三层组成，从下到上依次是MPA、DDP和RDMAP：
 
 RDMAP位于iWARP协议栈的最顶层，直接为ULP（Upper Layer Protocol）提供RDMA语义。RDMAP层定义了三类核心操作——Send、RDMA Write和RDMA Read，以及一个控制操作Terminate。
 
-![](/images/rdma/7d1e9f5737d2de722658d92650aadbdf.png)
+![](/images/rdma/7d1e9f5737d2de722658d92650aadbdf.webp)
 
 RDMAP层的功能示意图
 
@@ -342,7 +343,7 @@ Frame
 └── [Payload]
 ```
 
-![](/images/rdma/d5264440159d516d2f1a586bbd522885.png)
+![](/images/rdma/d5264440159d516d2f1a586bbd522885.webp)
 
 Wireshark中的iWARP报文层次（DDP/RDMAP被划分在一起）
 

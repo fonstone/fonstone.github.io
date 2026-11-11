@@ -4,7 +4,7 @@ description: "到目前为止，如果将当前的操作系统内核也看成一
 date: "2026-07-12"
 order: 72
 tags: ["动态内存", "堆", "allocator", "Rust", "分配器"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 本节导读
 
@@ -68,7 +68,7 @@ Rust 的标准库中提供了很多开箱即用的堆数据结构，利用它们
 
 具体可以参考下面这张 Rust 智能指针/容器及其他类型的内存布局的 [经典图示](https://docs.google.com/presentation/d/1q-c7UAyrUlM-eZyTo1pd8SZ0qwA_wYxmPZVOQkoDmH4/edit#slide=id.p) 。
 
-![rust-containers.png](/images/rust-os/rcore/chapter4/rust-containers.png)
+![rust-containers.png](/images/rust-os/rcore/chapter4/rust-containers.webp)
 
 在 Rust 中，与动态内存分配相关的智能指针主要有如下这些：
 

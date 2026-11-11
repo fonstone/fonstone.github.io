@@ -4,7 +4,7 @@ description: "openEuler操作系统"
 date: "2026-07-12"
 order: 7
 tags: ["附录", "操作系统", "参考", "扩展"]
-est_time: "20分钟"
+est_time: "20 分钟"
 ---
 openEuler操作系统
 

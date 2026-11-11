@@ -4,6 +4,7 @@ description: "添加 virtio-gpu 显示设备并调试 DRM 驱动，交叉编译 
 date: "2026-06-27"
 order: 5
 tags: ["Linux", "RISC-V", "Framebuffer", "DRM", "交叉编译", "RTC", "Quard-Star"]
+est_time: "25 分钟"
 ---
 
 本篇对应原教程 ch16、ch17、ch18。给系统添加图形显示能力，开始交叉编译用户态应用（bash/ncurses/make），并补齐 RTC 时钟与 syscon 系统控制设备。
@@ -36,13 +37,13 @@ tags: ["Linux", "RISC-V", "Framebuffer", "DRM", "交叉编译", "RTC", "Quard-St
 
 新增 `arch/riscv/configs/quard_star_defconfig`，增加 `CONFIG_LOGO=y` 测试 Framebuffer：
 
-![Framebuffer 显示 Linux logo](/images/qemu/ch16-0.png)
+![Framebuffer 显示 Linux logo](/images/qemu/ch16-0.webp)
 
 `/dev` 下出现 `fb0`、`dri/card0`、`dri/renderD128`。fb0 兼容早期 Framebuffer，可直接 `cat raw > /dev/fb0` 写入 rgb565 数据；`/dev/dri` 是更先进的 DRM 驱动。
 
 把 dts 启动参数改为 `console=tty0` 可让默认终端从显示设备输出：
 
-![tty0 终端输出](/images/qemu/ch16-1.png)
+![tty0 终端输出](/images/qemu/ch16-1.webp)
 
 本节 tag：`ch16`。
 

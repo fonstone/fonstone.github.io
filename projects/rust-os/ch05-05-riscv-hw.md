@@ -1,10 +1,10 @@
 ---
 title: "附录D：RISC-V 硬件相关信息"
-description: ""
+description: "RISC-V 硬件信息附录，寄存器 ABI、中断、CSR 与特权模式的速查清单。"
 date: "2026-07-12"
 order: 36
 tags: ["附录", "RISC-V", "CSR", "特权模式", "硬件"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 硬件信息
 

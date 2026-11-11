@@ -4,7 +4,7 @@ description: "本节问首先简单介绍了一下I/O设备的发展，可以看
 date: "2026-07-12"
 order: 25
 tags: ["I/O", "外设", "设备抽象", "中断"]
-est_time: "20分钟"
+est_time: "20 分钟"
 ---
 ## 本节导读
 
@@ -26,7 +26,7 @@ I/O设备从早期相对比较简单的串口、键盘和磁盘等，逐步发�
 
 再后来随着个人电脑的普及，计算机已经进入寻常百姓家中，计算机的功能和控制范围进一步放大，各种类型的I/O设备层出不穷。GPU、声卡、显卡等外设已经很难归类到上述的三种分类中，所以它们也就形成了各自独立的设备类型。各种设备出现时间有早晚，功能特点各异，这也使得现有的操作系统在设备驱动的设计和实现上面比较繁杂。当前典型的桌面计算机的I/O总体架构如下图所示：
 
-![io-arch-in-pc.png](/images/rust-os/rcore/chapter9/io-arch-in-pc.png)
+![io-arch-in-pc.png](/images/rust-os/rcore/chapter9/io-arch-in-pc.webp)
 
 从CPU与外设的交互方式的发展过程来看，CPU可管理的设备数量越来越多，CPU与设备之间的数据传递性能（延迟和吞吐量）也越来越强。总体上看，CPU连接的外设有如下的发展过程：
 
@@ -83,7 +83,7 @@ I/O设备从早期相对比较简单的串口、键盘和磁盘等，逐步发�
 
 在上述的I/O设备发展过程可以看到， CPU主要有三种方式可以与外设进行数据传输：Programmed I/O (简称PIO)、Interrupt、Direct Memory Access (简称DMA)，如下图所示：
 
-![io-comm-mode.png](/images/rust-os/rcore/chapter9/io-comm-mode.png)
+![io-comm-mode.png](/images/rust-os/rcore/chapter9/io-comm-mode.webp)
 
 ### Programmed I/O
 
@@ -97,13 +97,13 @@ PIO指CPU通过发出I/O指令的方式来进行数据传输。PIO方式可以�
 
 中断机制的出现，极大地缓解了CPU的负担。CPU可通过PIO方式来通知外设，只要I/O设备有了CPU需要的数据，便会发出中断请求信号。CPU发完通知后，就可以继续执行与I/O设备无关的其它事情。中断控制器会检查I/O设备是否准备好进行传输数据，并发出中断请求信号给CPU。当CPU检测到中断信号，CPU会打断当前执行，并处理I/O传输。下图显示了设备中断的I/O处理流程：
 
-![interrupt-steps.png](/images/rust-os/rcore/chapter9/interrupt-steps.png)
+![interrupt-steps.png](/images/rust-os/rcore/chapter9/interrupt-steps.webp)
 
 ### Direct Memory Access
 
 如果外设每传一个字节都要产生一次中断，那系统执行效率还是很低。DMA（Direct Memory Access）是一种用于在计算机系统中进行快速数据传输的技术。它允许设备直接将数据传输到内存中，而不必通过CPU来直接处理。这样使得CPU从I/O任务中解脱出来，从而提高了系统的整体性能。DMA操作通常由DMA控制器来完成。当CPU需要从内存中读取或写入设备数据时，它会提前向DMA控制器发出准备请求，然后DMA控制器会在后续阶段直接将数据传输到目标位置。下图显示了磁盘数据的DMA传输的图示例子：
 
-![dma-steps.png](/images/rust-os/rcore/chapter9/dma-steps.png)
+![dma-steps.png](/images/rust-os/rcore/chapter9/dma-steps.webp)
 
 在后面的小节中，我们会进一步介绍基于I/O控制器的轮询，中断等方式的设备驱动的设计与实现。
 
@@ -170,7 +170,7 @@ ioctl 这名字第一次出现在Unix第七版中，他在很多类unix系统（
 
 流是用户进程和设备或伪设备之间的全双工连接。它由几个线性连接的处理模块（module）组成，类似于一个shell程序中的管道（pipe），用于数据双向流动。流中的模块通过向邻居模块传递消息来进行通信。除了一些用于流量控制的常规变量，模块不需要访问其邻居模块的其他数据。此外，一个模块只为每个邻居提供一个入口点，即一个接受消息的例程。
 
-![stream.png](/images/rust-os/rcore/chapter9/stream.png)
+![stream.png](/images/rust-os/rcore/chapter9/stream.webp)
 
 在最接近进程的流的末端是一组例程，它们为操作系统的其余部分提供接口。用户进程的写操作请求和输入/输出控制请求被转换成发送到流的消息，而读请求将从流中获取数据并将其传递给用户进程。流的另一端是设备驱动程序模块。对字符或网络传输而言，从用户进程以流的方式传递数据将被发送到设备；设备检测到的字符、网络包和状态转换被合成为消息，并被发送到流向用户进程的流中。整个过程会经过多个中间模块，这些模块会以各种方式处理或过滤消息。
 
@@ -178,7 +178,7 @@ ioctl 这名字第一次出现在Unix第七版中，他在很多类unix系统（
 
 每个流处理模块由一对队列（queue）组成，每个方向一个队列。队列不仅包括数据队列本身，还包括两个例程和一些状态信息。一个是put例程，它由邻居模块调用以将消息放入数据队列中。另一个是服务（service）例程，被安排在有工作要做的时候执行。状态信息包括指向下游下一个队列的指针、各种标志以及指向队列实例化所需的附加状态信息的指针。
 
-![stream-queue.png](/images/rust-os/rcore/chapter9/stream-queue.png)
+![stream-queue.png](/images/rust-os/rcore/chapter9/stream-queue.webp)
 
 虽然基于流的I/O设备抽象看起来很不错，但并没有在其它操作系统中推广开来。其中的一个原因是UNIX在当时还是一个曲高和寡的高端软件系统，运行在高端的工作站和服务器上，支持的外设有限。而Windows这样的操作系统与Intel的x86形成了wintel联盟，在个人计算机市场被广泛使用，并带动了而多媒体，GUI等相关外设的广泛发展，Windows操作系统并没有采用流的I/O设备抽象，而是针对每类设备定义了一套Device Driver API接口，提交给外设厂商，让外设厂商写好相关的驱动程序，并加入到Windows操作系统中。这种相对实用的做法再加上微软的号召力让各种外设得到了Windows操作系统的支持，但也埋下了标准不统一，容易包含bug的隐患。
 
@@ -192,7 +192,7 @@ IBM资深工程师 Rusty Russell 在开发Lguest（Linux 内核中的的一个hy
 
 外部设备为CPU提供存储、网络等多种服务，是计算机系统中除运算功能之外最为重要的功能载体。CPU与外设之间通过某种协议传递命令和执行结果；virtio协议最初是为虚拟机外设而设计的IO协议，但是随着应用范围逐步扩展到物理机外设，virtio协议正朝着更适合物理机使用的方向而演进。
 
-![virtio-simple-arch.png](/images/rust-os/rcore/chapter9/virtio-simple-arch.png)
+![virtio-simple-arch.png](/images/rust-os/rcore/chapter9/virtio-simple-arch.webp)
 
 由于virtio具有相对的通用性和代表性，本章将进一步分析virtio规范，以及针对多种virtio设备的设备驱动程序，从而对设备驱动程序和操作系统其他部分的关系有一个更全面的了解。
 
@@ -229,7 +229,7 @@ IBM资深工程师 Rusty Russell 在开发Lguest（Linux 内核中的的一个hy
 
 基于阻塞IO模型的文件读系统调用 -- read 的执行过程如下图所示：
 
-![../../os-lectures/lec13/figs/io-block.png](/images/rust-os/rcore/chapter9/io-block.png)
+![../../os-lectures/lec13/figs/io-block.png](/images/rust-os/rcore/chapter9/io-block.webp)
 
 从上图可以看出执行过程包含如下步骤：
 
@@ -246,7 +246,7 @@ IBM资深工程师 Rusty Russell 在开发Lguest（Linux 内核中的的一个hy
 
 基于非阻塞IO模型的文件读系统调用 -- read 的执行过程如下图所示：
 
-![../../os-lectures/lec13/figs/io-nonblock.png](/images/rust-os/rcore/chapter9/io-nonblock.png)
+![../../os-lectures/lec13/figs/io-nonblock.png](/images/rust-os/rcore/chapter9/io-nonblock.webp)
 
 从上图可以看出执行过程包含如下步骤：
 
@@ -268,7 +268,7 @@ IO multiplexing对应的I/O系统调用是 select 和 epoll 等，也称这种IO
 
 基于多路复用IO模型的文件读的执行过程如下图所示：
 
-![../../os-lectures/lec13/figs/io-multiplex.png](/images/rust-os/rcore/chapter9/io-multiplex.png)
+![../../os-lectures/lec13/figs/io-multiplex.png](/images/rust-os/rcore/chapter9/io-multiplex.webp)
 
 ### 信号驱动IO（signal driven I/O）
 
@@ -276,7 +276,7 @@ IO multiplexing对应的I/O系统调用是 select 和 epoll 等，也称这种IO
 
 基于信号驱动IO模型的文件读的执行过程如下图所示：
 
-![../../os-lectures/lec13/figs/io-signal.png](/images/rust-os/rcore/chapter9/io-signal.png)
+![../../os-lectures/lec13/figs/io-signal.png](/images/rust-os/rcore/chapter9/io-signal.webp)
 
 ### 异步IO（Asynchronous I/O）
 
@@ -284,7 +284,7 @@ IO multiplexing对应的I/O系统调用是 select 和 epoll 等，也称这种IO
 
 基于异步IO模型的文件读的执行过程如下图所示：
 
-![../../os-lectures/lec13/figs/io-async.png](/images/rust-os/rcore/chapter9/io-async.png)
+![../../os-lectures/lec13/figs/io-async.png](/images/rust-os/rcore/chapter9/io-async.webp)
 > **Note**
 >
 > **Linux异步IO的历史**

@@ -25,9 +25,9 @@ tags: ["操作系统", "LLM", "AIOS", "Agent", "内核", "调度", "个性化", 
       scale["多 Agent 并发与资源竞争"]
 `}/>
 
-传统操作系统依赖精确的 GUI 或 CLI 命令，用户必须知道"怎么做"而非"想要什么"。LLM 正在改变这一范式：从"命令驱动"转向"意图驱动"。
+传统操作系统依赖精确的 GUI 或 CLI 命令，用户必须知道"怎么做"而非"想要什么"。LLM 正在改变这一范式，从"命令驱动"转向"意图驱动"。
 
-但将 LLM 深度嵌入 OS 不是简单的 API 调用叠加，它涉及内核级资源管理、进程调度、内存管理、文件系统、安全隔离等全栈重新设计。本文系统梳理四个代表性框架的架构与核心贡献：
+但将 LLM 深度嵌入 OS 不是简单的 API 调用叠加，它涉及内核级资源管理、进程调度、内存管理、文件系统、安全隔离等全栈重新设计。四个代表性框架的架构与核心贡献，逐篇拆开看。
 
 | 框架 | 核心定位 | 关键创新 |
 |------|---------|---------|
@@ -36,16 +36,16 @@ tags: ["操作系统", "LLM", "AIOS", "Agent", "内核", "调度", "个性化", 
 | **Compressor-Retriever** | 长期上下文架构 | 压缩-检索机制，75% 准确率保留 |
 | **Herding LLaMaS** | LLM 管理异构硬件 | 语义描述驱动设备管理与调度 |
 
-## 2. AIOS：LLM Agent 操作系统
+## 2. AIOS，LLM Agent 操作系统
 
 ### 2.1 核心问题
 
-当多个 LLM Agent 同时运行时，缺乏操作系统级的资源管理会导致：
+当多个 LLM Agent 同时运行时，缺乏操作系统级的资源管理会导致。
 
-- **资源争抢**：Agent 无限制访问 LLM API 和工具资源
-- **调度缺失**：没有公平调度机制，并发处理效率低
-- **上下文混乱**：多 Agent 上下文互相干扰
-- **安全隐患**：无访问控制，Agent 可能越权操作
+- **资源争抢**，Agent 无限制访问 LLM API 和工具资源
+- **调度缺失**，没有公平调度机制，并发处理效率低
+- **上下文混乱**，多 Agent 上下文互相干扰
+- **安全隐患**，无访问控制，Agent 可能越权操作
 
 ### 2.2 架构设计
 
@@ -86,7 +86,7 @@ tags: ["操作系统", "LLM", "AIOS", "Agent", "内核", "调度", "个性化", 
     style LLMLayer fill:#fce4ec
 `}/>
 
-AIOS 将传统 OS 的内核概念映射到 LLM Agent 管理：
+AIOS 将传统 OS 的内核概念映射到 LLM Agent 管理。
 
 | 传统 OS 概念 | AIOS 对应 | 功能 |
 |-------------|----------|------|
@@ -128,7 +128,7 @@ AIOS 将传统 OS 的内核概念映射到 LLM Agent 管理：
     style LLM_POOL fill:#c8e6c9
 `}/>
 
-AIOS 的 Agent 调度器面临传统 OS 调度器没有的独特挑战：
+AIOS 的 Agent 调度器面临传统 OS 调度器没有的独特挑战。
 
 | 挑战 | 说明 | AIOS 方案 |
 |------|------|----------|
@@ -139,17 +139,17 @@ AIOS 的 Agent 调度器面临传统 OS 调度器没有的独特挑战：
 
 ### 2.4 性能评估
 
-AIOS 在管理 ~2000 并发 Agent 时实现 **2.1x 吞吐提升**，同时保持准确性和稳定性。关键优化包括：
+AIOS 在管理 ~2000 并发 Agent 时实现 **2.1x 吞吐提升**，同时保持准确性和稳定性。关键优化包括。
 
-- **公平调度**：防止 Agent 饥饿
-- **上下文隔离**：Agent 间上下文不互相污染
-- **资源复用**：共享 LLM 连接池减少 API 开销
+- **公平调度**，防止 Agent 饥饿
+- **上下文隔离**，Agent 间上下文不互相污染
+- **资源复用**，共享 LLM 连接池减少 API 开销
 
-## 3. PEROS：个性化自适应操作系统
+## 3. PEROS，个性化自适应操作系统
 
 ### 3.1 核心问题
 
-传统操作系统对所有用户一视同仁——相同的内核策略、相同的资源分配、相同的界面配置。但每个用户的使用习惯、偏好和工作流都不同。
+传统操作系统对所有用户一视同仁，相同的内核策略、相同的资源分配、相同的界面配置。但每个用户的使用习惯、偏好和工作流都不同。
 
 ### 3.2 PEROS 架构
 
@@ -193,7 +193,7 @@ AIOS 在管理 ~2000 并发 Agent 时实现 **2.1x 吞吐提升**，同时保持
     style HardwareLayer fill:#fce4ec
 `}/>
 
-PEROS 的三层架构：
+PEROS 的三层架构。
 
 | 层级 | 组件 | 功能 |
 |------|------|------|
@@ -217,9 +217,9 @@ PEROS 的三层架构：
     style RESULT fill:#a5d6a7
 `}/>
 
-PEROS 允许用户用自然语言配置内核策略——例如"我正在做视频渲染，需要更多资源"，LLM 将这句话翻译为具体的内核参数变更。
+PEROS 允许用户用自然语言配置内核策略，例如"我正在做视频渲染，需要更多资源"，LLM 将这句话翻译为具体的内核参数变更。
 
-### 3.4 隐私保护：Databox
+### 3.4 隐私保护，Databox
 
 <MermaidDiagram chart={`flowchart TB
     subgraph Databox["Databox 隐私沙箱"]
@@ -254,11 +254,11 @@ PEROS 的 Databox 机制确保用户数据在本地沙箱内处理，只有脱�
 | 隐私 | 基本沙箱 | Databox 本地处理 |
 | 部署 | 本地安装 | 微内核 + 云后端 |
 
-## 4. Compressor-Retriever：长期上下文架构
+## 4. Compressor-Retriever，长期上下文架构
 
 ### 4.1 核心问题
 
-LLM 有固定的上下文窗口（如 128K tokens），但操作系统需要维护长期状态——用户偏好、历史操作、系统日志等。如何让 LLM 在有限上下文内进行长期推理？
+LLM 有固定的上下文窗口（如 128K tokens），但操作系统需要维护长期状态，用户偏好、历史操作、系统日志等。如何让 LLM 在有限上下文内进行长期推理？
 
 ### 4.2 架构设计
 
@@ -300,7 +300,7 @@ LLM 有固定的上下文窗口（如 128K tokens），但操作系统需要维�
 
 ### 4.3 关键机制
 
-**Compressor（压缩器）**将长期历史交互转换为紧凑的嵌入表示：
+**Compressor（压缩器）**将长期历史交互转换为紧凑的嵌入表示。
 
 | 步骤 | 操作 | 目的 |
 |------|------|------|
@@ -309,7 +309,7 @@ LLM 有固定的上下文窗口（如 128K tokens），但操作系统需要维�
 | 3. 分层存储 | 按重要性分层存储 | 高效检索 |
 | 4. 指向映射 | 维护压缩表示到原始数据的映射 | 可追溯性 |
 
-**Retriever（检索器）**按需从压缩仓库中提取相关上下文：
+**Retriever（检索器）**按需从压缩仓库中提取相关上下文。
 
 <MermaidDiagram chart={`flowchart LR
     Q["当前查询"] --> SPARSE2["稀疏检索"]
@@ -323,7 +323,7 @@ LLM 有固定的上下文窗口（如 128K tokens），但操作系统需要维�
 
 ### 4.4 准确率保持
 
-实验表明，Compressor-Retriever 在压缩 75%+ 上下文的情况下，仍能保持 **约 75% 的准确率**（相比全上下文模型）。这意味着：
+实验表明，Compressor-Retriever 在压缩 75%+ 上下文的情况下，仍能保持 **约 75% 的准确率**（相比全上下文模型）。这意味着。
 
 | 方案 | 上下文长度 | 准确率 | 成本 |
 |------|-----------|--------|------|
@@ -332,11 +332,11 @@ LLM 有固定的上下文窗口（如 128K tokens），但操作系统需要维�
 | **Compressor-Retriever** | 压缩历史 + 当前 | **~75%** | **低** |
 | 无历史 | 仅当前 | ~40% | 最低 |
 
-## 5. Herding LLaMaS：LLM 作为 OS 模块管理硬件
+## 5. Herding LLaMaS，LLM 作为 OS 模块管理硬件
 
 ### 5.1 核心问题
 
-现代计算环境包含大量异构硬件——CPU、GPU、TPU、NPU、FPGA、各种加速器。传统 OS 需要为每种设备编写专用驱动和配置，无法适应快速演变的硬件生态。
+现代计算环境包含大量异构硬件，CPU、GPU、TPU、NPU、FPGA、各种加速器。传统 OS 需要为每种设备编写专用驱动和配置，无法适应快速演变的硬件生态。
 
 ### 5.2 核心思想
 
@@ -535,14 +535,14 @@ Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备�
     style Hardware2 fill:#f3e5f5
 `}/>
 
-四大框架互补组合的统一架构可能包含：
+四大框架互补组合的统一架构可能包含。
 
-1. **AIOS 层**：Agent 并发调度、上下文隔离、资源争抢管理
-2. **PEROS 层**：用户画像、自适应内核策略、Databox 隐私保护
-3. **Compressor-Retriever 层**：长期记忆压缩与按需检索
-4. **Herding LLaMaS 层**：异构硬件的语义管理与调度
+1. **AIOS 层**，Agent 并发调度、上下文隔离、资源争抢管理
+2. **PEROS 层**，用户画像、自适应内核策略、Databox 隐私保护
+3. **Compressor-Retriever 层**，长期记忆压缩与按需检索
+4. **Herding LLaMaS 层**，异构硬件的语义管理与调度
 
-## 8. 全模块对照：LLM 如何改造 OS 各子系统
+## 8. 全模块对照，LLM 如何改造 OS 各子系统
 
 ### 8.1 交互子系统
 
@@ -722,7 +722,7 @@ Herding LLaMaS 让 LLM 充当 OS 组件，通过自然语言描述理解设备�
 
 ## 11. 总结
 
-LLM 驱动的操作系统正在从概念走向工程实践。四大框架从不同维度解决了核心问题：
+LLM 驱动的操作系统正在从概念走向工程实践。四大框架从不同维度解决了核心问题。
 
 | 框架 | 核心贡献 | 一句话 |
 |------|---------|--------|
@@ -731,13 +731,13 @@ LLM 驱动的操作系统正在从概念走向工程实践。四大框架从不�
 | **Compressor-Retriever** | 长期上下文 | "压缩历史 + 按需检索，可以让 LLM 在有限窗口内进行长期推理" |
 | **Herding LLaMaS** | 硬件语义管理 | "自然语言描述可以让 OS 自动适配异构硬件" |
 
-这些工作共同指向一个未来：**操作系统不再只是执行命令的机器，而是理解意图、自适应管理资源、保护用户隐私的智能平台**。实现这一愿景需要同时突破可靠性、可解释性、安全性和效率四大挑战。
+这些工作共同指向一个未来**操作系统不再只是执行命令的机器，而是理解意图、自适应管理资源、保护用户隐私的智能平台**。实现这一愿景需要同时突破可靠性、可解释性、安全性和效率四大挑战。
 
 ---
 
-**参考资源：**
+**参考资源**
 
-- 原始论文：[A Comprehensive Literature Survey on Large Language Model-Driven Operating Systems](https://www.ijraset.com/research-paper/large-language-model-driven-operating-systems) (IJRASET, 2025)
-- AIOS 论文：[AIOS: LLM Agent Operating System](https://arxiv.org/abs/2403.16971) (COLM 2025)
-- AIOS 代码：[github.com/agiresearch/AIOS](https://github.com/agiresearch/AIOS)
-- Vib-OS 项目：[github.com/viralcode/vib-OS](https://github.com/viralcode/vib-OS)（Vibe Coding 构建的实际 OS 案例）
+- 原始论文，[A Comprehensive Literature Survey on Large Language Model-Driven Operating Systems](https://www.ijraset.com/research-paper/large-language-model-driven-operating-systems) (IJRASET, 2025)
+- AIOS 论文，[AIOS， LLM Agent Operating System](https://arxiv.org/abs/2403.16971) (COLM 2025)
+- AIOS 代码，[github.com/agiresearch/AIOS](https://github.com/agiresearch/AIOS)
+- Vib-OS 项目，[github.com/viralcode/vib-OS](https://github.com/viralcode/vib-OS)（Vibe Coding 构建的实际 OS 案例）

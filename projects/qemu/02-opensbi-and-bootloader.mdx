@@ -4,6 +4,7 @@ description: "理解 SOC 多级 Boot 设计，移植 OpenSBI 并添加 platform�
 date: "2026-06-27"
 order: 2
 tags: ["QEMU", "RISC-V", "OpenSBI", "设备树", "Bootloader", "Quard-Star"]
+est_time: "40 分钟"
 ---
 
 本篇对应原教程 ch5-1、ch5-2、ch6、ch7。从"只打印 Hello"的 lowlevelboot 升级为真正加载运行 OpenSBI，并引入设备树与 Domain 概念，为后续 U-Boot 与 Linux 内核铺路。
@@ -20,7 +21,7 @@ tags: ["QEMU", "RISC-V", "OpenSBI", "设备树", "Bootloader", "Quard-Star"]
 
 RISC-V 提出了标准的 **SBI 规范**（RISC-V Supervisor Binary Interface）。SBI 作为直接运行在系统 M 模式（机器模式）下的程序，向上层 OS 提供统一的系统调用环境，拥有最高权限，可访问所有硬件资源，并通过 PMP 等硬件级权限管理单元将系统划分为多个域（domain）供不同安全等级的多操作系统使用。如下图所示，SBI 位于 S 模式和 M 模式之间。
 
-![OpenSBI 位于 S/M 模式之间](/images/qemu/ch5-0.png)
+![OpenSBI 位于 S/M 模式之间](/images/qemu/ch5-0.webp)
 
 <MermaidDiagram chart={`flowchart TD
     subgraph MMode["M 模式 (Machine)"]
@@ -45,7 +46,7 @@ RISC-V 官方在给出 SBI 标准规范的同时开发了开源代码 opensbi。
 
 RISC-V 文档中给出的常见多级 BL 结构如下：
 
-![多级 BL 结构](/images/qemu/ch5-1.png)
+![多级 BL 结构](/images/qemu/ch5-1.webp)
 
 最终确定本系统启动流程：maskrom(BL0) → pflash 首地址的 lowlevelboot(BL1) → BL1 初始化 ddr、将 pflash 上的 opensbi(BL2) 与设备树加载到 ddr 并跳转执行。本节 tag：`ch5`。
 
@@ -61,7 +62,7 @@ RISC-V 文档中给出的常见多级 BL 结构如下：
 
 ### 2.1 源码结构
 
-![OpenSBI 源码结构](/images/qemu/ch5-2.png)
+![OpenSBI 源码结构](/images/qemu/ch5-2.webp)
 
 - `sbi/`：核心文件
 - `utils/`：设备树解析 libfdt 及驱动文件（均采用 fdt 设备树驱动框架）
@@ -84,7 +85,7 @@ OpenSBI 生成的固件有三类，本教程只使用 `fw_jump`。启动流程�
     K --> L["sbi_hart_switch_mode<br/>mret 切换到 S/U 模式"]
 `} />
 
-![OpenSBI 启动流程图](/images/qemu/ch5-3.png)
+![OpenSBI 启动流程图](/images/qemu/ch5-3.webp)
 
 ### 2.2 platform 添加
 
@@ -253,7 +254,7 @@ _start:
 
 运行后看到 OpenSBI 输出即说明成功。本节 tag：`ch6`。
 
-![OpenSBI 运行成功](/images/qemu/ch6-0.png)
+![OpenSBI 运行成功](/images/qemu/ch6-0.webp)
 
 ## 4. OpenSBI Domain（ch7）
 

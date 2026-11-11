@@ -55,7 +55,7 @@ export default function OfficialAccountCard() {
           >
             <div className="relative rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(59,130,246,0.3)] animate-[breathe_4s_ease-in-out_infinite] bg-white p-4 dark:bg-slate-900">
               <Image
-                src="/ai_article.jpg"
+                src="/ai_article.webp"
                 alt="公众号二维码"
                 width={400}
                 height={400}

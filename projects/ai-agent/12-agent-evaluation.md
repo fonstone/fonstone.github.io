@@ -1,4 +1,4 @@
-﻿---
+---
 title: "智能体性能评估"
 description: "核心评估指标、主流基准测试与评估框架。"
 date: "2026-07-12"
@@ -117,7 +117,7 @@ print(f"\n回答：{response}")
 
 
 
-![](/images/courses/12-figures/12-1.png)
+![](/images/courses/12-figures/12-1.webp)
 
 *图 12.1 HelloAgents 评估体系架构图*
 
@@ -183,12 +183,12 @@ BFCL (Berkeley Function Calling Leaderboard) 是由加州大学伯克利分校�
 BFCL 基准包含四个评估类别，难度递增。从最基础的单函数调用（Simple）开始，逐步增加到需要调用多个函数的场景（Multiple），再到需要并行调用多个函数的复杂场景（Parallel），最后是需要判断是否需要调用函数的场景（Irrelevance）。这四个类别覆盖了智能体在实际应用中可能遇到的各种工具调用场景，如表 12.1 所示：
 
 <p>表 12.1 BFCL 基准中的四个评估类别</p>
-  ![](/images/courses/12-figures/12-table-1.png)
+  ![](/images/courses/12-figures/12-table-1.webp)
 BFCL 的评估流程遵循标准的基准测试流程：首先加载数据集并选择评估类别，然后运行智能体获取预测结果，接着将预测结果解析为抽象语法树（AST），最后通过 AST 匹配算法判断预测是否正确。整个流程会遍历所有测试样本，最终计算出准确率等评估指标并生成评估报告。完整的评估流程如图 12.2 所示：
 
 
 
-![](/images/courses/12-figures/12-2.png)
+![](/images/courses/12-figures/12-2.webp)
 
 *图 12.2 BFCL 评估流程图*
 
@@ -416,7 +416,7 @@ print(f"✅ 加载了 {len(dataset.ground_truth)} 个ground truth")
 这个加载器的工作原理是：首先从`bfcl_eval/data/`加载测试数据，然后从`bfcl_eval/data/possible_answer/`加载 ground truth，接着自动合并测试数据和 ground truth，最后保留原始 BFCL 数据格式。其中 BFCL v4 数据集类别可以在表 12.2 查看。
 
 <p>表 12.2 BFCL 基准中的四个评估类别</p>
-  ![](/images/courses/12-figures/12-table-2.png)
+  ![](/images/courses/12-figures/12-table-2.webp)
 
 当然也可以通过代码查看可用类别：
 
@@ -630,7 +630,7 @@ evaluator.export_to_bfcl_format(
 
 
 
-![](/images/courses/12-figures/12-3.png)
+![](/images/courses/12-figures/12-3.webp)
 
 *图 12.3 Helloagents 载入 BFCL 评估过程*
 
@@ -1015,7 +1015,7 @@ GAIA 的设计理念是：<strong>真实世界的问题往往需要多种能力�
 了解 GAIA 的评估理念后，让我们深入了解 GAIA 数据集的具体结构。GAIA 包含 466 个精心设计的真实世界问题，这些问题按照复杂度和所需推理步骤分为三个难度级别，从简单的零步推理任务到需要多步复杂推理的困难任务，全面覆盖了智能体在实际应用中可能遇到的各种场景，如表 12.3 所示：
 
 <p>表 12.3 GAIA 数据集难度级别分布</p>
-  ![](/images/courses/12-figures/12-table-3.png)
+  ![](/images/courses/12-figures/12-table-3.webp)
 关于 GAIA 数据集的样本示例可以参考下面的代码片段：
 
 ```json
@@ -1140,7 +1140,7 @@ $$
 假设我们评估了 10 个样本，结果可以参考表 12.4 所示：
 
 <p>表 12.4 GAIA 数据集难度级别分布</p>
-  ![](/images/courses/12-figures/12-table-4.png)
+  ![](/images/courses/12-figures/12-table-4.webp)
 
 如果要计算这个案例的指标的话，可以参考下面的 Python 脚本。
 
@@ -1502,7 +1502,7 @@ https://huggingface.co/spaces/gaia-benchmark/leaderboard
 
 
 
-![](/images/courses/12-figures/12-4.png)
+![](/images/courses/12-figures/12-4.webp)
 
 *图 12.4 BFCL 评估流程图*
 
@@ -1855,7 +1855,7 @@ AIME 是美国数学协会（MAA）主办的中等难度数学竞赛，介于 AM
 
 
 
-![](/images/courses/12-figures/12-5.png)
+![](/images/courses/12-figures/12-5.webp)
 
 *图 12.5 数据生成质量评估流程图*
 
@@ -1867,7 +1867,7 @@ AIME 是美国数学协会（MAA）主办的中等难度数学竞赛，介于 AM
 在我们的实现中，LLM Judge 从四个关键维度评估 AIME 题目的质量：
 
 <p>表 12.5 LLM Judge 评估 AIME 题目的维度</p>
-  ![](/images/courses/12-figures/12-table-5.png)
+  ![](/images/courses/12-figures/12-table-5.webp)
 
 有了四个维度的评分后，我们需要将这些评分汇总成整体的评估指标。我们定义了三个关键指标来衡量生成题目的质量水平：
 
@@ -1905,7 +1905,7 @@ $$
 
 
 
-![](/images/courses/12-figures/12-6.png)
+![](/images/courses/12-figures/12-6.webp)
 
 *图 12.6 数据生成质量评估流程图*
 
@@ -2382,7 +2382,7 @@ http://127.0.0.1:7860
 最终效果可以参考图 12.7 所示，对于题目的正确性，最好人工打标 Review：
 
 
-![](/images/courses/12-figures/12-7.png)
+![](/images/courses/12-figures/12-7.webp)
 
 *图 12.7 AIME 试题人工验证页面*
 

@@ -4,13 +4,13 @@ description: "本节我们将完成实验环境配置并成功运行 rCore-Tutor
 date: "2026-07-12"
 order: 10
 tags: ["RISC-V", "QEMU", "Docker", "工具链", "环境配置"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 本节我们将完成实验环境配置并成功运行 rCore-Tutorial-v3。根据您的需求和操作系统，我们提供了多种配置方式，支持大多数 Linux 发行版、macOS、Windows 以及部分 RISC-V 开发板。
 
 **配置步骤依赖关系：**
 
-![setup-overview.png](/images/rust-os/rcore/chapter0/setup-overview.png)
+![setup-overview.png](/images/rust-os/rcore/chapter0/setup-overview.webp)
 
 **请从** 阶段1: 基础环境准备 **开始阅读，根据您的实际情况选择适合的配置方案。**
 
@@ -431,7 +431,7 @@ debug = true
 
 如果是在 QEMU 模拟器上运行，只需在 os 目录下 make run 即可。在内核加载完毕之后，可以看到目前可以用的应用程序。 usertests 打包了其中的很大一部分，所以我们可以运行它，只需输入在终端中输入它的名字即可。
 
-![qemu-final.png](/images/rust-os/rcore/chapter0/qemu-final.png)
+![qemu-final.png](/images/rust-os/rcore/chapter0/qemu-final.webp)
 
 之后，可以先按下 Ctrl+a （即：先按下 Ctrl 不松开，再按下小写字母 a 不放，随后同时将两个键松开），再按下 x 来退出 QEMU。
 
@@ -448,14 +448,14 @@ sudo apt install python3-serial
 
 首先，我们需要将 MicroSD 插入 PC 来将文件系统镜像拷贝上去。
 
-![prepare-sd.png](/images/rust-os/rcore/chapter0/prepare-sd.png)
+![prepare-sd.png](/images/rust-os/rcore/chapter0/prepare-sd.webp)
 > **Warning**
 >
 > 在 os/Makefile 中我们默认设置 MicroSD 在当前操作系统中可以用设备 SDCARD=/dev/sdb 访问。你可以使用 df -hT 命令来确认在你的环境中 MicroSD 是哪个设备，并在 make sdcard 之前对 os/Makefile 的 SDCARD 配置做出适当的修改。不然，这有可能导致 **设备 /dev/sdb 上数据丢失**！
 
 随后，我们将 MicroSD 插入 K210 开发板，将 K210 开发板连接到 PC，然后进入 os 目录 make run BOARD=k210 在 K210 开发板上跑 rCore Tutorial。
 
-![k210-final.png](/images/rust-os/rcore/chapter0/k210-final.png)
+![k210-final.png](/images/rust-os/rcore/chapter0/k210-final.webp)
 
 之后，可以按下 Ctrl+] 来退出串口终端。
 

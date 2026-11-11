@@ -1553,7 +1553,7 @@ match value {
 }
 ```
 
-> 预告：本章介绍的是 match 的基础用法。Rust 的模式匹配系统非常强大，还有更多进阶特性（如范围模式、守卫条件、引用解构等），将在[高级模式匹配](/RustCourse/chapters/22-advanced/04-advanced-patterns)中详细讲解。
+> 预告：本章介绍的是 match 的基础用法。Rust 的模式匹配系统非常强大，还有更多进阶特性（如范围模式、守卫条件、引用解构等），将在[高级模式匹配](/projects/rust-learning/12-advanced-topics)中详细讲解。
 
 
 

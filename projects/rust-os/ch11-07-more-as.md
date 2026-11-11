@@ -4,7 +4,7 @@ description: "到目前为止，在面向批处理系统的操作系统中，正
 date: "2026-07-12"
 order: 78
 tags: ["虚拟内存", "缺页异常", "页面置换", "swap", "虚存"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 本节导读
 
@@ -73,7 +73,7 @@ est_time: "30分钟"
 
 覆盖技术是指一个应用程序在执行过程中，其若干程序段分时共享同一块内存空间。覆盖技术的大致思路是编写一个应用程序，把它分为若干个功能上相对独立的程序段（函数集合），按照其逻辑执行结构，这些程序段不会同时执行。未执行的程序段先保存在存储设备上，当有关程序段的前一部分执行结束后，把后续程序段和数据调入内存，覆盖前面的程序段和数据。
 
-![overlay-tech.png](/images/rust-os/rcore/chapter4/overlay-tech.png)
+![overlay-tech.png](/images/rust-os/rcore/chapter4/overlay-tech.webp)
 
 覆盖技术需要程序员在编写应用程序时，来手动控制和管理何时进行覆盖，不同程序段的覆盖顺序，以及覆盖的具体空间位置。这虽然减少了应用程序在执行过程中对内存空间的需求，当对应用程序开发者的编程水平提出了很高的要求，而且通用性比较差。
 
@@ -85,7 +85,7 @@ est_time: "30分钟"
 
 我们目前的操作系统还没实现这种技术，但不妨碍我们思考一下这种技术面临的问题和大致解决方法。在我们之前设计实现的批处理操作系统中，每次执行新应用时，需要把刚执行完毕的老应用所占内存空间给释放了，再把新应用的代码和数据换入到内存中。这是一种比较原始的应用之间交换地址空间（Swap Address Space）的方法。这种交换技术的方法也可进一步扩展用到多任务操作系统中，即把不常用或暂停的任务在内存中的代码和数据换出（Swap Out）存储设备上去。
 
-![swap-tech.png](/images/rust-os/rcore/chapter4/swap-tech.png)
+![swap-tech.png](/images/rust-os/rcore/chapter4/swap-tech.webp)
 
 首先是交换的时机，即何时需要发生交换？当一个任务在创建或执行过程中，如果内存不够用了，操作系统就需要执行内存交换操作。
 
@@ -145,7 +145,7 @@ est_time: "30分钟"
 
 同学们在学习计算机组成原理和编程优化方法时，或多或少地都了解内存/存储的层次结构和局部性原理。
 
-![mem-levels.png](/images/rust-os/rcore/chapter4/mem-levels.png)
+![mem-levels.png](/images/rust-os/rcore/chapter4/mem-levels.webp)
 
 上图是一个典型的内存/存储的层次结构，上层比下层速度快但容量小，每一层都可以放置程序用到的代码和数据。这样的存储器层次结构设计是一种典型的工程思维，因为在成本等工程约束下，我们无法在构造出速度最快且容量最大的“理想”内存。我们希望基于这种层次结构，加上一定的软硬件优化手段，能够接近“理想”内存的目标。要达到这样的目标，需要理解局部性原理。
 
@@ -194,7 +194,7 @@ $$
 
 FIFO置换策略虽然在实现上简单，但它对页访问的局部性感知不够，及时某页被多次访问，也可能由于它较早进入内存而被置换出去。
 
-![fifo-strategy.png](/images/rust-os/rcore/chapter4/fifo-strategy.png)
+![fifo-strategy.png](/images/rust-os/rcore/chapter4/fifo-strategy.webp)
 
 #### LRU置换策略
 
@@ -202,7 +202,7 @@ LRU（Least Recently Used，最近使用最少）置换策略是一种基于历�
 
 访存的近期性是一种历史信息，也是程序局部性的一种体现，因为越近被访问过的页，也许在不久的将来再次被访问的可能性也就越大。所以LRU置换策略是一种以历史来预测未来的启发式方法。在一般情况下，对于具有访存局部性的应用程序，LRU置换策略的效果接近最优置换策略的效果。
 
-![lru-strategy.png](/images/rust-os/rcore/chapter4/lru-strategy.png)
+![lru-strategy.png](/images/rust-os/rcore/chapter4/lru-strategy.webp)
 
 为了实现LRU置换策略，操作系统需要记录应用程序执行过程中的访存历史信息，这在实际实现上是一个挑战。LRU置换策略需要记录应用访问的每页的最后一次被访问的时间。这样，当一个页必须被替换时，该策略就选择最长时间没有被使用的页。
 这里的难点是如何准确记录访存的时间信息。我们可以想象一下，通过扩展硬件和软件功能的软硬结合的方式来记录：
@@ -233,7 +233,7 @@ stack方法是一种基于栈组织结构的算法。即把表示页（有虚拟
 
 这种近似LRU策略类似时钟旋转的过程，所以也称为Clock（时钟，也称 Second-Chance 二次机会 ）置换策略。虽然Clock置换策略不如LRU置换策略的效果好，但它比不考虑历史访问的方法要好，且在一般情况下，与LRU策略的结果对比相差不大。
 
-![clock-strategy.png](/images/rust-os/rcore/chapter4/clock-strategy.png)
+![clock-strategy.png](/images/rust-os/rcore/chapter4/clock-strategy.webp)
 
 时钟置换策略的一个小改进，是进一步额外关注内存中的页的修改情况。这样做的原因是：如果页已被修改（modified，也称 dirty），称为脏页，则在释放它之前须将它的更新内容写回交换区，这又增加了一次甚至多次缓慢的I/O写回操作。但如果它没有被修改（clean），就称为干净页，可以直接释放它，没有额外的I/O写回操作。因此，操作系统更倾向于先处理干净页，而不是脏页。
 
@@ -251,7 +251,7 @@ stack方法是一种基于栈组织结构的算法。即把表示页（有虚拟
 
 所以，工作集置换策略的目标就是动态调整工作集的内容和大小，一个任务占用的页面数接近其工作集大小，减少缺页异常次数。
 
-![workingset-strategy.png](/images/rust-os/rcore/chapter4/workingset-strategy.png)
+![workingset-strategy.png](/images/rust-os/rcore/chapter4/workingset-strategy.webp)
 
 实现工作集置换策略的基本思路是，操作系统能及时跟踪任务执行中位于工作集中页面，然后在发生缺页异常或过了一段时间间隔时，淘汰一个不在工作集中的页面，如果缺页异常就换入位于交换区中的页。
 
@@ -275,7 +275,7 @@ stack方法是一种基于栈组织结构的算法。即把表示页（有虚拟
 
 要得到缺页率的精确值比较困难，主要是访存次数难以精确统计。我们可以采用一种近似的方法来表示缺页率。从上次缺页异常时间Tlast 到现在缺页异常时间Tcurrent 的时间间隔作为缺页率的当前指标。并用一个经验值Ts表示适中的缺页率。
 
-![page-fault-rate-strategy.png](/images/rust-os/rcore/chapter4/page-fault-rate-strategy.png)
+![page-fault-rate-strategy.png](/images/rust-os/rcore/chapter4/page-fault-rate-strategy.webp)
 
 这样，缺页率置换策略的基本思路就是：在任务访存出现缺页时，首先计算从上次缺页异常时间Tlast 到现在缺页异常时间Tcurrent 的时间间隔。然后判断，如果 Tcurrent – Tlast > Ts, 则置换出在 [Tlast , Tcurrent ] 时间内没有被引用的页，并增加缺失页到工作集中；如果 Tcurrent – Tlast ≤ Ts, 则只增加缺失页到工作集中。
 

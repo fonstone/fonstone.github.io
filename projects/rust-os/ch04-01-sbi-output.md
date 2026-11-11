@@ -4,7 +4,7 @@ description: "本节我们将进行构建“三叶虫”操作系统的最后一
 date: "2026-07-12"
 order: 24
 tags: ["SBI", "输出", "关机", "println", "系统调用"]
-est_time: "25分钟"
+est_time: "25 分钟"
 ---
 ## 本节导读
 

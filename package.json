@@ -1,47 +1,45 @@
 {
-  "name": "bentofolio",
+  "name": "stonefon-knowledge-base",
   "version": "0.1.0",
-  "description": "A modern, customizable portfolio template built with Next.js and TailwindCSS",
+  "description": "StoneFon 的个人知识空间，记录操作系统内核、嵌入式底层、边缘 AI 与自动驾驶系统栈的技术长文和课程。",
   "private": false,
   "author": {
-    "name": "Wafastarz (Muhammad Khoirul Wafa)",
-    "email": "wafastarzteam@gmail.com",
-    "url": "https://wafastarz.site"
+    "name": "StoneFon",
+    "email": "xiangshifang0527@gmail.com",
+    "url": "https://github.com/fonstone"
   },
   "license": "MIT",
-  "homepage": "https://github.com/mkhoirulwafa18/bentofolio",
+  "homepage": "https://fonstone.github.io",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mkhoirulwafa18/bentofolio.git"
+    "url": "git+https://github.com/fonstone/fonstone.github.io.git"
   },
   "bugs": {
-    "url": "https://github.com/mkhoirulwafa18/bentofolio/issues"
+    "url": "https://github.com/fonstone/fonstone.github.io/issues"
   },
   "keywords": [
-    "portfolio",
+    "knowledge-base",
+    "mdx",
     "nextjs",
-    "react",
-    "tailwindcss",
-    "typescript",
-    "motion",
-    "framer-motion"
+    "embedded-systems",
+    "operating-system",
+    "edge-ai",
+    "autonomous-driving"
   ],
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "build:pages": "next build",
+    "build": "node scripts/build-indexes.mjs && next build --turbopack",
+    "build:pages": "node scripts/build-indexes.mjs && next build",
+    "build:indexes": "node scripts/build-indexes.mjs",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
-    "@vercel/analytics": "^1.5.0",
     "clsx": "^2.1.1",
-    "framer-motion": "^11.18.2",
     "github-slugger": "^2.0.0",
     "gray-matter": "^4.0.3",
     "lucide-react": "^0.542.0",
     "mermaid": "^11.14.0",
-    "motion": "^12.23.12",
     "next": "15.5.2",
     "next-mdx-remote": "^5.0.0",
     "plaiceholder": "^3.0.0",

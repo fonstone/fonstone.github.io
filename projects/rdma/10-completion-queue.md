@@ -4,6 +4,7 @@ description: "详解 Completion Queue 的概念、CQ 的创建、轮询与事件
 date: "2026-07-19"
 order: 10
 tags: ["RDMA", "Completion Queue", "CQ", "完成事件"]
+est_time: "40 分钟"
 ---
 # RDMA 之 Completion Queue
 

@@ -1,0 +1,27 @@
+---
+title: "AI 编码工程化这八篇怎么读"
+description: "把规范文件、技能包、知识库、检视 Agent 和输出约束放在一条线索上，说明每篇解决哪一段，附八篇文章的站内链接、可核验数字和一轮推荐读法。"
+date: "2026-11-09"
+tags: ["AI", "SDD", "Skill", "Harness", "代码检视"]
+---
+
+周五下午，一个同事把一段需求贴进编码 Agent，让它改登录模块。Agent 改完了，测试也过了，合并之后才发现它顺手把错误码的枚举重排了一遍，下游服务全对不上。需求里没写别动枚举，Agent 也没理由不动。事后复盘能确认的只有一件事，约束没写进它读得到的地方。
+
+这个系列里八篇文章都在处理同一类问题，把人脑子里默认的约束写成 Agent 读得到的文件，并在合并前加一道能拦住它的检查。最早的一篇从规范文件下手，把需求先写成结构化规格再交给模型。后面几篇把踩过的坑做成技能包和团队知识库，让 Agent 按场景自己取用。再往后，检视 Agent 和确定性流水线负责在合并前拦住问题。最后一篇处理模型输出本身的不稳定，用 schema 和 Hook 把不确定性收进可维护的工程约束里。八篇前后隔了几个月写完，做法换过几轮，串得起来的还是那个问题，约束放在哪一层。
+
+## 系列文章索引
+
+| 文章 | 解决的问题 | 一个可核验的数字或关键结论 |
+| --- | --- | --- |
+| [OpenSpec 规范驱动开发](/knowledge/ai/openspec-introduction) | 写代码之前怎么和模型对齐需求，避免输出跑偏 | 无实验数字，给出的是规范层放在编码助手前面的文件结构与变更流程 |
+| [多 Agent 协作与 SDD 实践](/knowledge/ai/multi-agent-collaboration-sdd) | 多个模型一起改代码时怎么分工、怎么让规范约束住各自的输出 | 无实验数字，给出的是多 Agent 分工与 SDD 流程结合的一份验收清单 |
+| [Claude Code Skills 编写指南](/knowledge/ai/ai-skills-guide) | 怎么把领域知识和流程写成模型能自动调用的技能包 | SKILL.md 的 name 最长 64 字符，description 前 250 字符决定自动匹配 |
+| [Skill 知识库与 Spec 流程双范式](/knowledge/ai/harmonyos-skill-engineering) | 经验知识包和流程规范两种手段怎么配合 | 无实验数字，给出的是 Skill 知识库与五阶段 Spec 工作流两套范式的拆分 |
+| [Harness 知识库工程](/knowledge/ai/harness-engineering-knowledge-base) | 工作流跑久了，团队经验怎么存下来给后来的任务复用 | 无实验数字，给出的是三支柱、五层存储、三级成熟度这套知识分层结构 |
+| [AI 代码检视 Agent 全景](/knowledge/ai/ai-code-review-agents-panorama) | 2026 年有哪些代码检视 Agent，能力到哪一步 | c-CRAB 基准里几款现存 agent 合起来只解决约 40% 的任务 |
+| [OpenCodeReview 架构拆解](/knowledge/ai/open-code-review-architecture-analysis) | 确定性工程和 LLM Agent 怎么拼成一条评审流水线 | 核心 CLI 用 Go 占 65.7%，VSCode 扩展用 TypeScript 占 18.2% |
+| [大模型不确定性的工程约束](/knowledge/ai/llm-uncertainty-compliance-engineering) | 模型输出不稳定，怎么用 schema 和 Hook 兜住 | Structured Outputs 在自家复杂 schema 评测到 100%，gpt-4-0613 低于 40% |
+
+推荐读法从 OpenSpec 和 Skills 两篇开始，先看清约束写成什么形式模型才读得到，再读多 Agent 协作那篇，理解分工之后规范怎么分摊。HarmonyOS Skill 和 Harness 知识库可以接着读，前一篇讲单个知识包怎么组织，后一篇讲团队怎么维护一套分层存储。检视 Agent 全景适合在动手搭流水线之前翻，里面有一份工具清单和 c-CRAB 的评估结果。OpenCodeReview 架构那篇拆得更细，读完能照着拼一套 diff 解析加评论定位的流程。大模型不确定性那篇放在最后，它解释前面所有约束为什么仍会被模型绕过去，以及结构化输出能补上的那一段。
+
+这八篇是 2026 年 11 月之前写下的做法。OpenSpec 和 Skills 的文件格式都改过版本，读的时候把当时的版本号一起看，比记住某个目录名有用。

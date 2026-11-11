@@ -4,6 +4,7 @@ description: "移植 U-Boot 到 udomain，重新规划整系统物理内存，�
 date: "2026-06-27"
 order: 3
 tags: ["QEMU", "RISC-V", "U-Boot", "virtio", "fw_cfg", "Quard-Star"]
+est_time: "25 分钟"
 ---
 
 本篇对应原教程 ch8、ch9、ch10。在 OpenSBI 跑通后，下一步是移植 U-Boot 作为 udomain 中的二级 loader，并系统性地重新规划物理内存，同时为内核启动添加 virtio 块设备与 fw_cfg 参数传递外设。
@@ -43,7 +44,7 @@ dd of=fw.bin ... seek=4K  if=trusted_fw.bin        # 安全域固件
 dd of=fw.bin ... seek=8K  if=u-boot.bin            # U-Boot
 ```
 
-![U-Boot 运行](/images/qemu/ch8-0.png)
+![U-Boot 运行](/images/qemu/ch8-0.webp)
 
 本节 tag：`ch8`。
 
@@ -70,7 +71,7 @@ dd of=fw.bin ... seek=8K  if=u-boot.bin            # U-Boot
 
 默认配置不适合本系统。真实 IC 设计开发时，软件团队需早期规划系统内存使用方案。重新规划如下：
 
-![物理内存规划](/images/qemu/ch9-0.png)
+![物理内存规划](/images/qemu/ch9-0.webp)
 
 <MermaidDiagram chart={`flowchart TD
     subgraph DDR["DDR 1GB 重新规划后"]
@@ -220,7 +221,7 @@ $SHELL_FOLDER/output/qemu/bin/qemu-system-riscv64 \
   --serial vc:$DEFAULT_VC --monitor vc:$DEFAULT_VC --parallel none
 ```
 
-![virtio/fw_cfg 测试](/images/qemu/ch10-0.png)
+![virtio/fw_cfg 测试](/images/qemu/ch10-0.webp)
 
 `qfw list`/`qfw cpus`/`virtio scan`/`virtio info` 命令输出正确信息即功能正常。本节 tag：`ch10`。
 

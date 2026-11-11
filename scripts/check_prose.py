@@ -17,6 +17,22 @@ HARD_STOPS = (
     "先说结论",
 )
 
+GENERIC_PAIN_OPENERS = (
+    "你有没有遇到过",
+    "你有没有碰到过",
+    "你是否遇到",
+    "相信你也遇到过",
+    "很多人都有过",
+)
+
+LAYER_LABELS = (
+    "新手",
+    "高手",
+    "入门",
+    "进阶",
+    "专家",
+)
+
 HARD_JARGON = (
     "赋能",
     "抓手",
@@ -284,15 +300,34 @@ def mask_non_prose(text: str) -> str:
 
     patterns = (
         re.compile(r"\A---\s*\n.*?\n---\s*(?:\n|\Z)", re.DOTALL),
+        # 多行 Mermaid 组件：chart 里的 CSS、时序图消息都是图语法，不是散文。
+        # 以模板字符串的反引号为界，避免吞掉组件之后的正文。
+        re.compile(r"<MermaidDiagram\b[^`]*`[\s\S]*?`\}\s*/>", re.DOTALL),
         re.compile(r"```.*?```", re.DOTALL),
         re.compile(r"`[^`\n]*`"),
         re.compile(r"\]\([^\n)]*\)"),
-        re.compile(r"https?://[^\s)>]+"),
+        # 任意 URI scheme，覆盖 viking://、git:// 等非 http 场景
+        re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s)>]+"),
+        # 斜杠命令，如 /opsx:propose，以及 12:30 这类时刻写法
+        re.compile(r"(?<![\w/>])/[A-Za-z][\w.-]*:[A-Za-z][\w.-]*"),
+        re.compile(r"\b\d{1,2}:\d{2}\b"),
         re.compile(r"<[^>\n]+>"),
     )
     masked = text
     for pattern in patterns:
         masked = pattern.sub(mask, masked)
+
+    def mask_table_colons(match: re.Match[str]) -> str:
+        # 表格整行视作字段区（规范明确「字段除外」），但提示性冒号仍要拦。
+        row = match.group()
+        chars = [" " if ch in ":：" else ch for ch in row]
+        for prompt in re.finditer(r"(?:一句话总结|先说结论|结论|注意|要点|小结|提示)[:：]", row):
+            chars[prompt.end() - 1] = prompt.group()[-1]
+        return "".join(chars)
+
+    masked = re.compile(r"^\s*\|[^\n]*\|\s*$", re.MULTILINE).sub(
+        mask_table_colons, masked
+    )
     return masked
 
 
@@ -406,6 +441,20 @@ def state_mixing_paragraphs(text: str):
         plan = [term for term in PLAN_STATE_MARKERS if term in block]
         if real and plan:
             matches.append((position, block, real, plan))
+    return matches
+
+
+def layer_label_clusters(text: str):
+    """同一段出现两个以上水平分层标签，可能把文章切成新手/高手/专家三层。"""
+
+    matches = []
+    cursor = 0
+    for block in re.split(r"\n\s*\n", text):
+        position = text.find(block, cursor)
+        cursor = max(position + len(block), cursor)
+        labels = [term for term in LAYER_LABELS if term in block]
+        if len(labels) >= 2:
+            matches.append((position, labels))
     return matches
 
 
@@ -622,6 +671,31 @@ def main() -> int:
             f"重点检查 {samples}。"
         )
 
+    generic_pain_matches = non_overlapping_terms(prose, GENERIC_PAIN_OPENERS)
+    if generic_pain_matches:
+        samples = "、".join(dict.fromkeys(term for _, term in generic_pain_matches))
+        lines = "、".join(
+            dict.fromkeys(
+                str(line_number(text, position))
+                for position, _ in generic_pain_matches[:8]
+            )
+        )
+        warnings.append(
+            f"泛化痛点提问，第 {lines} 行出现 {samples}。"
+            "问题前置要落到具体症状、报错、数字或亲历动作，不要用泛化提问代替。"
+        )
+
+    layer_label_matches = layer_label_clusters(prose)
+    if layer_label_matches:
+        details = "；".join(
+            f"第 {line_number(text, position)} 行出现 {'、'.join(labels)}"
+            for position, labels in layer_label_matches[:4]
+        )
+        warnings.append(
+            f"水平分层标签，{details}。"
+            "分层按内容深度排，不贴新手、高手、入门、进阶、专家标签。"
+        )
+
     left_branches = all_matches(prose, LEFT_BRANCH_PATTERNS)
     left_limit = max(2, total_han // 1200)
     if len(left_branches) > left_limit:
@@ -715,7 +789,8 @@ def main() -> int:
         f"抒情词 {len(lyric_matches)}，洞察路标 {len(marker_matches)}，"
         f"长前置成分 {len(left_branches)}，重定语句 {len(dense_de)}，"
         f"占位标记 {len(placeholder_matches)}，过度声称 {len(overclaim_matches)}，"
-        f"状态混写段落 {len(state_mixes)}"
+        f"状态混写段落 {len(state_mixes)}，泛化痛点 {len(generic_pain_matches)}，"
+        f"水平分层标签 {len(layer_label_matches)}"
     )
 
     if failures:

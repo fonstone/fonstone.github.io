@@ -4,6 +4,7 @@ description: "介绍 Pyverbs（Python 绑定的 RDMA Verbs API）的使用方法
 date: "2026-07-19"
 order: 16
 tags: ["RDMA", "Pyverbs", "Python", "编程"]
+est_time: "40 分钟"
 ---
 # Pyverbs——Python Verbs
 

@@ -4,7 +4,7 @@ description: "ARM 异常模型、向量表与中断处理流程"
 date: "2026-07-12"
 order: 31
 tags: ["异常", "向量表", "vector table", "IRQ", "FIQ", "ARMv8-R", "Cortex-R52"]
-est_time: "50分钟"
+est_time: "50 分钟"
 ---
 
 # 本章目标
@@ -405,7 +405,7 @@ E: fail-safe 设计原则：未知异常发生时，最坏的结果是系统停�
 
 本章我们的目标让泥盆纪“邓式鱼”操作系统能够感知多个应用程序的存在，并一个接一个地运行这些应用程序，当一个应用程序执行完毕后，会启动下一个应用程序，直到所有的应用程序都执行完毕。
 
-![deng-fish.png](/images/rust-os/rcore/chapter2/deng-fish.png)
+![deng-fish.png](/images/rust-os/rcore/chapter2/deng-fish.webp)
 
 ## 实践体验
 
@@ -472,7 +472,7 @@ Kernel should kill this application!
 
 邓式鱼BatchOS操作系统的总体结构如下图所示：
 
-![../../os-lectures/lec3/figs/batch-os-detail.png](/images/rust-os/rcore/chapter2/batch-os-detail.png)
+![../../os-lectures/lec3/figs/batch-os-detail.png](/images/rust-os/rcore/chapter2/batch-os-detail.webp)
 
 通过上图，大致可以看出Qemu把包含多个app的列表和BatchOS的image镜像加载到内存中，RustSBI（bootloader）完成基本的硬件初始化后，跳转到邓式鱼BatchOS起始位置，邓式鱼BatchOS首先进行正常运行前的初始化工作，即建立栈空间和清零bss段，然后通过 AppManager 内核模块从app列表中依次加载各个app到指定的内存中在用户态执行。app在执行过程中，会通过系统调用的方式得到邓式鱼BatchOS提供的OS服务，如输出字符串等。
 

@@ -2,14 +2,15 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import ConsoleProvider from "@/components/Console";
-
-const isVercel = process.env.VERCEL === "1";
-
-async function AnalyticsWrapper() {
-  if (!isVercel) return null;
-  const { Analytics } = await import("@vercel/analytics/next");
-  return <Analytics />;
-}
+import SiteNav from "@/components/SiteNav";
+import {
+  SITE_AUTHOR,
+  SITE_DESCRIPTION,
+  SITE_KEYWORDS,
+  SITE_NAME,
+  SITE_TITLE,
+  SITE_URL,
+} from "@/lib/constants/site";
 
 // Initialize Gilroy font
 const gilroy = localFont({
@@ -39,39 +40,61 @@ const gilroy = localFont({
   display: 'swap',
 });
 export const metadata: Metadata = {
-  title: "StoneFon | Personal Portfolio",
-  description: "A modern and minimalist portfolio showcasing my work, skills, and experiences in web development and design.",
-  keywords: ["portfolio", "web development", "design", "projects", "skills"],
-  authors: [{ name: "Wafastarz (Muhammad Khoirul Wafa)" }],
-  creator: "Wafastarz (Muhammad Khoirul Wafa)",
-  publisher: "Wafastarz (Muhammad Khoirul Wafa)",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: SITE_TITLE,
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  keywords: SITE_KEYWORDS,
+  authors: [{ name: SITE_AUTHOR, url: SITE_URL }],
+  creator: SITE_AUTHOR,
+  publisher: SITE_AUTHOR,
+  applicationName: SITE_NAME,
+  category: "technology",
+  alternates: {
+    types: {
+      "application/rss+xml": "/feed.xml",
+    },
+  },
   robots: {
     index: true,
     follow: true,
+    googleBot: { index: true, follow: true },
   },
   openGraph: {
     type: "website",
-    title: "StoneFon | Personal Portfolio",
-    description: "A modern and minimalist portfolio showcasing my work, skills, and experiences in web development and design.",
-    siteName: "StoneFon",
+    locale: "zh_CN",
+    url: SITE_URL,
+    siteName: SITE_NAME,
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
   },
   twitter: {
     card: "summary_large_image",
-    title: "StoneFon | Personal Portfolio",
-    description: "A modern and minimalist portfolio showcasing my work, skills, and experiences in web development and design.",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
   },
 };
+const THEME_BOOTSTRAP = `(function(){try{var t=localStorage.getItem('stonefon-theme');var m=window.matchMedia('(prefers-color-scheme: dark)');var dark=t==='dark'||((!t||t==='system')&&m.matches);document.documentElement.classList.toggle('dark',dark);document.documentElement.style.colorScheme=dark?'dark':'light';if(m.addEventListener){m.addEventListener('change',function(e){if(localStorage.getItem('stonefon-theme'))return;document.documentElement.classList.toggle('dark',e.matches);document.documentElement.style.colorScheme=e.matches?'dark':'light';window.dispatchEvent(new CustomEvent('stonefon-theme-change',{detail:{dark:e.matches}}));});}}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
+      </head>
       <body className={`${gilroy.variable} font-gilroy antialiased`}>
+        <a href="#sf-main" className="sf-skip-link">
+          跳到正文
+        </a>
+        <SiteNav />
         <ConsoleProvider />
-        {children}
-        <AnalyticsWrapper />
+        <div id="sf-main">{children}</div>
       </body>
     </html>
   );

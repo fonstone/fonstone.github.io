@@ -4,7 +4,7 @@ description: "虽然我们已经支持从文件系统中加载应用，还实现
 date: "2026-07-12"
 order: 69
 tags: ["命令行参数", "重定向", "argv", "shell"]
-est_time: "25分钟"
+est_time: "25 分钟"
 ---
 ## 本节导读
 
@@ -228,7 +228,7 @@ impl TaskControlBlock {
 
 第 11-34 行所做的主要工作是将命令行参数以某种格式压入用户栈。具体的格式可以参考下图（比如应用传入了两个命令行参数 aa 和 bb ）：
 
-![user-stack-cmdargs.png](/images/rust-os/rcore/chapter7/user-stack-cmdargs.png)
+![user-stack-cmdargs.png](/images/rust-os/rcore/chapter7/user-stack-cmdargs.webp)
 
 - 首先需要在用户栈上分配一个字符串指针数组，也就是蓝色区域。数组中的每个元素都指向一个用户栈更低处的命令行参数字符串的起始地址。在第 12~24 行可以看到，最开始我们只是分配空间，具体的值要等到字符串被放到用户栈上之后才能确定更新。
 - 第 23~32 行，我们逐个将传入的 args 中的字符串压入到用户栈中，对应于图中的橙色区域。为了实现方便，我们在用户栈上预留空间之后逐字节进行复制。注意 args 中的字符串是通过 translated\_str 从应用地址空间取出的，它的末尾不包含 \0 。为了应用能知道每个字符串的长度，我们需要手动在末尾加入 \0 。

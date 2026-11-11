@@ -1,4 +1,4 @@
-﻿---
+---
 title: "智能旅行助手"
 description: "MCP 与多智能体协作的真实世界应用案例。"
 date: "2026-07-12"
@@ -42,7 +42,7 @@ AI 技术为解决这些问题提供了新的可能。想象一下，你只需�
 
 
 
-![](/images/courses/13-figures/13-1.png)
+![](/images/courses/13-figures/13-1.webp)
 
 *图 13.1 智能旅行助手技术架构*
 
@@ -143,7 +143,7 @@ npm run dev
 
 
 
-![](/images/courses/13-figures/13-2.png)
+![](/images/courses/13-figures/13-2.webp)
 
 *图 13.2 旅行助手规划进行页面*
 
@@ -153,7 +153,7 @@ npm run dev
 
 
 
-![](/images/courses/13-figures/13-3.png)
+![](/images/courses/13-figures/13-3.webp)
 
 *图 13.3 旅行助手规划完成页面*
 
@@ -161,7 +161,7 @@ npm run dev
 
 
 
-![](/images/courses/13-figures/13-4.png)
+![](/images/courses/13-figures/13-4.webp)
 
 *图 13.4 旅行助手规划完成页面*
 
@@ -171,7 +171,7 @@ npm run dev
 
 
 
-![](/images/courses/13-figures/13-5.png)
+![](/images/courses/13-figures/13-5.webp)
 
 *图 13.5 旅行助手规划完成页面*
 
@@ -496,7 +496,7 @@ COMPLEX_PROMPT = """你是旅行规划助手。你需要：
 
 
 
-![](/images/courses/13-figures/13-6.png)
+![](/images/courses/13-figures/13-6.webp)
 
 *图 13.6 多智能体协作流程*
 
@@ -704,7 +704,7 @@ MCP(Model Context Protocol)是 Anthropic 提出的标准化协议，用于连接
 
 
 
-![](/images/courses/13-figures/13-7.png)
+![](/images/courses/13-figures/13-7.webp)
 
 *图 13.7 amap-mcp-server 工具*
 
@@ -713,7 +713,7 @@ MCP(Model Context Protocol)是 Anthropic 提出的标准化协议，用于连接
 高德地图 MCP 服务器提供了多种工具，主要分为以下类别，如表 13.1 所示:
 
 <p>表 13.1 高德地图 MCP 工具分类</p>
-  ![](/images/courses/13-figures/13-table-1.png)
+  ![](/images/courses/13-figures/13-table-1.webp)
 
 通过 MCP 协议，我们可以很方便地在 HelloAgents 中集成:
 
@@ -755,7 +755,7 @@ print(list(agent.tools.keys()))
 
 
 
-![](/images/courses/13-figures/13-8.png)
+![](/images/courses/13-figures/13-8.webp)
 
 *图 13.8 MCP 工具调用流程*
 
@@ -948,7 +948,7 @@ async def create_trip_plan(request: TripPlanRequest) -> TripPlan:
 前端技术栈的选择需要考虑几个因素：开发效率、性能、生态系统、学习曲线。如表 13.2 所示，该项目选择了以下技术栈：
 
 <p>表 13.2 前端技术栈</p>
-  ![](/images/courses/13-figures/13-table-2.png)
+  ![](/images/courses/13-figures/13-table-2.webp)
 
 项目的目录结构是这样的：
 ```

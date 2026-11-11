@@ -850,7 +850,7 @@ fn main() {
 
 ## 迭代器中的错误处理
 
-> 下面的代码用到了闭包（|s| ...）和迭代器（.map()、.collect() 等），这些语法会在[闭包与迭代器](/RustCourse/chapters/12-closures-iterators/00-index)章节详细讲解。这里先看整体用法，理解”遇到错误时有哪些处理策略”即可，细节后续自然会清楚。
+> 下面的代码用到了闭包（|s| ...）和迭代器（.map()、.collect() 等），这些语法会在[闭包与迭代器](/projects/rust-learning/09-closures-iterators-smart-pointers)章节详细讲解。这里先看整体用法，理解”遇到错误时有哪些处理策略”即可，细节后续自然会清楚。
 
 
 当你对一个集合做 `map` 操作时，每个元素的转换可能失败。Rust 提供了三种实用策略：

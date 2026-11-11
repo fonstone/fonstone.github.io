@@ -1,26 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-
-function getStorageKey(projectSlug: string) {
-  return `course-progress-${projectSlug}`;
-}
-
-function loadProgress(projectSlug: string): Record<string, boolean> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(getStorageKey(projectSlug));
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
+import {
+  PROGRESS_EVENT,
+  readProgress,
+  writeProgress,
+} from "@/lib/courseProgress";
 
 export function useCourseProgress(projectSlug: string) {
   const [progress, setProgress] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    setProgress(loadProgress(projectSlug));
+    const sync = () => setProgress(readProgress(projectSlug));
+    sync();
+    window.addEventListener(PROGRESS_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(PROGRESS_EVENT, sync);
+      window.removeEventListener("storage", sync);
+    };
   }, [projectSlug]);
 
   const isCompleted = useCallback(
@@ -32,7 +30,7 @@ export function useCourseProgress(projectSlug: string) {
     (slug: string) => {
       setProgress((prev) => {
         const next = { ...prev, [slug]: !prev[slug] };
-        localStorage.setItem(getStorageKey(projectSlug), JSON.stringify(next));
+        writeProgress(projectSlug, next);
         return next;
       });
     },

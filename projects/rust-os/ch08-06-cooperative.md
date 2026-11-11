@@ -4,7 +4,7 @@ description: "上一节我们已经介绍了任务切换是如何实现的，最
 date: "2026-07-12"
 order: 54
 tags: ["协作式调度", "yield", "多道程序", "任务切换"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 本节导读
 
@@ -30,7 +30,7 @@ est_time: "30分钟"
 
 这正是本节标题的后半部分“协作式”的含义。一个应用会持续运行下去，直到它主动调用 sys\_yield 系统调用来交出 CPU 使用权。内核将很大的权力下放到应用，让所有的应用互相协作来最终达成最大化 CPU 利用率，充分利用计算资源这一终极目标。在计算机发展的早期，由于应用基本上都是一些简单的计算任务，且程序员都比较遵守规则，因此内核可以信赖应用，这样协作式的方案是没有问题的。
 
-![multiprogramming.png](/images/rust-os/rcore/chapter3/multiprogramming.png)
+![multiprogramming.png](/images/rust-os/rcore/chapter3/multiprogramming.webp)
 
 上图描述了一种多道程序执行的典型情况。其中横轴为时间线，纵轴为正在执行的实体。开始时，某个应用（蓝色）向外设提交了一个请求，随即可以看到对应的外设（紫色）开始工作。但是它要工作相当长的一段时间，因此应用（蓝色）不会去等待它结束而是会调用 sys\_yield 主动交出 CPU 使用权来切换到另一个应用（绿色）。另一个应用（绿色）在执行了一段时间之后调用了 sys\_yield ，此时内核决定让应用（蓝色）继续执行。它检查了一下外设的工作状态，发现请求尚未处理完，于是再次调用 sys\_yield 。然后另一个应用（绿色）执行了一段时间之后 sys\_yield 再次切换回这个应用（蓝色），这次的不同是它发现外设已经处理完请求了，于是它终于可以向下执行了。
 
@@ -319,7 +319,7 @@ TaskManagerInner 的 tasks 是一个固定的任务控制块组成的表，长�
 
 我们可以总结一下应用的运行状态变化图：
 
-![fsm-coop.png](/images/rust-os/rcore/chapter3/fsm-coop.png)
+![fsm-coop.png](/images/rust-os/rcore/chapter3/fsm-coop.webp)
 
 ## 第一次进入用户态
 

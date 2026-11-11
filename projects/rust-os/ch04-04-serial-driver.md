@@ -4,7 +4,7 @@ description: "现在我们对如何了解计算机系统中给的外设信息，
 date: "2026-07-12"
 order: 27
 tags: ["串口", "驱动", "UART", "中断", "输入输出"]
-est_time: "40分钟"
+est_time: "40 分钟"
 ---
 ## 本节导读
 
@@ -14,7 +14,7 @@ est_time: "40分钟"
 
 我们要管理是串口(UART)物理设备。我们在第一章其实就接触了串口，但当时是通过RustSBI来帮OS完成对串口的访问，即OS只需发出两种SBI调用请求就可以输出和获取字符了。但这种便捷性是有代价的。比如OS在调用获取字符的SBI调用请求后，RustSBI如果没收到串口字符，会返回 -1 ，这样OS只能采用类似轮询的方式来继续查询。到第七章为止的串口驱动不支持中断是导致在多进程情况下，系统效率低下的主要原因之一。大家也不要遗憾，我们的第一阶段的目标是 **Just do it** ，先把OS做出来。在本节，我们需要逐步改进优化对串口的操作了。
 
-![uart-drive.png](/images/rust-os/rcore/chapter9/uart-drive.png)
+![uart-drive.png](/images/rust-os/rcore/chapter9/uart-drive.webp)
 
 串口（Universal Asynchronous Receiver-Transmitter，简称UART）是一种在嵌入式系统中常用的用于传输、接收系列数据的外部设备。串行数据传输是逐位（bit）顺序发送数据的过程。了解QEMU模拟的兼容NS16550A硬件规范 [[1]] [[2]] 是写驱动程序的准备工作，建议同学们先阅读一下。每个UART使用8个I/O字节来访问其寄存器。下表 [[1]] 显示了UART中每个寄存器的地址和基本含义。表中使用的 base 是串口设备的起始地址。在QEMU模拟的virt计算机中串口设备寄存器的MMIO起始地址为 0x10000000 。
 

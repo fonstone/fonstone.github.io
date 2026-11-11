@@ -11,19 +11,19 @@ tags: ["AI", "OpenSpec", "SDD", "规范驱动开发", "Claude Code", "工作流"
 
 ## 1. 概述
 
-OpenSpec 是一个 **AI-Native 的规范驱动开发系统（Spec-Driven Development, SDD）**，为 AI 编码助手提供轻量级规范层。核心理念是：在编写第一行代码之前，先与 AI 对齐需求，让开发过程更可预测、更高效。
+OpenSpec 是一个 **AI-Native 的规范驱动开发系统（Spec-Driven Development, SDD）**，为 AI 编码助手提供轻量级规范层。核心理念是，在编写第一行代码之前，先与 AI 对齐需求，让开发过程更可预测、更高效。
 
-- **项目地址**：[github.com/Fission-AI/OpenSpec](https://github.com/Fission-AI/OpenSpec)
-- **中文文档**：[openspec.radebit.com](https://openspec.radebit.com)
-- **开源协议**：MIT
-- **运行环境**：Node.js 20.19.0+
-- **Stars**：42.7k+
+- **项目地址**，[github.com/Fission-AI/OpenSpec](https://github.com/Fission-AI/OpenSpec)
+- **中文文档**，[openspec.radebit.com](https://openspec.radebit.com)
+- **开源协议**，MIT
+- **运行环境**，Node.js 20.19.0+
+- **Stars**，42.7k+
 
 ---
 
 ## 2. 设计哲学
 
-OpenSpec 围绕四条核心原则构建：
+OpenSpec 围绕四条核心原则构建。
 
 | 原则 | 含义 |
 |------|------|
@@ -36,12 +36,12 @@ OpenSpec 围绕四条核心原则构建：
 
 ### 为什么需要 OpenSpec？
 
-AI 编码助手功能强大，但当需求只存在于聊天记录中时，结果往往难以预测。OpenSpec 在人与 AI 之间建立了一层结构化的共识层：
+AI 编码助手功能强大，但当需求只存在于聊天记录中时，结果往往难以预测。OpenSpec 在人与 AI 之间建立了一层结构化的共识层。
 
-- **先对齐再编码** — 避免方向性偏差带来的大量返工
-- **井然有序** — 每个变更都有独立文件夹，包含提案、规范、设计和任务
-- **流动灵活** — 随时更新任意产物，无需遵守僵化流程
-- **工具生态广泛** — 支持 25+ AI 助手（Claude Code、Cursor、Windsurf 等）
+- **先对齐再编码** ， 避免方向性偏差带来的大量返工
+- **井然有序** ， 每个变更都有独立文件夹，包含提案、规范、设计和任务
+- **流动灵活** ， 随时更新任意产物，无需遵守僵化流程
+- **工具生态广泛** ， 支持 25+ AI 助手（Claude Code、Cursor、Windsurf 等）
 
 ### 与同类产品对比
 
@@ -57,7 +57,7 @@ AI 编码助手功能强大，但当需求只存在于聊天记录中时，结�
 
 ### 3.1 整体架构
 
-OpenSpec 将你的工作组织为两大核心区域：
+OpenSpec 将你的工作组织为两大核心区域。
 
 <MermaidDiagram chart={`graph LR
     subgraph openspec["openspec/"]
@@ -67,14 +67,14 @@ OpenSpec 将你的工作组织为两大核心区域：
     changes -- "归档时合并" --> specs
 `} />
 
-- **Specs（规范）** — 系统当前行为的权威基准（Source of Truth），描述"系统现在怎么运作"
-- **Changes（变更）** — 提议的修改，各自为独立文件夹，完成后归档合并回 Specs
+- **Specs（规范）** ， 系统当前行为的权威基准（Source of Truth），描述"系统现在怎么运作"
+- **Changes（变更）** ， 提议的修改，各自为独立文件夹，完成后归档合并回 Specs
 
 这种分离使得你可以同时进行多个变更而不产生冲突，归档时再干净地合并。
 
 ### 3.2 Specs（规范）
 
-Specs 描述系统行为，使用结构化的需求和场景：
+Specs 描述系统行为，使用结构化的需求和场景。
 
 ```
 openspec/specs/
@@ -86,7 +86,7 @@ openspec/specs/
     └── spec.md           # UI 行为和主题
 ```
 
-**规范格式包含以下要素：**
+**规范格式包含以下要素**
 
 | 要素 | 作用 |
 |------|------|
@@ -95,11 +95,11 @@ openspec/specs/
 | `#### Scenario:` | 需求的具体示例 |
 | SHALL/MUST/SHOULD | RFC 2119 关键词，表示需求强度 |
 
-**核心原则：Spec 是行为契约，而非实现计划。** 好的规范描述可观测的行为（输入、输出、错误条件），避免包含内部类名、框架选择或逐步实现细节。
+**核心原则，Spec 是行为契约，而非实现计划。** 好的规范描述可观测的行为（输入、输出、错误条件），避免包含内部类名、框架选择或逐步实现细节。
 
 ### 3.3 Changes（变更）
 
-每个变更是一个独立文件夹，包含实施该修改所需的一切：
+每个变更是一个独立文件夹，包含实施该修改所需的一切。
 
 ```
 openspec/changes/add-dark-mode/
@@ -112,15 +112,15 @@ openspec/changes/add-dark-mode/
         └── spec.md       # ui/spec.md 中要修改的内容
 ```
 
-变更为文件夹的好处：
-1. **一切汇聚** — 提案、设计、任务和规范都在一处
-2. **并行工作** — 多个变更可同时存在而不冲突
-3. **历史清晰** — 归档后保持完整上下文
-4. **便于审查** — 打开文件夹即可了解全貌
+变更为文件夹的好处。
+1. **一切汇聚** ， 提案、设计、任务和规范都在一处
+2. **并行工作** ， 多个变更可同时存在而不冲突
+3. **历史清晰** ， 归档后保持完整上下文
+4. **便于审查** ， 打开文件夹即可了解全貌
 
 ### 3.4 Artifacts（产物）
 
-产物是变更内引导工作的文档，按依赖关系层层推进：
+产物是变更内引导工作的文档，按依赖关系层层推进。
 
 <MermaidDiagram chart={`graph LR
     A["proposal<br/>why + scope"] --> B["specs<br/>what changes"]
@@ -143,7 +143,7 @@ openspec/changes/add-dark-mode/
 
 ### 3.5 Delta 规范
 
-Delta 规范是 OpenSpec 适配存量项目开发的核心概念。它描述**什么在变化**，而非重述整个规范：
+Delta 规范是 OpenSpec 适配存量项目开发的核心概念。它描述**什么在变化**，而非重述整个规范。
 
 ```markdown
 # Delta for Auth
@@ -176,15 +176,15 @@ The system MUST expire sessions after 15 minutes of inactivity.
 | `MODIFIED` | 修改行为 | 替换现有需求 |
 | `REMOVED` | 废弃行为 | 从主规范删除 |
 
-**Delta 优于全量规范的原因：**
-- **清晰** — 一目了然看到什么在变
-- **避免冲突** — 两个变更可触及同一规范文件而不冲突
-- **审查高效** — 审阅者只需关注变化
-- **适配存量** — 大多数工作是修改现有行为，Delta 让修改成为一等公民
+**Delta 优于全量规范的原因**
+- **清晰** ， 一目了然看到什么在变
+- **避免冲突** ， 两个变更可触及同一规范文件而不冲突
+- **审查高效** ， 审阅者只需关注变化
+- **适配存量** ， 大多数工作是修改现有行为，Delta 让修改成为一等公民
 
 ### 3.6 Schemas（Schema 机制）
 
-Schema 定义工作流中产物类型及其依赖关系：
+Schema 定义工作流中产物类型及其依赖关系。
 
 ```yaml
 # openspec/schemas/spec-driven/schema.yaml
@@ -207,7 +207,7 @@ artifacts:
     requires: [specs, design] # 需要 specs 和 design 都完成
 ```
 
-依赖图：
+依赖图。
 
 <MermaidDiagram chart={`graph TD
     P["proposal<br/>（根节点）"]
@@ -217,11 +217,11 @@ artifacts:
     D --> T
 `} />
 
-**依赖是使能器而非门控** — 它们展示创建顺序的可能性，而非强制必须按序创建。你可以跳过 design，也可以在 specs 之前或之后创建它。
+**依赖是使能器而非门控** ， 它们展示创建顺序的可能性，而非强制必须按序创建。你可以跳过 design，也可以在 specs 之前或之后创建它。
 
 ### 3.7 归档机制
 
-归档通过将 Delta 规范合并到主规范来完成变更：
+归档通过将 Delta 规范合并到主规范来完成变更。
 
 <MermaidDiagram chart={`graph TB
     subgraph before["归档前"]
@@ -247,7 +247,7 @@ artifacts:
     end
 `} />
 
-归档过程：ADDED 追加 → MODIFIED 替换 → REMOVED 删除 → 文件夹移至 `archive/`
+归档过程，ADDED 追加 → MODIFIED 替换 → REMOVED 删除 → 文件夹移至 `archive/`
 
 <MermaidDiagram chart={`graph LR
     A["ADDED<br/>追加到主规范"] --> B["MODIFIED<br/>替换现有需求"] --> C["REMOVED<br/>从主规范删除"] --> D["文件夹移至<br/>archive/"]
@@ -290,7 +290,7 @@ cd your-project
 openspec init
 ```
 
-初始化后项目会新增如下结构：
+初始化后项目会新增如下结构。
 
 ```
 openspec/
@@ -310,15 +310,15 @@ openspec/
 
 ### 4.3 工作模式
 
-OpenSpec 提供两种工作模式：
+OpenSpec 提供两种工作模式。
 
-**核心模式（默认）**— 快速路径：
+**核心模式（默认）**， 快速路径。
 
 <MermaidDiagram chart={`graph LR
     A["/opsx:propose"] --> B["/opsx:apply"] --> C["/opsx:archive"]
 `} />
 
-**扩展模式** — 更多控制：
+**扩展模式** ， 更多控制。
 
 ```bash
 # 启用扩展命令
@@ -336,9 +336,9 @@ openspec update
 
 ### 5.1 核心工作流命令
 
-#### `/opsx:propose` — 快速发起变更（核心模式默认）
+#### `/opsx:propose` ， 快速发起变更（核心模式默认）
 
-一次性创建变更及其所有规划产物，这是最快的方式：
+一次性创建变更及其所有规划产物，这是最快的方式。
 
 ```
 You: /opsx:propose add-dark-mode
@@ -351,9 +351,9 @@ AI:  已创建 openspec/changes/add-dark-mode/
      准备开始实现！
 ```
 
-#### `/opsx:explore` — 探索问题空间
+#### `/opsx:explore` ， 探索问题空间
 
-在确定变更方向之前，先探索和调查：
+在确定变更方向之前，先探索和调查。
 
 ```
 You: /opsx:explore
@@ -371,9 +371,9 @@ AI:  让我来调查一下...
      3. Context 变更导致的重渲染
 ```
 
-#### `/opsx:apply` — 实现任务
+#### `/opsx:apply` ， 实现任务
 
-让 AI 开始实现 tasks.md 中的任务：
+让 AI 开始实现 tasks.md 中的任务。
 
 ```
 You: /opsx:apply
@@ -386,9 +386,9 @@ AI:  正在实现各项任务...
      所有任务完成！
 ```
 
-#### `/opsx:archive` — 归档变更
+#### `/opsx:archive` ， 归档变更
 
-完成变更，将 Delta 规范合并到主规范：
+完成变更，将 Delta 规范合并到主规范。
 
 ```
 You: /opsx:archive
@@ -450,15 +450,15 @@ openspec schema fork <from> <name>  # 基于现有 Schema 创建
 
 ### 6.1 快速功能开发
 
-适用于需求明确的小中型功能：
+适用于需求明确的小中型功能。
 
-核心模式：
+核心模式。
 
 <MermaidDiagram chart={`graph LR
     A["/opsx:propose"] --> B["/opsx:apply"] --> C["/opsx:archive"]
 `} />
 
-或扩展模式下：
+或扩展模式下。
 
 <MermaidDiagram chart={`graph LR
     A["/opsx:new"] --> B["/opsx:ff"] --> C["/opsx:apply"] --> D["/opsx:verify"] --> E["/opsx:archive"]
@@ -466,7 +466,7 @@ openspec schema fork <from> <name>  # 基于现有 Schema 创建
 
 ### 6.2 探索性开发
 
-适用于需求不明确或需要先调查的场景：
+适用于需求不明确或需要先调查的场景。
 
 <MermaidDiagram chart={`graph LR
     A["/opsx:explore"] --> B["/opsx:new"] --> C["/opsx:continue"] --> D["..."] --> E["/opsx:apply"]
@@ -474,7 +474,7 @@ openspec schema fork <from> <name>  # 基于现有 Schema 创建
 
 ### 6.3 并行变更
 
-多个变更同时推进：
+多个变更同时推进。
 
 <MermaidDiagram chart={`graph TD
     subgraph changeA["变更 A"]
@@ -486,7 +486,7 @@ openspec schema fork <from> <name>  # 基于现有 Schema 创建
     A3 -. "切换上下文" .-> B1
 `} />
 
-完成后批量归档：`/opsx:bulk-archive`
+完成后批量归档，`/opsx:bulk-archive`
 
 ### 6.4 何时更新现有变更 vs 开始新变更？
 
@@ -503,7 +503,7 @@ openspec schema fork <from> <name>  # 基于现有 Schema 创建
 
 ## 7. 验证机制
 
-`/opsx:verify` 从三个维度验证实现是否符合规范：
+`/opsx:verify` 从三个维度验证实现是否符合规范。
 
 | 维度 | 检查内容 |
 |------|---------|
@@ -519,7 +519,7 @@ openspec schema fork <from> <name>  # 基于现有 Schema 创建
 
 ### 自定义 Schema
 
-你可以为团队创建自定义工作流 Schema：
+你可以为团队创建自定义工作流 Schema。
 
 ```bash
 # 从零创建
@@ -529,7 +529,7 @@ openspec schema init research-first
 openspec schema fork spec-driven research-first
 ```
 
-示例自定义 Schema（研究优先工作流）：
+示例自定义 Schema（研究优先工作流）。
 
 ```yaml
 # openspec/schemas/research-first/schema.yaml
@@ -550,10 +550,10 @@ artifacts:
 
 ### 规范强度级别
 
-OpenSpec 支持**渐进式严格**：
+OpenSpec 支持**渐进式严格**。
 
-- **轻量规范（默认）**— 简短的行为优先需求、清晰的范围和非目标、少量验收检查
-- **完整规范（高风险场景）**— 跨团队/跨仓库变更、API/契约变更、安全/隐私关注、模糊性可能导致昂贵返工的变更
+- **轻量规范（默认）**， 简短的行为优先需求、清晰的范围和非目标、少量验收检查
+- **完整规范（高风险场景）**， 跨团队/跨仓库变更、API/契约变更、安全/隐私关注、模糊性可能导致昂贵返工的变更
 
 大多数变更应保持轻量模式。
 
@@ -561,20 +561,20 @@ OpenSpec 支持**渐进式严格**：
 
 ## 9. 最佳实践
 
-1. **保持变更聚焦** — 一个逻辑工作单元一个变更。如果同时"加功能X"和"重构Y"，考虑分为两个变更
-2. **需求不明确时先 explore** — `/opsx:explore` 帮助在创建产物前理清思路
-3. **归档前先 verify** — `/opsx:verify` 帮你发现实现与规范之间的不一致
-4. **命名要清晰** — 好的变更名字让 `openspec list` 真正有用：
-   - 好：`add-dark-mode`、`fix-login-redirect`、`optimize-product-query`
-   - 差：`feature-1`、`update`、`changes`、`wip`
-5. **保持上下文清洁** — OpenSpec 在清洁的上下文窗口下效果最好，开始实现前清除上下文
-6. **推荐使用高推理模型** — OpenSpec 在 Opus 4.5 和 GPT 5.2 等高推理模型上效果最佳
+1. **保持变更聚焦** ， 一个逻辑工作单元一个变更。如果同时"加功能X"和"重构Y"，考虑分为两个变更
+2. **需求不明确时先 explore** ， `/opsx:explore` 帮助在创建产物前理清思路
+3. **归档前先 verify** ， `/opsx:verify` 帮你发现实现与规范之间的不一致
+4. **命名要清晰** ， 好的变更名字让 `openspec list` 真正有用。
+   - 好，`add-dark-mode`、`fix-login-redirect`、`optimize-product-query`
+   - 差，`feature-1`、`update`、`changes`、`wip`
+5. **保持上下文清洁** ， OpenSpec 在清洁的上下文窗口下效果最好，开始实现前清除上下文
+6. **推荐使用高推理模型** ， OpenSpec 在 Opus 4.5 和 GPT 5.2 等高推理模型上效果最佳
 
 ---
 
-## 10. 完整示例：添加暗色模式
+## 10. 完整示例，添加暗色模式
 
-### Step 1：发起变更
+### Step 1，发起变更
 
 ```
 You: /opsx:propose add-dark-mode
@@ -587,7 +587,7 @@ AI:  已创建 openspec/changes/add-dark-mode/
      准备开始实现！
 ```
 
-### Step 2：实现
+### Step 2，实现
 
 ```
 You: /opsx:apply
@@ -604,7 +604,7 @@ AI:  正在实现各项任务...
      所有任务完成！
 ```
 
-### Step 3：归档
+### Step 3，归档
 
 ```
 You: /opsx:archive
@@ -636,8 +636,8 @@ AI:  正在归档 add-dark-mode...
 
 ## 12. 相关资源
 
-- **官方仓库**：[github.com/Fission-AI/OpenSpec](https://github.com/Fission-AI/OpenSpec)
-- **官方文档**：[openspec.dev](https://openspec.dev)
-- **中文文档**：[openspec.radebit.com](https://openspec.radebit.com)
-- **Discord 社区**：[discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)
-- **NPM 包**：[@fission-ai/openspec](https://www.npmjs.com/package/@fission-ai/openspec)
+- **官方仓库**，[github.com/Fission-AI/OpenSpec](https://github.com/Fission-AI/OpenSpec)
+- **官方文档**，[openspec.dev](https://openspec.dev)
+- **中文文档**，[openspec.radebit.com](https://openspec.radebit.com)
+- **Discord 社区**，[discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)
+- **NPM 包**，[@fission-ai/openspec](https://www.npmjs.com/package/@fission-ai/openspec)

@@ -4,6 +4,7 @@ description: "编译 Linux 内核并制作文件系统映像引导启动，移�
 date: "2026-06-27"
 order: 4
 tags: ["Linux", "RISC-V", "busybox", "根文件系统", "ELF", "Quard-Star"]
+est_time: "40 分钟"
 ---
 
 本篇对应原教程 ch11-1、ch11-2、ch12、ch13、ch14、ch15。从内核编译、文件系统映像制作，到 busybox 移植、最小根文件系统完成，再到动态链接 ELF 加载机制与多用户管理——这是整个学习路线最核心的一段，系统真正"活了"过来。
@@ -112,9 +113,9 @@ $CROSS_PREFIX-gcc main.c -lpthread -static -o init  # 静态编译
     end
 `} />
 
-![sv39 页表项](/images/qemu/ch11-1.png)
+![sv39 页表项](/images/qemu/ch11-1.webp)
 
-![CSR_SATP 寄存位域](/images/qemu/ch11-0.png)
+![CSR_SATP 寄存位域](/images/qemu/ch11-0.webp)
 
 RISC-V 的汇编可读性非常好。本节 tag：`ch11`。
 
@@ -131,7 +132,7 @@ make ARCH=riscv CROSS_COMPILE=$CROSS_PREFIX- install
 
 关键配置 `CONFIG_STATIC=y`（静态编译，后续改动态）。所有工具软连接到 `bin/busybox`，按 argv[0] 分发调用 `XX_main`。
 
-![busybox 启动](/images/qemu/ch12-0.png)
+![busybox 启动](/images/qemu/ch12-0.webp)
 
 本节 tag：`ch12`。
 
@@ -182,7 +183,7 @@ debugfs  /sys/kernel/debug  debugfs defaults 0 0
 
 `mount -a` 读取 fstab 自动挂载；`mdev -s` 通过查询 `/sys/dev` 自动创建 `/dev` 设备节点。
 
-![最小根文件系统启动](/images/qemu/ch13-0.png)
+![最小根文件系统启动](/images/qemu/ch13-0.webp)
 
 本节 tag：`ch13`。
 
@@ -283,7 +284,7 @@ su = ssx 0.0
 passwd = --- 0.0
 ```
 
-![多用户登录](/images/qemu/ch15-0.png)
+![多用户登录](/images/qemu/ch15-0.webp)
 
 本节 tag：`ch15`。
 

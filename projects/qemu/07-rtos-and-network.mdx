@@ -4,6 +4,7 @@ description: "在 trusted-domain 中移植 FreeRTOS 到 RISC-V S 模式（自写
 date: "2026-06-27"
 order: 7
 tags: ["FreeRTOS", "RISC-V", "RTOS", "网络", "DHCP", "ssh", "Quard-Star"]
+est_time: "25 分钟"
 ---
 
 本篇对应原教程 ch21、ch24、ch25。让 7 个 core 跑 Linux 的同时，在 core7 的 trusted-domain 上跑起 FreeRTOS（S 模式），并为 Linux 系统添加网络与 sshd 远程登录服务。
@@ -86,7 +87,7 @@ int main(void) {
 
 **link.lds** 关键：rom 区 `0xBF800000` 1M，ram 区 `0xBF900000` 6M。编译器务必用 `-mcmodel=medany`。
 
-![FreeRTOS 运行](/images/qemu/ch21-0.png)
+![FreeRTOS 运行](/images/qemu/ch21-0.webp)
 
 本节 tag：`ch21`。
 
@@ -232,7 +233,7 @@ esac
     D --> F
 `} />
 
-![ssh 连接](/images/qemu/ch25-0.png)
+![ssh 连接](/images/qemu/ch25-0.webp)
 
 本节 tag：`ch25`。
 

@@ -1,10 +1,10 @@
 ---
 title: "附录D：RISC-V 汇编入门"
-description: ""
+description: "RISC-V 汇编入门附录，用 cargo rustc --emit asm 生成汇编并读懂常用指令与调用约定。"
 date: "2026-07-12"
 order: 22
 tags: ["附录", "RISC-V", "汇编", "指令集"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 如何生成汇编代码
 

@@ -4,6 +4,7 @@ description: "详解 RDMA CM（Connection Manager）的建链流程，包括 CM 
 date: "2026-07-19"
 order: 25
 tags: ["RDMA", "CM", "建链", "Connection Manager"]
+est_time: "40 分钟"
 ---
 # CM 建链
 

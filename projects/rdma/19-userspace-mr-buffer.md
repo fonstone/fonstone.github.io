@@ -4,6 +4,7 @@ description: "详解用户态 MR Buffer 的分配、注册、生命周期管理�
 date: "2026-07-19"
 order: 19
 tags: ["RDMA", "Memory Region", "用户态", "MR Buffer"]
+est_time: "40 分钟"
 ---
 # 用户态 Memory Region Buffer
 

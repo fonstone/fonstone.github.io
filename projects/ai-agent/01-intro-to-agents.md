@@ -1,4 +1,4 @@
-﻿---
+---
 title: "初识智能体"
 description: "智能体定义、类型、范式与交互循环，PEAS 模型，传统智能体演进，LLM 智能体新范式。"
 date: "2026-07-12"
@@ -14,7 +14,7 @@ est_time: "60 分钟"
 
 
 
-![](/images/courses/1-figures/1757242319667-0.png)
+![](/images/courses/1-figures/1757242319667-0.webp)
 
 *图 1.1 智能体与环境的基本交互循环*
 
@@ -41,7 +41,7 @@ est_time: "60 分钟"
 
 
 
-![](/images/courses/1-figures/1757242319667-1.png)
+![](/images/courses/1-figures/1757242319667-1.webp)
 
 *图 1.2 简单反射智能体的决策逻辑示意图*
 
@@ -68,7 +68,7 @@ est_time: "60 分钟"
 这种转变，可以从两者在核心引擎、知识来源、交互方式等多个维度的对比中清晰地看出，如表 1.1 所示。简而言之，传统智能体的能力源于工程师的显式编程与知识构建，其行为模式是确定且有边界的；而 LLM 智能体则通过在海量数据上的预训练，获得了隐式的世界模型与强大的涌现能力，使其能够以更灵活、更通用的方式应对复杂任务。
 
 <p>表 1.1 传统智能体与 LLM 驱动智能体的核心对比</p>
-  ![](/images/courses/1-figures/1757242319667-2.png)
+  ![](/images/courses/1-figures/1757242319667-2.webp)
 
 这种差异使得 LLM 智能体可以直接处理高层级、模糊且充满上下文信息的自然语言指令。让我们以一个“智能旅行助手”为例来说明。
 
@@ -94,7 +94,7 @@ est_time: "60 分钟"
 
 
 
-![](/images/courses/1-figures/1757242319667-3.png)
+![](/images/courses/1-figures/1757242319667-3.webp)
 
 *图 1.3 智能体决策时间与质量关系图*
 
@@ -150,7 +150,7 @@ est_time: "60 分钟"
 
 
 
-![](/images/courses/1-figures/1757242319667-4.png)
+![](/images/courses/1-figures/1757242319667-4.webp)
 
 *图 1.4 符号主义、亚符号主义与神经符号混合主义的知识表示范式*
 
@@ -167,7 +167,7 @@ est_time: "60 分钟"
 要理解智能体的运作，我们必须先理解它所处的<strong>任务环境</strong>。在人工智能领域，通常使用<strong>PEAS 模型</strong>来精确描述一个任务环境，即分析其<strong>性能度量(Performance)、环境(Environment)、执行器(Actuators)和传感器(Sensors)</strong> 。以上文提到的智能旅行助手为例，下表 1.2 展示了如何运用 PEAS 模型对其任务环境进行规约。
 
 <p>表 1.2 智能旅行助手的 PEAS 描述</p>
-  ![](/images/courses/1-figures/1757242319667-6.png)
+  ![](/images/courses/1-figures/1757242319667-6.webp)
 
 
 在实践中，LLM 智能体所处的数字环境展现出若干复杂特性，这些特性直接影响着智能体的设计。
@@ -186,7 +186,7 @@ est_time: "60 分钟"
 
 
 
-![](/images/courses/1-figures/1757242319667-5.png)
+![](/images/courses/1-figures/1757242319667-5.webp)
 
 *图 1.5 智能体与环境交互的基本循环*
 
@@ -568,7 +568,7 @@ Action: Finish[今天北京的天气是晴朗的，气温26摄氏度，非常适
 
 
 
-![](/images/courses/1-figures/1757242319667-18.png)
+![](/images/courses/1-figures/1757242319667-18.webp)
 
 *图 1.6 Workflow 和 Agent 的差异*
 

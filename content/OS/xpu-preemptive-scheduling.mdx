@@ -62,7 +62,7 @@ REEF 走协作式驱逐，低优内核检查抢占标志自愿退出。Hummingbi
 
 > **原理说明 · 抢占延迟的组成**。高优任务等一次抢占，时间由三块组成。当前低优任务还要跑多久，任务切换要花多少，队列里还有多少已提交的命令要等。GCAPS 论文给出干扰上界公式 I(ν,G) 等于 (L+θ)·ν·⌈G/L⌉，时间片长度 L、切换开销 θ、使用 GPU 的任务数 ν、任务段时长 G 四个变量相乘。三篇论文的差别就是各压一块。GPreempt 压第一块和第二块，时间片压到 200 微秒、预抢占把切换藏进数据准备。Hummingbird 把第一块压到单个子内核时长，tick 调度把队列压到 1。XSched 的 Lv2、Lv3 直接砍掉第三块和切换成本。
 
-![抢占路径上的开销与时长账本，左板为固定开销，右板为内核与块级执行的时长尺度，对数轴，单位微秒](/images/xpu-preempt/latency-account.png)
+![抢占路径上的开销与时长账本，左板为固定开销，右板为内核与块级执行的时长尺度，对数轴，单位微秒](/images/xpu-preempt/latency-account.webp)
 
 *左板数值取自 GPreempt（GDRCopy 通知、上下文保存、最小时间片）、Hummingbird（同步 API、启动延迟、平均抢占延迟）与 GCAPS（Tegra 上下文切换均值），右板取自 Hummingbird 对内核与块执行时长的统计，均为论文报告值。*
 
@@ -76,7 +76,7 @@ GPreempt 论文把现有抢占策略分成三类，wait 和 reset 是两条老�
 | reset | 直接结束低优内核并重跑 | 快，但要求内核幂等 | DNN 内核可行，图计算、科学计算、CUDA Graph 不行 |
 | switch | 上下文切换，低优任务让出后恢复 | 通用，代价是上下文体积与保存时间 | 需要驱动或硬件配合 |
 
-![GPreempt 论文 Figure 1，三种抢占机制的对比与权衡，wait 在块级让出、reset 直接终止、switch 上下文切换](/images/xpu-preempt/gpreempt-fig1-mechanisms.png)
+![GPreempt 论文 Figure 1，三种抢占机制的对比与权衡，wait 在块级让出、reset 直接终止、switch 上下文切换](/images/xpu-preempt/gpreempt-fig1-mechanisms.webp)
 
 *GPreempt 论文 Figure 1，通用性与效率的取舍坐标，wait-based 与 reset-based 各占一边，GPreempt 的 switch 路线试图兼得。作者 Ruwen Fan 等，USENIX ATC 2025*
 
@@ -108,7 +108,7 @@ hint 预抢占把切换成本藏进数据准备阶段。GPU 计算的惯用节�
     SW --> HK
 `} />
 
-![GPreempt 论文 Figure 3，hint 预抢占的三种时间线，(a) 不做预抢占的等待、(b) 与数据准备重叠、(c) 定时预留](/images/xpu-preempt/gpreempt-fig3-prepreempt.png)
+![GPreempt 论文 Figure 3，hint 预抢占的三种时间线，(a) 不做预抢占的等待、(b) 与数据准备重叠、(c) 定时预留](/images/xpu-preempt/gpreempt-fig3-prepreempt.webp)
 
 *GPreempt 论文 Figure 3，CE 为计算引擎，(b) 把抢占注入数据准备阶段，(c) 按预定时刻预留 GPU。作者 Ruwen Fan 等，USENIX ATC 2025*
 
@@ -140,13 +140,13 @@ GPreempt 只解决 GPU，XSched 把问题提到 XPU 全体。它把抢占抽象�
 
 实现是三个预加载的用户态库加一个调度守护进程。XShim 拦截应用的驱动 API 调用，把命令导入 XQueue，应用不改代码。调度策略写成一个通用模块，固定优先级和带宽切分两种策略在全部 XPU 上复用。适配范围论文列了一张表，十个设备跨七个软件平台。NVIDIA 的 GV100 和 K40m、AMD 的 MI50、Intel 的 NPU3720 与核显、昇腾 910B（表格里写作 910b）在列，Xilinx 的 VU9P FPGA、Jetson 上的 DLA 和 PVA 也在列。NPU 和 ASIC 平台上的抢占式调度，以及闭源 GPU 上最高级的抢占，论文声称是首次实现。
 
-![XSched 论文 Figure 4，XShim、XPreempt、XAL 三个用户态库与调度守护进程的架构与工作流](/images/xpu-preempt/xsched-fig4-arch.png)
+![XSched 论文 Figure 4，XShim、XPreempt、XAL 三个用户态库与调度守护进程的架构与工作流](/images/xpu-preempt/xsched-fig4-arch.webp)
 
 *XSched 论文 Figure 4，命令从应用经 XShim 进入 XQueue，XPreempt 实现接口，XAL 适配具体 XPU 驱动，XScheduler 守护进程执行策略。作者 Weihang Shen 等，OSDI 2025*
 
 结果数字分三组。固定优先级策略把高优任务 P99 最多降低 2.10 倍，十个 XPU 上从前台尾延迟 1.60 到 2.19 倍压回 1.02 到 1.30 倍。带宽切分策略按 75 比 25 分配两任务的算力，平均开销 1.5%。抢占级别直接决定调度质量，支持 Lv2、Lv3 的 GV100、K40m、NPU3720 上前台任务相对独占只退化 1.9%、3.8%、5.4%，只支持 Lv1 的 XPU 退化 7.3% 到 29.6%。
 
-![十个 XPU 上前台任务 P99 尾延迟区间，相对独占运行的倍数，越低越好](/images/xpu-preempt/xsched-p99.png)
+![十个 XPU 上前台任务 P99 尾延迟区间，相对独占运行的倍数，越低越好](/images/xpu-preempt/xsched-p99.webp)
 
 *区间来自 XSched 论文图 9 报告的前台任务 P99 倍数，独占为基线 1.00 倍，原生硬件调度器 1.60 到 2.19 倍，XSched 1.02 到 1.30 倍。*
 
@@ -158,7 +158,7 @@ GPreempt 只解决 GPU，XSched 把问题提到 XPU 全体。它把抢占抽象�
 
 Hummingbird 不走驱动，也不走硬件，它在闭源 NVIDIA GPU 上只靠软件拆内核。低优内核按块粒度拆成子内核，块的执行时长天然在 390 微秒以内，拆完平均只有 77 微秒，高优请求到达时，最坏等一个子内核跑完。
 
-![Hummingbird 论文 Figure 6，设计总览，kernel splitter 分析内核、运行时调度器拆核与调度、内存管理做层级卸载](/images/xpu-preempt/hummingbird-fig6-overview.png)
+![Hummingbird 论文 Figure 6，设计总览，kernel splitter 分析内核、运行时调度器拆核与调度、内存管理做层级卸载](/images/xpu-preempt/hummingbird-fig6-overview.webp)
 
 *Hummingbird 论文 Figure 6，三个组件各管一块，拆核器离线分析生成拆分日志，运行时调度器在线拆核并按气泡调度，内存管理用 NVLink 层级卸载。作者 Tiancheng Hu 等，arXiv 2601.04071*
 
@@ -190,7 +190,7 @@ Hummingbird 不走驱动，也不走硬件，它在闭源 NVIDIA GPU 上只靠�
 
 结果数字。平均抢占延迟 139 微秒，高优任务的请求处理只慢不到 1%。SLO 达标率比空间共享的 Orion 高 9.7 倍，比时间共享的 REEF 高 3.5 倍，相对独占运行只掉不到 1%。低优任务吞吐比 REEF 高 2.4 倍，23.4% 的驱逐重跑浪费被拆核消掉。拆核加 tick 的全部开销是 1.3% 的性能损失。实验覆盖 L40s、A100、H100 三档卡，最多 16 卡的两台 DGX A100 640GB 服务器。
 
-![Hummingbird 相对空间共享与时间共享方案的提升倍数，对数轴](/images/xpu-preempt/hummingbird-results.png)
+![Hummingbird 相对空间共享与时间共享方案的提升倍数，对数轴](/images/xpu-preempt/hummingbird-results.webp)
 
 *提升倍数来自 Hummingbird 论文摘要与正文，SLO 达标率对比 Orion 为 9.7 倍、对比 REEF 为 3.5 倍，低优任务吞吐对比 REEF 为 2.4 倍，高优任务相对独占运行达标率保持在 99% 以上。*
 
@@ -198,7 +198,7 @@ Hummingbird 不走驱动，也不走硬件，它在闭源 NVIDIA GPU 上只靠�
 
 XSched、GPreempt、Hummingbird 都默认显存放得下所有并发任务，上下文切换只保存最小架构状态。MSched 论文（arXiv 2512.24637）专门敲这个假设，显存超订时切换要连页面一起处理，它给 XSched 补了内存调度，预加载一个 predictor 拦截 kernel 启动 API，按离线生成的参数到内存区域的映射预测每个内核要访问的页，调度器配合驱动按页换入换出。
 
-![MSched 论文 Figure 3，离线分析生成参数到内存区域的映射，在线 Predictor 拦截内核启动并预测访问页](/images/xpu-preempt/msched-fig3-arch.png)
+![MSched 论文 Figure 3，离线分析生成参数到内存区域的映射，在线 Predictor 拦截内核启动并预测访问页](/images/xpu-preempt/msched-fig3-arch.webp)
 
 *MSched 论文 Figure 3，Kernel Profiler 与 Memory Analyzer 离线统计，Predictor 在线拦截内核启动 API，Memory Manager 与 Switcher 配合 GPU 驱动按页迁移，arXiv 2512.24637*
 
@@ -227,3 +227,11 @@ Hummingbird 的解法是层级卸载。它基于 HUVM 把低优任务页面按�
 - NVIDIA A100 Tensor Core GPU Architecture 白皮书，GigaThread 引擎、全芯片寄存器文件 27648KB、L2 与共享内存规格，[PDF](https://images.nvidia.com/aem-dam/en-zz/Solutions/data-center/nvidia-ampere-architecture-whitepaper.pdf)
 
 文中图片由脚本按论文报告的数字绘制，数值来源见每张图注，非本文复现测量。
+
+---
+
+{/* course-crosslink */}
+
+## 配套课程
+
+时间片、抢占粒度这些数字，在 [《从零写 Rust RTOS》](/projects/rust-os) 里对应一个可运行的抢占式调度器实现；集群侧的同一套排队问题，[《AI Infra 互动教程》](/projects/ai-infra) 从集合通信与并行策略的角度再算一遍。

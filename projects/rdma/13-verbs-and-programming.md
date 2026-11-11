@@ -1,9 +1,10 @@
-﻿---
+---
 title: "RDMA 之 Verbs 和编程步骤"
 description: "介绍 RDMA Verbs API 体系、用户态与内核态 Verbs 接口、编程步骤与 WR/WC 的处理流程。"
 date: "2026-07-19"
 order: 13
 tags: ["RDMA", "Verbs", "编程步骤", "API"]
+est_time: "40 分钟"
 ---
 # RDMA 之 Verbs 和编程步骤
 
@@ -17,7 +18,7 @@ Verbs API向用户提供了有关RDMA的一切功能，典型的包括：注册M
 
 结合上一部分的内容，我们给出一个OFED的全景：
 
-![e0eba2a4af3d4e6179e178ec3a005632.png](/images/rdma/e0eba2a4af3d4e6179e178ec3a005632.png)
+![e0eba2a4af3d4e6179e178ec3a005632.png](/images/rdma/e0eba2a4af3d4e6179e178ec3a005632.webp)
 
 **广义的Verbs API主要由两大部分组成verbs和rdma_cm：**
 
@@ -185,7 +186,7 @@ WR经由驱动进一步处理后，会转化成WQE下发给硬件。
 
 比如ib_post_send()接口：
 
-![bcd542df2b9ba4968da751fa7e71fa47.png](/images/rdma/bcd542df2b9ba4968da751fa7e71fa47.png)
+![bcd542df2b9ba4968da751fa7e71fa47.png](/images/rdma/bcd542df2b9ba4968da751fa7e71fa47.webp)
 
 函数注释中有明确介绍该函数的作用，输入、输出参数以及返回值。
 
@@ -217,7 +218,7 @@ https://linux.die.net/man/3/ibv_post_send
 ```
     man ibv_post_send
 ```
-![e0d2fb93b12caf6996274de5b19dd75b.png](/images/rdma/e0d2fb93b12caf6996274de5b19dd75b.png)
+![e0d2fb93b12caf6996274de5b19dd75b.png](/images/rdma/e0d2fb93b12caf6996274de5b19dd75b.webp)
 
   * **查询Mellanox的编程手册**
 
@@ -244,7 +245,7 @@ https://linux.die.net/man/3/ibv_post_send
 
 （假设A节点的某个QP要跟B节点的某个QP交换信息，除了要知道B节点的**QP序号——QPN** 之外，还需要GID--（相当于TCP中的IP），在传统TCP-IP协议栈中，使用了家喻户晓的IP地址来标识网络层的每个节点。而IB协议中的这个标识被称为**GID（Global Identifier，全局ID）**[8\. RDMA之Address Handle - 知乎](https://zhuanlan.zhihu.com/p/163552044 "8. RDMA之Address Handle - 知乎")）
 
-![3bba5d9bae953ee8ca3519516cbfdec5.png](/images/rdma/3bba5d9bae953ee8ca3519516cbfdec5.png)
+![3bba5d9bae953ee8ca3519516cbfdec5.png](/images/rdma/3bba5d9bae953ee8ca3519516cbfdec5.webp)
 
 ### 编译 & 执行
 
@@ -338,7 +339,7 @@ ibv_poll_cq（）用于查询cq队列是否有事件产生，如果有调用recv
 
 (fellow0305)
 
-![](/images/rdma/ec705cadfe79ccd18ad1360b019b4d17.png)
+![](/images/rdma/ec705cadfe79ccd18ad1360b019b4d17.webp)
 
 **例子**
 

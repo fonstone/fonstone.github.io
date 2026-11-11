@@ -28,7 +28,7 @@ series: "计算机系统基础"
 | Lab5 | 虚拟文件系统 | POSIX 适配、FSM、FS_Base、BowerAccess | ⭐⭐⭐⭐ | [详细文档](./chcore-lab5-virtual-file-system.md) |
 ### 课程教材
 
-![《操作系统：原理与实现》教材封面](/images/chcore/os-book.jpeg)
+![《操作系统：原理与实现》教材封面](/images/chcore/os-book.webp)
 
 课程配套教材为《操作系统：原理与实现》（上海交通大学出版社），其中伙伴系统、SLAB 分配器、微内核 IPC 等章节与实验紧密结合。
 

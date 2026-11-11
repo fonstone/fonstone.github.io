@@ -67,7 +67,7 @@ tags: ["自动驾驶", "多传感器融合", "BEV", "卡尔曼滤波", "目标�
 
 前融合也叫数据级融合。图像像素、激光点云还没做目标检测就拼接在一起，送进统一网络。理论上保留的原始信息最多，代价也最突出，原始数据量巨大，算力消耗高，对时间同步和标定精度的要求苛刻，噪声容易互相干扰。目前量产落地少，更多用在科研场景。前融合里有一支常见流派是点级融合，把图像语义打到点云上，代表工作是 PointPainting，CVPR 2020，方法是把图像语义分割的类别得分投影到每个激光点上，再喂给点云检测网络，PointRCNN、VoxelNet、PointPillars 三个点云检测器都因为这一手在 KITTI 和 nuScenes 上明显涨点。BEVFusion 论文把这类方法批评了一遍，说投影到点的过程把相机特征的语义密度扔掉了。
 
-![PointPainting 三阶段流程](/images/sensor-fusion/pointpainting-fig2-overview.png)
+![PointPainting 三阶段流程](/images/sensor-fusion/pointpainting-fig2-overview.webp)
 
 *图来自 PointPainting 论文 Figure 2（Vora et al., CVPR 2020）。上排是三个阶段，图像语义分割、把类别得分投影到激光点、点云检测网络输出结果*
 
@@ -101,7 +101,7 @@ tags: ["自动驾驶", "多传感器融合", "BEV", "卡尔曼滤波", "目标�
 
 BEV 空间是给规划用的。LSS 论文把自动驾驶感知的目标写得很直接，从多个传感器提取语义表示，融进同一个鸟瞰坐标，供运动规划取用。BEV 是自车为中心、范围固定的俯视栅格，尺度一致，车道线、障碍物、可行驶区域这些下游要的东西都摆在一个平面上。
 
-![LSS 的多视图输入与 BEV 语义输出](/images/sensor-fusion/lss-fig1-hook.jpg)
+![LSS 的多视图输入与 BEV 语义输出](/images/sensor-fusion/lss-fig1-hook.webp)
 
 *图来自 LSS 论文 Figure 1（Philion & Fidler, ECCV 2020）。左侧是环视相机输入，右侧是网络直接在 BEV 坐标系输出的语义图，蓝色是车辆分割，橙色是可行驶区域，绿色是车道线，预测结果又投影回左侧输入图像上*
 
@@ -109,13 +109,13 @@ BEV 空间是给规划用的。LSS 论文把自动驾驶感知的目标写得很
 
 相机特征怎么进 BEV，LSS 给了最早的端到端答案，三步。Lift 把每张图像单独抬成视锥特征，每个像素同时预测一组深度概率，深度分布和特征做外积，一个像素变成一条竖着铺开、深度方向有 D 层的特征线。Splat 把所有相机的视锥栅格化进同一个 BEV 网格，重叠区域做池化。Shoot 在 BEV 上挂任务头，检测、分割，还能把模板轨迹射进代价图直接做规划。整条流水线可微，从相机到 BEV 一路反传，训练时整组相机一起学，论文里特别提到这种端到端训练让它对标定误差有鲁棒性。
 
-![Lift-Splat-Shoot 整体流程](/images/sensor-fusion/lss-fig4-outline.png)
+![Lift-Splat-Shoot 整体流程](/images/sensor-fusion/lss-fig4-outline.webp)
 
 *图来自 LSS 论文 Figure 4（Philion & Fidler, ECCV 2020）。左侧是 n 路相机图像和内外参，Lift 阶段为每张图生成视锥点云，Splat 阶段按内外参把视锥栅格化到 BEV 平面，最后 BEV 卷积网络处理栅格输出结果*
 
 论文自己的流程图比文字更清楚。注意 Lift 阶段每路相机各生成一个视锥，Splat 阶段才把多路视锥汇到同一个 BEV 平面，跨相机融合发生在这一步，相机再多也只是多几个视锥。
 
-![LSS 的 lift 步骤](/images/sensor-fusion/lss-fig3-lift.png)
+![LSS 的 lift 步骤](/images/sensor-fusion/lss-fig3-lift.webp)
 
 *图来自 LSS 论文 Figure 3。每个像素同时预测一个 D 类深度分布和一条 C 维上下文向量，射线上每个点的特征由两者的外积给出*
 
@@ -135,7 +135,7 @@ LSS 的官方代码在 nv-tlabs/lift-splat-shoot，论文里车辆分割的 IoU 
 
 LSS 显式预测深度，BEVFormer 走另一条路。它在 BEV 上铺一层网格状查询，每个查询点投影到各相机图像取对应特征，用可变形交叉注意力聚合，时序上把历史 BEV 特征按自车运动配准后再自注意力融合。纯相机配置在 nuScenes 测试集拿到 56.9% NDS，比当时最好方法高 9.0 个百分点，和激光雷达基线持平，速度估计和低能见度下的召回都有明显改善。这个数字的落点是，纯视觉方案在指标上够到了带激光雷达的水平，车企砍掉激光雷达的可行性多了一条证据。
 
-![BEVFormer 总体架构](/images/sensor-fusion/bevformer-fig2-model.png)
+![BEVFormer 总体架构](/images/sensor-fusion/bevformer-fig2-model.webp)
 
 *图来自 BEVFormer 论文 Figure 2。a 是编码器层的三个零件，网格状 BEV queries、时序自注意力、空间交叉注意力，b 里每个 BEV 查询只和它投影到的图像兴趣区交互，c 里时序自注意力把当前查询和历史 BEV 特征关联起来*
 
@@ -143,13 +143,13 @@ LSS 显式预测深度，BEVFormer 走另一条路。它在 BEV 上铺一层网�
 
 相机流和点云流在 BEV 汇合，BEVFusion 把这条路推到量产尺度。两路各自提取 BEV 特征，融合模块在 BEV 栅格上做融合，任务头直接挂上。官方仓库在 nuScenes 验证集上的数字能看清融合的账。3D 检测 mAP 和 NDS，融合模型 68.52 和 71.38，纯相机基线只有 35.56 和 41.21，纯激光雷达 64.68 和 69.28。地图分割 mIoU，融合 62.95，相机 57.09，激光雷达 48.56。低配纯视觉方案在 BEV 检测上差一大截，融合把这条最弱的感知通道补了起来。激光雷达单独表现已经很好，融合的边际收益主要在语义任务和恶劣场景这类视觉短板的地方。
 
-![BEVFusion 与点级融合的方法对比](/images/sensor-fusion/bevfusion-fig1-teaser.png)
+![BEVFusion 与点级融合的方法对比](/images/sensor-fusion/bevfusion-fig1-teaser.webp)
 
 *图来自 BEVFusion 论文 Figure 1。上排是点级融合，把相机特征投影到激光点上，下排是 BEVFusion，两路特征在 BEV 空间汇合*
 
 这张图画的是设计思路分歧。点级融合把相机特征压进点云，语义密度在投影里丢掉一部分，BEVFusion 让相机和激光两路特征都到 BEV 平面汇合，相机的语义和激光的几何结构都保留下来。论文引言批评的正是上排的做法。
 
-![BEVFusion 总体架构](/images/sensor-fusion/bevfusion-fig2-overview.png)
+![BEVFusion 总体架构](/images/sensor-fusion/bevfusion-fig2-overview.webp)
 
 *图来自 BEVFusion 论文 Figure 2。多模态输入各自经过视图转换进入统一 BEV 空间，BEV 编码器融合特征，任务头输出不同感知结果*
 
@@ -157,7 +157,7 @@ LSS 显式预测深度，BEVFormer 走另一条路。它在 BEV 上铺一层网�
 
 落地情况也写进了仓库。工程上最要紧的一步是优化视图转换里的 BEV pooling，论文把延迟降了超过 40 倍，对比图里能看到原因。BEVFusion 2023 年并入 MMDetection3D 的 projects，2024 年进了 NVIDIA DeepStream。NVIDIA 的 CUDA-BEVFusion 在 Jetson Orin 上做到 25 FPS，配合 INT8 加速。想读配置，仓库里有 `configs/nuscenes/det/transfusion/secfpn/camera+lidar/swint_v0p075/convfuser.yaml`，展开能看到相机编码器和激光编码器两路组织方式。想读实现，从 `mmdet3d/ops/bev_pool` 这个自定义算子看起。
 
-![相机到 BEV 视图转换的耗时对比](/images/sensor-fusion/bevfusion-fig3-vtransform.png)
+![相机到 BEV 视图转换的耗时对比](/images/sensor-fusion/bevfusion-fig3-vtransform.webp)
 
 *图来自 BEVFusion 论文 Figure 3。a 标出视图转换是融合的瓶颈，原实现单场景要 2 秒，b 是优化的 BEV pooling，用区间归约和预计算栅格关联，c 和 d 是加速前后的耗时对比*
 

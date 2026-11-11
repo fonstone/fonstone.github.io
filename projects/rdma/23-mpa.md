@@ -4,6 +4,7 @@ description: "详解 iWARP 协议栈中的 MPA（Marker PDU Aligned）层，功�
 date: "2026-07-19"
 order: 23
 tags: ["RDMA", "iWARP", "MPA", "协议"]
+est_time: "40 分钟"
 ---
 # iWARP 之 MPA
 
@@ -45,7 +46,7 @@ MPA层就是为解决这个矛盾而设计的——它在发送端按照特定�
 
 MPA层位于DDP和TCP之间。发送时，MPA接收DDP的PDU（Protocol Data Unit），添加MPA头部，然后交给TCP发送；接收时，MPA从TCP字节流中提取出MPA帧，校验后交给DDP处理。
 
-![](/images/rdma/fb3220f971f20ccf4b1ae19286e03d21.png)
+![](/images/rdma/fb3220f971f20ccf4b1ae19286e03d21.webp)
 
 MPA层的功能示意图
 

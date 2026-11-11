@@ -4,6 +4,7 @@ description: "交叉编译 sudo/screen/tree/cu，更换为自编译的 GCC 工�
 date: "2026-06-27"
 order: 6
 tags: ["Linux", "RISC-V", "交叉编译", "GCC", "libc", "Qt", "Quard-Star"]
+est_time: "25 分钟"
 ---
 
 本篇对应原教程 ch19、ch20、ch22、ch23。围绕用户态应用移植展开：先是常用命令行工具 sudo/screen/tree/cu，接着更换为自编译的 GCC 工具链以获得调试能力，最后把 Qt 库移植到 Framebuffer 跑起 GUI 应用。
@@ -27,7 +28,7 @@ root    ALL=(ALL:ALL) ALL
 %sudo   ALL=(ALL:ALL) ALL
 ```
 
-![sudo 提权测试](/images/qemu/ch19-0.png)
+![sudo 提权测试](/images/qemu/ch19-0.webp)
 
 本节 tag：`ch19`。
 
@@ -53,7 +54,7 @@ COLS="$(echo $QEMU_VPARAM | sed 's/\(.*\)vn:\(.*\)x\(.*\)/\3/g')"
 stty rows $ROWS cols $COLS
 ```
 
-![screen 运行效果](/images/qemu/ch20-0.png)
+![screen 运行效果](/images/qemu/ch20-0.webp)
 
 ### 2.2 cu
 
@@ -134,7 +135,7 @@ OpenSBI/U-Boot/Kernel 虽用了 glibc 编译器，但根本没用任何 libc 函
 
 ### 4.1 Qt 与 Linux 图形协议栈
 
-![Linux 图形协议栈](/images/qemu/ch23-0.png)
+![Linux 图形协议栈](/images/qemu/ch23-0.webp)
 
 ### 4.2 Qt 编译
 
@@ -198,7 +199,7 @@ export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$QT_HOME/lib"
 
 **analogclock**：
 
-![Qt analogclock](/images/qemu/ch23-1.png)
+![Qt analogclock](/images/qemu/ch23-1.webp)
 
 **gamebox**（https://github.com/QQxiaoming/game_box）：
 

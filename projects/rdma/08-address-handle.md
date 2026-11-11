@@ -1,9 +1,10 @@
-﻿---
+---
 title: "RDMA 之 Address Handle"
 description: "详解 Address Handle 的概念、创建与使用，AH 在 UD 服务类型中如何标识对端地址信息。"
 date: "2026-07-19"
 order: 8
 tags: ["RDMA", "Address Handle", "AH", "UD"]
+est_time: "15 分钟"
 ---
 # RDMA 之 Address Handle
 
@@ -21,7 +22,7 @@ tags: ["RDMA", "Address Handle", "AH", "UD"]
 
 AH的概念大致可以用下图表示：
 
-![](/images/rdma/1a0b16a780c0cf05c2f2fa2eb6fe84cc.png)
+![](/images/rdma/1a0b16a780c0cf05c2f2fa2eb6fe84cc.webp)
 
 Address Handle功能示意图
 
@@ -33,7 +34,7 @@ Address Handle功能示意图
 
 上述过程如下图所示，A节点收到用户的这样一个任务——使用本端的QP4与B节点（通过AH指定）的QP3进行数据交换：
 
-![](/images/rdma/d415e4e3f39a4f08d61bbb887e0719c3.png)
+![](/images/rdma/d415e4e3f39a4f08d61bbb887e0719c3.webp)
 
 UD服务类型使用AH指定对端节点
 
@@ -56,7 +57,7 @@ IB协议中并没有对为什么使用AH做出解释，我认为定义AH的概�
 
 前文我们介绍保护域时曾经提过，除了QP、MR之外，AH也由PD来进行资源划分。当定义了AH这个软件实体之后，我们就可以对所有的QP可达的目的地进行相互隔离和管理。
 
-![](/images/rdma/e5a74bd32a18fbbb500aca489449204e.png)
+![](/images/rdma/e5a74bd32a18fbbb500aca489449204e.webp)
 
 使用PD隔离AH
 

@@ -4,7 +4,7 @@ description: "为了更好实现进程管理，同时也使得操作系统整体
 date: "2026-07-12"
 order: 81
 tags: ["PCB", "进程控制块", "任务", "数据结构", "进程管理"]
-est_time: "45分钟"
+est_time: "45 分钟"
 ---
 ## 本节导读
 
@@ -283,7 +283,7 @@ impl Drop for KernelStack {
 
 在内核中，每个进程的执行状态、资源控制等元数据均保存在一个被称为 **进程控制块** (PCB, Process Control Block) 的结构中，它是内核对进程进行管理的单位，故而是一种极其关键的内核数据结构。在内核看来，它就等价于一个进程。
 
-![pcb.png](/images/rust-os/rcore/chapter5/pcb.png)
+![pcb.png](/images/rust-os/rcore/chapter5/pcb.webp)
 
 承接前面的章节，我们仅需对任务控制块 TaskControlBlock 进行若干改动并让它直接承担进程控制块的功能：
 

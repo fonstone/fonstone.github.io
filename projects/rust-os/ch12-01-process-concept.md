@@ -4,7 +4,7 @@ description: "本节的内容有："
 date: "2026-07-12"
 order: 80
 tags: ["进程", "系统调用", "fork", "exec", "wait", "进程状态"]
-est_time: "35分钟"
+est_time: "35 分钟"
 ---
 ## 本节导读
 

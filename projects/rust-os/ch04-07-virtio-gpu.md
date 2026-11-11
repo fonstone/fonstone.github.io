@@ -4,7 +4,7 @@ description: "本节主要介绍了与操作系统无关的基本virtiogpu设备
 date: "2026-07-12"
 order: 30
 tags: ["virtio-gpu", "GPU", "显示", "帧缓冲", "驱动"]
-est_time: "40分钟"
+est_time: "40 分钟"
 ---
 ## 本节导读
 
@@ -108,7 +108,7 @@ qemu-system-riscv64 \
 
 并看到Qemu输出的图形显示：
 
-![virtio-test-example2.png](/images/rust-os/rcore/chapter9/virtio-test-example2.png)
+![virtio-test-example2.png](/images/rust-os/rcore/chapter9/virtio-test-example2.webp)
 
 接下来我们看看virtio-gpu设备初始化的具体过程如：
 
@@ -605,7 +605,7 @@ pub fn sys_key_pressed()  -> isize {
 
 这样，我们结合串口和 virtio-gpu 两种外设，并充分利用已有的Rust库，设计实现了一个 贪吃蛇 小游戏（如下图所示）。至此，基于侏罗猎龙操作系统的图形应用开发任务就完成了。
 
-![../../os-lectures/lec13/figs/gui-snake.png](/images/rust-os/rcore/chapter9/gui-snake.png)
+![../../os-lectures/lec13/figs/gui-snake.png](/images/rust-os/rcore/chapter9/gui-snake.webp)
 
 [1] [ 1 ] https://github.com/embedded-graphics/embedded-graphics
 

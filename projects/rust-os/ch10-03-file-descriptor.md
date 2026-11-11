@@ -4,7 +4,7 @@ description: "本节我们介绍为何要把标准输入/输出用文件来进�
 date: "2026-07-12"
 order: 67
 tags: ["文件描述符", "stdin", "stdout", "标准 I/O", "文件"]
-est_time: "25分钟"
+est_time: "25 分钟"
 ---
 ## 本节导读
 

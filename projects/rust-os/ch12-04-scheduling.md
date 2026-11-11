@@ -4,7 +4,7 @@ description: "计算机内存中可执行的程序个数大于处理器个数时
 date: "2026-07-12"
 order: 83
 tags: ["进程调度", "调度算法", "时间片", "RR", "优先级"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 本节导读
 
@@ -92,7 +92,7 @@ $$
 - 当正在运行的进程需要等待某个事件或资源时，操作系统会把该进程从就绪队列中移出，放到等待队列中（此时这个进程从就绪进程变成等待进程），并从就绪队列头取出下一个进程执行；
 - 当等待进程所等待的某个事件出现或等待的资源得到满足时，操作系统会把该进程转为就绪进程，并会把该进程从等待队列中移出，并放到就绪队列末尾。
 
-![fcome-fserverd.png](/images/rust-os/rcore/chapter5/fcome-fserverd.png)
+![fcome-fserverd.png](/images/rust-os/rcore/chapter5/fcome-fserverd.webp)
 
 该调度策略的优点是简单，容易实现。对于满足1~5约束条件的执行环境，用这个调度策略的平均周转时间性能指标也很好。如果在一个在较长的时间段内，每个进程都能结束，那么公平性这个指标也是能得到保证的。
 
@@ -114,11 +114,11 @@ $$
 
 为应对短进程不得不等长进程结束后才能运行的问题，我们可以想到一个调度的方法：优先让短进程执行。这就是最短作业优先（Shortest Job First，简称SJF）调度策略。其实上面让PB先执行的调度方法，就是采用了最短作业优先策略。
 
-![sjf1.png](/images/rust-os/rcore/chapter5/sjf1.png)
+![sjf1.png](/images/rust-os/rcore/chapter5/sjf1.webp)
 
 在更新约束条件2的前提下，如果我们把平均周转时间作为唯一的性能指标，那么SJF是一个最优调度算法。这可以用数学方法进行证明。如果有同学感兴趣，可以试试。
 
-![sjf2.png](/images/rust-os/rcore/chapter5/sjf2.png)
+![sjf2.png](/images/rust-os/rcore/chapter5/sjf2.webp)
 
 虽然SJF调度策略在理论上表现很不错，但在具体实现中，需要对处于就绪队列上的进程按执行时间进行排序，这会引入一定的调度执行开销。而且如果进一步放宽约束，贴近实际情况，SJF就会显现出它的不足。如果我们放宽约束条件1：
 
@@ -181,7 +181,7 @@ $$
 
 如果操作系统分给每个运行的进程的运行时间是一个足够小的时间片（time slice，quantum），时间片一到，就抢占当前进程并切换到另外一个进程执行。这样进程以时间片为单位轮流占用处理器执行。对于交互式进程而言，就有比较大的机会在较短的时间内执行，从而有助于减少响应时间。这种调度策略称为轮转（Round-Robin，简称RR）调度，即基本思路就是从就绪队列头取出一个进程，让它运行一个时间片，然后把它放回到队列尾，再从队列头取下一个进程执行，周而复始。
 
-![round-robin-theory.png](/images/rust-os/rcore/chapter5/round-robin-theory.png)
+![round-robin-theory.png](/images/rust-os/rcore/chapter5/round-robin-theory.webp)
 
 在具体实现上，需要考虑时间片的大小，一般时间片的大小会设置为时钟中断的时间间隔的整数倍。比如，时钟中断间隔为1ms，时间片可设置为10ms，两个用户发出了执行两个进程的请求，且两个进程大约同时到达，PA和PB的执行时间都为20s(即20,000ms)。如果采用轮转调度，那么进程的响应时间为:
 
@@ -340,7 +340,7 @@ MLFQ调度策略的关键在于如何设置优先级。一旦设置好进程的�
 
 实时的任务是由一组进程来实现，其中每个进程的行为是可预测和提前确定的。这些进程称为实时进程，它们的执行时间一般较短。支持实时任务的操作系统称为实时操作系统。
 
-![real-time-schedule.png](/images/rust-os/rcore/chapter5/real-time-schedule.png)
+![real-time-schedule.png](/images/rust-os/rcore/chapter5/real-time-schedule.webp)
 
 ### 约束条件
 
@@ -384,7 +384,7 @@ MLFQ调度策略的关键在于如何设置优先级。一旦设置好进程的�
 
 速率单调调度（Rate Monotonic Scheduling，RMS）算法是由刘炯朗（Chung Laung Liu）教授和James W. Layland在1973年提出的。该算法的基本思想是根据进程响应事件的执行周期的长短来设定进程的优先级，即执行周期越短的进程优先级越高。操作系统在调度过程中，选择优先级最高的就绪进程执行，高优先级的进程会抢占低优先级的进程。
 
-![rms.png](/images/rust-os/rcore/chapter5/rms.png)
+![rms.png](/images/rust-os/rcore/chapter5/rms.webp)
 
 该调度算法有如下的前提假设：
 
@@ -403,7 +403,7 @@ MLFQ调度策略的关键在于如何设置优先级。一旦设置好进程的�
 
 另一个典型的实时调度算法是最早截止时间优先（Earliest Deadline First，EDF）算法，其基本思想是根据进程的截止时间来确定任务的优先级。截止时间越早，其优先级就越高。如果进程的截止期相同，则处理时间短的进程优先级高。操作系统在调度过程中，选择优先级最高的就绪进程执行，高优先级的进程会抢占低优先级的进程。
 
-![edf1.png](/images/rust-os/rcore/chapter5/edf1.png)
+![edf1.png](/images/rust-os/rcore/chapter5/edf1.webp)
 
 该调度算法有如下的前提假设：
 
@@ -412,7 +412,7 @@ MLFQ调度策略的关键在于如何设置优先级。一旦设置好进程的�
 3. 进程的优先级在执行过程中会基于进程的截止期动态变化。
 4. 进程可被抢占。
 
-![edf2.png](/images/rust-os/rcore/chapter5/edf2.png)
+![edf2.png](/images/rust-os/rcore/chapter5/edf2.webp)
 
 EDF调度算法按照进程的截止时间的早晚来分配优先级，截止时间越近的进程优先级越高。操作系统在进行进程调度时，会根据各个进程的截止时间重新计算进程优先级，并选择优先级最高的进程执行，即操作系统总是优先运行最紧迫的进程。在不同时刻，两个周期性进程的截止时间的早晚关系可能会变化，所以EDF调度算法是一种动态优先级调度算法。
 
@@ -462,7 +462,7 @@ EDF调度算法按照进程的截止时间的早晚来分配优先级，截止�
 
 在2000年前，多处理器计算机的典型代表是少见的高端服务器和超级计算机，但到了2000年后，单靠提高处理器的频率越来越困难，而芯片的集成度还在进一步提升，所以在一个芯片上集成多个处理器核成为一种自然的选择。到目前位置，在个人计算机、以手机为代表的移动终端上，多核处理器（Multi Core）已成为一种普遍的现象，多个处理器核能够并行执行，且可以共享Cache和内存。
 
-![multi-core-schedule.png](/images/rust-os/rcore/chapter5/multi-core-schedule.png)
+![multi-core-schedule.png](/images/rust-os/rcore/chapter5/multi-core-schedule.webp)
 
 之前提到的调度策略/算法都是面向单处理器的，如果把这些策略和算法扩展到多处理器环境下，是否需要解决新问题？
 
@@ -504,7 +504,7 @@ t1: CurID = CurID+1 CurID = CurID +1
 
 如果我们直接使用单处理器调度的数据结构，其中的重点就是放置就绪进程的就绪队列或其他与调度相关的数据结构。那么这些数据结构就是需要互斥访问的共享数据。 为简化分析过程，我们以轮转调度采用的单就绪队列为例，面向多处理器的单队列调度的策略逻辑没有改变，只是在读写/修改就绪队列等共享数据时，需要用同步互斥的一些操作保护起来，确保对这些共享数据访问的正确性。
 
-![queue-schedule.png](/images/rust-os/rcore/chapter5/queue-schedule.png)
+![queue-schedule.png](/images/rust-os/rcore/chapter5/queue-schedule.webp)
 
 采用单队列调度的一个好处是，它支持自动负载平衡，因为决不会出现一个CPU空闲而其他CPU过载的情况。
 
@@ -518,7 +518,7 @@ t1: CurID = CurID+1 CurID = CurID +1
 
 多队列调度比单队列调度具有更好的可扩展性，多队列的数量会随着处理器的增加而增加，也具有良好的缓存亲和度。当多队列调度也有它自己的问题：负载均衡（Load Balance）问题。
 
-![deque-schedule.png](/images/rust-os/rcore/chapter5/deque-schedule.png)
+![deque-schedule.png](/images/rust-os/rcore/chapter5/deque-schedule.webp)
 
 考虑如下的例子，在一个有4个进程，两个处理器的计算机系统中，有两个就绪队列，PA和PB在就绪队列Q1，PC和PD在就绪队列Q2，如果采用基于轮转调度的多队列调度，那么两个处理器可以均匀地让4给进程分时使用处理器。这是一种理想的情况。如果进程PB结束，而调度不进行进一步的干预，那么就会出现PA独占处理器1，PC和PD分时共享处理器2。如果PA也结束了，而调度还不进行进一步的干预，那么（Load Imbalance）就会出现处理器1空闲，而处理器2繁忙的情况，这就是典型的负载不均衡（Load Imbalance）的现象了。这就没有达到轮转调度的意图。
 

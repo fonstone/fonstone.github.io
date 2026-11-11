@@ -254,7 +254,7 @@ struct thread_ctx *switch_context(struct thread *from,
 
 ## 第三部分：IPC（进程间通信）
 
-![ChCore 微内核 IPC 通信架构图](/images/chcore/code1.png)
+![ChCore 微内核 IPC 通信架构图](/images/chcore/code1.webp)
 
 ## 4 微内核 IPC 架构
 

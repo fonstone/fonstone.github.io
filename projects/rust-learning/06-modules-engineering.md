@@ -2022,7 +2022,7 @@ fn main() {
 
 ## 两种文档注释
 
-> 基础回顾：/// 和 //! 的基本语法已在[《注释》](/RustCourse/chapters/02-basic-syntax/01-comments#%E6%96%87%E6%A1%A3%E6%B3%A8%E9%87%8A--1)章节讲解。这里关注文档注释的进阶用法：Markdown 格式、标准文档章节、代码示例验证等。
+> 基础回顾：/// 和 //! 的基本语法已在[《注释》](/projects/rust-learning/02-basic-syntax)章节讲解。这里关注文档注释的进阶用法：Markdown 格式、标准文档章节、代码示例验证等。
 
 
 > 使用规则：

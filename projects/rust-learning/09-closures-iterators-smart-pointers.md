@@ -659,7 +659,7 @@ fn main() {
 
 任何结构体，只要为它实现了 `Iterator` trait 的 `next` 方法，就成了一个迭代器。来创建一个从 1 数到 5 的计数器：
 
-> 关于 type Item：代码里的 type Item = u32; 用到了关联类型（associated type）这个特性，[高级特性：关联类型](/RustCourse/chapters/22-advanced/01-associated-types)一节会专门讲解它。现在只需要把它理解成”告诉编译器这个迭代器产出什么类型的值”——照着写就行，不需要深究语法原理。
+> 关于 type Item：代码里的 type Item = u32; 用到了关联类型（associated type）这个特性，[高级特性：关联类型](/projects/rust-learning/12-advanced-topics)一节会专门讲解它。现在只需要把它理解成”告诉编译器这个迭代器产出什么类型的值”——照着写就行，不需要深究语法原理。
 
 
 ```
@@ -1745,7 +1745,7 @@ fn main() {
 
 这是必要的安全保障：如果允许多个所有者同时进行可变修改，就会产生数据竞争（即使在单线程中也会导致逻辑混乱）。
 
-此外，`Rc<T>` **只能用于单线程**。它的引用计数操作不是原子性的，无法在线程之间安全地共享。如果你需要在多线程中共享数据，应该使用它的并发版本 `Arc<T>` (Atomic Reference Counting)，这将在[并发编程](/RustCourse/chapters/14-concurrency/00-index)章节中介绍。
+此外，`Rc<T>` **只能用于单线程**。它的引用计数操作不是原子性的，无法在线程之间安全地共享。如果你需要在多线程中共享数据，应该使用它的并发版本 `Arc<T>` (Atomic Reference Counting)，这将在[并发编程](/projects/rust-learning/10-concurrency)章节中介绍。
 
 如果你既需要多所有权，又需要可变性，就需要将 `Rc<T>` 与下一节介绍的 `RefCell<T>` 组合使用。
 

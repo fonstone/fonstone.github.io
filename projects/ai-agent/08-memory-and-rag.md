@@ -1,4 +1,4 @@
-﻿---
+---
 title: "记忆与检索"
 description: "智能体记忆系统设计，RAG 检索增强生成，向量数据库与知识存储。"
 date: "2026-07-12"
@@ -21,7 +21,7 @@ est_time: "65 分钟"
 
 
 
-![](/images/courses/8-figures/8-1.png)
+![](/images/courses/8-figures/8-1.webp)
 
 *图 8.1 人类记忆系统的层次结构*
 
@@ -88,7 +88,7 @@ print(response2)  # "抱歉，我不知道您的学习进度..."
 基于第七章建立的框架基础和认知科学的启发，我们设计了一个分层的记忆与RAG系统架构，如图8.2所示。这个架构不仅借鉴了人类记忆系统的层次结构，还充分考虑了工程实现的可扩展性。在实现上，我们将记忆和RAG设计为两个独立的工具：`memory_tool`负责存储和维护对话过程中的交互信息，`rag_tool`则负责从用户提供的知识库中检索相关信息作为上下文，并可将重要的检索结果自动存储到记忆系统中。
 
 
-![](/images/courses/8-figures/8-2.png)
+![](/images/courses/8-figures/8-2.webp)
 
 *图 8.2 HelloAgents记忆与RAG系统整体架构*
 
@@ -304,7 +304,7 @@ INFO:hello_agents.memory.storage.qdrant_store:✅ 使用现有Qdrant集合: rag_
 
 
 
-![](/images/courses/8-figures/8-3.png)
+![](/images/courses/8-figures/8-3.webp)
 
 *图 8.3 记忆形成的认知过程*
 
@@ -323,7 +323,7 @@ INFO:hello_agents.memory.storage.qdrant_store:✅ 使用现有Qdrant集合: rag_
 
 
 
-![](/images/courses/8-figures/8-4.png)
+![](/images/courses/8-figures/8-4.webp)
 
 *图 8.4 HelloAgents记忆系统的完整工作流程*
 
@@ -1137,7 +1137,7 @@ def _calculate_recency_score(self, timestamp: str) -> float:
 
 
 
-![](/images/courses/8-figures/8-5.png)
+![](/images/courses/8-figures/8-5.webp)
 
 *图 8.5 RAG系统的核心工作原理*
 
@@ -1702,7 +1702,7 @@ def search_vectors_expanded(
 
 
 
-![](/images/courses/8-figures/8-6.png)
+![](/images/courses/8-figures/8-6.webp)
 
 *图 8.6 智能问答助手的五步执行流程*
 
@@ -2005,7 +2005,7 @@ def generate_report(self, save_to_file: bool = True) -> Dict[str, Any]:
 
 
 
-![](/images/courses/8-figures/8-7.png)
+![](/images/courses/8-figures/8-7.webp)
 
 *图 8.7 问答助手主页面*
 
@@ -2015,7 +2015,7 @@ def generate_report(self, save_to_file: bool = True) -> Dict[str, Any]:
 
 
 
-![](/images/courses/8-figures/8-8.png)
+![](/images/courses/8-figures/8-8.webp)
 
 *图 8.8 问答助手主页面*
 
@@ -2025,7 +2025,7 @@ def generate_report(self, save_to_file: bool = True) -> Dict[str, Any]:
 
 
 
-![](/images/courses/8-figures/8-9.png)
+![](/images/courses/8-figures/8-9.webp)
 
 *图 8.9 问答助手主页面*
 
@@ -2035,7 +2035,7 @@ def generate_report(self, save_to_file: bool = True) -> Dict[str, Any]:
 
 
 
-![](/images/courses/8-figures/8-10.png)
+![](/images/courses/8-figures/8-10.webp)
 
 *图 8.10 问答助手主页面*
 
@@ -2669,7 +2669,7 @@ Cross-encoder 比 bi-encoder（embedding 模型）精确得多，因为它可以
 
 
 
-![](/images/courses/8-figures/8-11.png)
+![](/images/courses/8-figures/8-11.webp)
 
 *图 8.11 Hello-agents第八章知识总结*
 

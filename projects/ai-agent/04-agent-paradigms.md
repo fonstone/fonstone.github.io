@@ -1,4 +1,4 @@
-﻿---
+---
 title: "智能体经典范式构建"
 description: "手把手实现 ReAct、Plan-and-Solve、Reflection 三种经典智能体范式。"
 date: "2026-07-12"
@@ -169,7 +169,7 @@ $$o_t = T(a_t)$$
 
 
 
-![](/images/courses/4-figures/4-1.png)
+![](/images/courses/4-figures/4-1.webp)
 
 *图 4.1 ReAct 范式中的“思考-行动-观察”协同循环*
 
@@ -627,7 +627,7 @@ $$
 
 
 
-![](/images/courses/4-figures/4-2.png)
+![](/images/courses/4-figures/4-2.webp)
 
 *图 4.2 Plan-and-Solve 范式的两阶段工作流*
 
@@ -904,7 +904,7 @@ $$
 
 
 
-![](/images/courses/4-figures/4-3.png)
+![](/images/courses/4-figures/4-3.webp)
 
 *图 4.3 Reflection 机制中的“执行-反思-优化”迭代循环*
 
@@ -1253,7 +1253,7 @@ def find_primes(n):
 本章探讨的三种范式，代表了智能体解决问题的三种不同策略，如表4.1所示。在实际应用中，选择哪一种，取决于任务的核心需求:
 
 <p>表 4.1 不同 Agent Loop 的选择策略</p>
-![](/images/courses/4-figures/4-4.png)
+![](/images/courses/4-figures/4-4.webp)
 
 至此，我们已经掌握了构建单个智能体的核心技术。为了过渡知识，以及对实际应用更加深入。下一节我们将会探索不同低代码平台的使用方式以及轻代码构建agent的方案。
 

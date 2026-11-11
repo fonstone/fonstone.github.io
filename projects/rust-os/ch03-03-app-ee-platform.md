@@ -4,7 +4,7 @@ description: "本节我们从一个最简单的 Rust 应用程序入手，深入
 date: "2026-07-12"
 order: 16
 tags: ["执行环境", "LibOS", "应用程序", "平台支持", "SBI"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 本节导读
 
@@ -56,7 +56,7 @@ Hello, world!
 
 **应用程序执行环境栈**
 
-![app-software-stack.png](/images/rust-os/rcore/chapter1/app-software-stack.png)
+![app-software-stack.png](/images/rust-os/rcore/chapter1/app-software-stack.webp)
 
 我们的应用位于最上层，它可以通过调用编程语言提供的标准库或者其他三方库对外提供的函数接口，使得仅需少量的源代码就能完成复杂的功能。但是这些库的功能不仅限于此，事实上它们属于应用程序 **执行环境** (Execution Environment)的一部分。在我们通常不会注意到的地方，这些软件库还会在执行应用之前完成一些初始化工作，并在应用程序执行的时候对它进行监控。我们在打印 Hello, world! 时使用的 println! 宏正是由 Rust 标准库 std提供的。
 

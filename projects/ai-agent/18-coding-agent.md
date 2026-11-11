@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Coding Agent 与代码生成"
 description: "Coding Agent 的核心架构与七个核心工具，OpenClaw 范式，Sessionless 设计，安全与 Harness 工程。"
 date: "2026-07-29"

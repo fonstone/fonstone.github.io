@@ -55,6 +55,16 @@ const SLUG_TO_PROJECT_MAP: Record<string, string> = Object.fromEntries(
   Object.entries(PROJECT_SLUG_MAP).map(([k, v]) => [v, k])
 );
 
+/** 课程级总纲（00-index.md），不参与章节计数，单独作为「课程总纲」入口 */
+export function isCourseIndex(slug: string): boolean {
+  return /^00-index/.test(slug);
+}
+
+/** 任意索引页（含 rust-os 的 chXX-00-index），不显示章节完成按钮 */
+export function isChapterIndex(slug: string): boolean {
+  return /00-index/.test(slug);
+}
+
 export function projectToSlug(project: string): string {
   return PROJECT_SLUG_MAP[project] || project;
 }

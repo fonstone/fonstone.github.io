@@ -4,7 +4,7 @@ description: "本节首先以Linux 上的常规文件和目录为例，站在访
 date: "2026-07-12"
 order: 85
 tags: ["文件系统", "文件", "目录", "接口", "open/read/write"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 本节导读
 
@@ -16,7 +16,7 @@ est_time: "30分钟"
 
 在操作系统的用户看来，常规文件是保存在持久存储设备上的一个字节序列，每个常规文件都有一个 **文件名** (Filename) ，用户需要通过它来区分不同的常规文件。方便起见，在下面的描述中，“文件”有可能指的是常规文件、目录，也可能是之前提到的若干种进程可以读写的 标准输出、标准输入、管道等I/O 资源，请同学自行根据上下文判断取哪种含义。
 
-![file-and-dir.png](/images/rust-os/rcore/chapter6/file-and-dir.png)
+![file-and-dir.png](/images/rust-os/rcore/chapter6/file-and-dir.webp)
 
 在 Linux 系统上， stat 工具可以获取文件的一些信息。下面以我们项目中的一个源代码文件 os/src/main.rs 为例：
 
@@ -124,7 +124,7 @@ Blocks 给出 os 目录也占用 8 个块进行存储。实际上目录也可以
 - 不支持软硬链接。
 - 除了下面即将介绍的系统调用之外，其他的很多文件系统相关系统调用均未实现。
 
-![simple-file-and-dir.png](/images/rust-os/rcore/chapter6/simple-file-and-dir.png)
+![simple-file-and-dir.png](/images/rust-os/rcore/chapter6/simple-file-and-dir.webp)
 
 ## 打开、关闭与读写文件的系统调用
 
@@ -141,7 +141,7 @@ Blocks 给出 os 目录也占用 8 个块进行存储。实际上目录也可以
 fn sys_open(path: &str, flags: u32) -> isize
 ```
 
-![file-open.png](/images/rust-os/rcore/chapter6/file-open.png)
+![file-open.png](/images/rust-os/rcore/chapter6/file-open.webp)
 
 目前我们的内核支持以下几种标志（多种不同标志可能共存）：
 

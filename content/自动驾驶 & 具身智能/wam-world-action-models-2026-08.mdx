@@ -40,7 +40,7 @@ tags: ["具身智能", "世界动作模型", "WAM", "VLA", "arXiv", "机器人�
 
 合并没有把执行问题消掉。HarnessWAM 的摘要把它概括成 prediction-deliberation gap，预测与深思的缺口。WAM 的预测和动作生成都是有限时域的，复杂任务要跨阶段的全局规划，失败后要恢复，这两样它都不具备，执行结果更无人验证。
 
-![prediction-deliberation gap 示意](/images/wam-survey/harnesswam-fig1.png)
+![prediction-deliberation gap 示意](/images/wam-survey/harnesswam-fig1.webp)
 
 *HarnessWAM 论文 Figure 1，普通 WAM 在记忆依赖任务里目标悬而未决，HarnessWAM 累积证据、绑定目标后继续执行。作者 Zhaopeng Gu 等，arXiv 2608.09516*
 
@@ -72,7 +72,7 @@ VLM 驱动的 Task Manager 维护一个证据接地的场景信念和一个结�
 
 可执行空间投影的贡献有多大，论文给了消融数字。去掉投影，全任务成功率从 59.6% 掉到 18.5%，子任务从 69.9% 掉到 38.3%，四个任务族全部下降。另一组计划级诊断看得更细，原始 VLM 计划只有 60.8% 满足语法，可执行性 13.8%。词法归一化和别名消解先修一轮，语法涨 23.8 分，目标绑定涨 42.5 分，可执行性涨 28.5 分，但依赖满足率仍只有 67.5%，可执行性 42.3%。完整投影把这两项推到 92.9% 和 72.9%。语义上说得通的计划，落在 WAM 执行接口上照样装不上。
 
-![HarnessWAM 架构总览](/images/wam-survey/harnesswam-fig2.png)
+![HarnessWAM 架构总览](/images/wam-survey/harnesswam-fig2.webp)
 
 *HarnessWAM 论文 Figure 2，Task Manager 产出任务图，可执行空间投影把语义子目标编译成 WAM 支持的技能，快循环执行、慢循环在事件触发下决策。作者 Zhaopeng Gu 等，arXiv 2608.09516*
 
@@ -86,7 +86,7 @@ TempoWAM 是即插即用的执行方案，不碰 WAM 参数。Recurrent Progress
 
 RPM 的规模论文写得很具体。GRU 核心加动作编码器，配两层 MLP 投影，共 2.27M 参数，占骨干 FastWAM 的 0.038%。监控器换掉整条执行策略，成本接近零。论文还做了对照，固定 12 步重规划虽然把调用次数翻倍，成功率反而下降，说明问题不在重规划频率，在触发时机。
 
-![chunk 可靠性随任务阶段变化](/images/wam-survey/tempo-fig1.png)
+![chunk 可靠性随任务阶段变化](/images/wam-survey/tempo-fig1.webp)
 
 *TempoWAM 论文 Figure 1，Click Bell 任务三种固定执行窗口下的动作 L2 误差，困难阶段长窗口累积误差，简单阶段短窗口产生多余调用。作者 Feng Ye 等，arXiv 2608.09492*
 
@@ -98,7 +98,7 @@ RPM 的规模论文写得很具体。GRU 核心加动作编码器，配两层 ML
 
 端口哈密顿量的结构论文给了完整定义。潜转移由反对称算子加耗散项组成，控制端口负责外部注入。潜能量的变化等于注入的功减去非负的耗散功率，两边都为零时能量守恒。动量有对应的性质，哈密顿量沿某个潜方向不变、该方向又没有外力和耗散，对应动量分量就守恒。加速度由控制端口解释，摩擦由耗散项解释。潜惯量用 Cholesky 分解参数化，能量非可分离时的更新用隐式中点离散梯度，数值上保持结构。
 
-![ELWM 与 PC-NTF 系统总览](/images/wam-survey/elwm-fig1.png)
+![ELWM 与 PC-NTF 系统总览](/images/wam-survey/elwm-fig1.webp)
 
 *ELWM 论文 Figure 1，动作-响应能力经 ELWM 预测未来运动和潜物理动力学，PC-NTF 结合神经时间场输出导航策略，完整执行过程产生避障、物理知情的导航。作者 Yapeng Liu 等，arXiv 2608.09876*
 
@@ -137,7 +137,7 @@ WAM 被当作可扩展的预测仿真器用，前提是它真的像仿真器。W
 
 结论是系统性的。控制变化下动作实现普遍退化，交互接地和动力学有结构化失败，基准信号与人工判断、下游结果一致。落到工程上，很多 WAM 生成的视频好看，动作和运动之间对不上，拿它当仿真器训策略，训出来的东西不可信。WorldSimProbe 把 18000 多次实例的失败分布公开发出来，这是这周最有价值的一件可核验材料。
 
-![WorldSimProbe 五套件操作总览](/images/wam-survey/wsp-fig3.png)
+![WorldSimProbe 五套件操作总览](/images/wam-survey/wsp-fig3.webp)
 
 *WorldSimProbe 论文 Figure 3，五个套件从局部动作校准、全局与多源动作实现推进到交互接地和动力学，用套件专属评估器沿仿真器链定位失败。作者 Peterson Co 等，arXiv 2608.09298*
 
@@ -149,7 +149,7 @@ WAM 生成未来视频和动作主要靠视觉线索。SG-WAM 的摘要解释原
 
 问题出在指令进入生成的方式。指令只通过现成文本编码器的嵌入进入模型，CLIP、T5 这类，嵌入计算独立于视觉观测，两者不交汇。SG-WAM 的规划器往图像和指令序列后面附加可学习 query token，单次前向解码出两组语义预视。文本接地的一组和 SigLIP2 的未来帧特征对齐，空间感知的一组和 Depth Anything 3 对齐，分别承担指认目标和提供几何两件事。预视作为高层蓝图条件化视频专家，预训练生成能力不动。
 
-![SG-WAM 方法总览](/images/wam-survey/sg-fig1.png)
+![SG-WAM 方法总览](/images/wam-survey/sg-fig1.webp)
 
 *SG-WAM 论文 Figure 1，VLM 语义规划器预测文本接地和空间感知的语义预视，引导世界动作模型，使生成视频和动作都跟随语言指令。作者 Junjie He 等，arXiv 2608.08839*
 
@@ -159,7 +159,7 @@ VLA 自回归生成控制量，在线控制延迟被反复的前向推理压住�
 
 为什么现成的视觉特征不够，论文给了分析。VLA 的视觉骨干做的是图文预训练，训练目标不保留控制关键变量，物体位姿怎么演化、夹爪离物体多远，这类量都不在目标里。WA-SpecDec 的 World-Aware Bias 模块从当前观测算出一个空间对齐偏置，加进视觉 patch 嵌入，不新增 token。训练时挂一个下一帧潜目标辅助，推理时拆掉，只吃当前帧。接受规则原样保留，动的是草稿和目标共享的 prefill 状态，让宽松接受在接触附近也不放行危险偏差。
 
-![世界感知投机解码动机](/images/wam-survey/spec-fig1.png)
+![世界感知投机解码动机](/images/wam-survey/spec-fig1.webp)
 
 *WA-SpecDec 论文 Figure 1，同样的草稿-目标偏差在自由空间安全、在接触附近危险，固定 token 距离容差无法区分两种状态。作者 Zikang Wen 等，arXiv 2608.08725*
 

@@ -1,10 +1,10 @@
 ---
 title: "附录A：Rust 系统编程入门"
-description: ""
+description: "Rust 系统编程入门附录，汇总 rCore 教程、Stanford CS110L 等学习资源。"
 date: "2026-07-12"
 order: 12
 tags: ["附录", "Rust", "学习资源", "系统编程"]
-est_time: "15分钟"
+est_time: "15 分钟"
 ---
 ## Rust编程相关
 

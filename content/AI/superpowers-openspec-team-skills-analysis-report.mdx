@@ -5,8 +5,8 @@ description: "深入分析 superpowers-openspec-team-skills 项目——一个�
 tags: ["AI", "Superpowers", "OpenSpec", "工作流", "技能库", "Claude Code", "SDD"]
 ---
 
-> 项目地址：[github.com/SYZ-Coder/superpowers-openspec-team-skills](https://github.com/SYZ-Coder/superpowers-openspec-team-skills)
-> Stars：49 | Forks：15 | 许可证：MIT
+> 项目地址，[github.com/SYZ-Coder/superpowers-openspec-team-skills](https://github.com/SYZ-Coder/superpowers-openspec-team-skills)
+> Stars，49 | Forks，15 | 许可证，MIT
 
 ---
 
@@ -54,7 +54,7 @@ superpowers-openspec-team-skills/
 
 ### 2.1 工作流全览
 
-项目提供 5 个工作流，覆盖从探索到归档、再到学习反思的完整开发生命周期：
+项目提供 5 个工作流，覆盖从探索到归档、再到学习反思的完整开发生命周期。
 
 <MermaidDiagram chart={`flowchart TD
     A["superpowers-feature<br/>探索+设计+TDD+验证<br/>不含OpenSpec"] --> B["openspec-feature<br/>创建OpenSpec产物<br/>不含实现"]
@@ -67,44 +67,44 @@ superpowers-openspec-team-skills/
     C --> E
 `} />
 
-### 2.2 `openspec-superpowers-workflow` — 全流程入口
+### 2.2 `openspec-superpowers-workflow` ， 全流程入口
 
-**作用**：一个统一入口，协调从需求澄清到最终验证的完整路径。
+**作用**，一个统一入口，协调从需求澄清到最终验证的完整路径。
 
-**触发方式**：
+**触发方式**。
 ```
 Use $openspec-superpowers-workflow to run this feature from clarification through verification.
 ```
 
-**执行顺序**：
-1. 运行 `superpowers-feature-workflow` — 澄清需求、比较方案、确认设计
-2. 运行 `openspec-feature-workflow` — 创建 proposal、design、specs、tasks
-3. 回到 Superpowers 轨道 — 执行实现计划、TDD、验证
+**执行顺序**。
+1. 运行 `superpowers-feature-workflow` ， 澄清需求、比较方案、确认设计
+2. 运行 `openspec-feature-workflow` ， 创建 proposal、design、specs、tasks
+3. 回到 Superpowers 轨道 ， 执行实现计划、TDD、验证
 4. 归档 OpenSpec 变更（如项目使用归档流程）
 5. 更新 `.superpowers-memory/`（如已启用）
 
-**适用场景**：
+**适用场景**。
 - 需要一个端到端的统一入口
 - 不想自己决定步骤顺序
 - 非简单功能需要完整交付路径
 
-**关键门控**：
+**关键门控**。
 - 设计未批准前不得开始实现
 - OpenSpec 产物未完成前不得编码
 - 无验证证据前不得声称完成
 
 ---
 
-### 2.3 `superpowers-openspec-execution-workflow` — 四步显式路径
+### 2.3 `superpowers-openspec-execution-workflow` ， 四步显式路径
 
-**作用**：将开发过程显式分为四个阶段，强调探索→规范→执行→归档的顺序。
+**作用**，将开发过程显式分为四个阶段，强调探索→规范→执行→归档的顺序。
 
-**触发方式**：
+**触发方式**。
 ```
 Use $superpowers-openspec-execution-workflow for this feature: first explore with Superpowers, then lock the change with OpenSpec, then return to Superpowers for implementation, testing, verification, and archive.
 ```
 
-**四步流程**：
+**四步流程**。
 
 <MermaidDiagram chart={`flowchart LR
     S1["步骤1<br/>Superpowers<br/>探索与设计"] --> S2["步骤2<br/>OpenSpec<br/>锁定规范"]
@@ -119,7 +119,7 @@ Use $superpowers-openspec-execution-workflow for this feature: first explore wit
 | 3 | 执行 | 写实现计划、TDD、验证 | 不跳过测试 |
 | 4 | 归档 | 代码/测试/规范对齐后归档 | 不在规范未对齐时归档 |
 
-**与 `openspec-superpowers` 的区别**：
+**与 `openspec-superpowers` 的区别**。
 
 | 维度 | openspec-superpowers | superpowers-openspec-execution |
 |------|----------------------|-------------------------------|
@@ -129,11 +129,11 @@ Use $superpowers-openspec-execution-workflow for this feature: first explore wit
 
 ---
 
-### 2.4 `superpowers-feature-workflow` — Superpowers 工程纪律
+### 2.4 `superpowers-feature-workflow` ， Superpowers 工程纪律
 
-**作用**：仅使用 Superpowers 的探索、设计、计划、TDD、验证流程，不涉及 OpenSpec 产物。
+**作用**，仅使用 Superpowers 的探索、设计、计划、TDD、验证流程，不涉及 OpenSpec 产物。
 
-**执行流程**：
+**执行流程**。
 
 <MermaidDiagram chart={`flowchart TD
     A["1. 探索项目上下文<br/>读取 .superpowers-memory/"] --> B["2. 逐一澄清需求"]
@@ -147,49 +147,49 @@ Use $superpowers-openspec-execution-workflow for this feature: first explore wit
     I --> J["10. 记忆收尾<br/>更新 .superpowers-memory/"]
 `} />
 
-**适用场景**：
+**适用场景**。
 - 需要 brainstorming 或设计确认后再编码
 - 想要书面实现计划
 - 希望使用独立 worktree 隔离开发
 - 需要 TDD 和验证纪律
 - 不需要 OpenSpec 规范产物
 
-**文件输出**：
-- `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` — 设计文档
-- `docs/superpowers/plans/YYYY-MM-DD-<topic>.md` — 实现计划
+**文件输出**。
+- `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` ， 设计文档
+- `docs/superpowers/plans/YYYY-MM-DD-<topic>.md` ， 实现计划
 - 代码变更和测试
 - 更新的 `.superpowers-memory/` 文件（如已启用）
 
 ---
 
-### 2.5 `openspec-feature-workflow` — OpenSpec 规范产物流
+### 2.5 `openspec-feature-workflow` ， OpenSpec 规范产物流
 
-**作用**：仅创建和完成 OpenSpec 变更产物（proposal、design、specs、tasks），不涉及 TDD、worktree 或验证。
+**作用**，仅创建和完成 OpenSpec 变更产物（proposal、design、specs、tasks），不涉及 TDD、worktree 或验证。
 
-**执行流程**：
+**执行流程**。
 1. 确认或推导 kebab-case 变更名
 2. 创建 `openspec/changes/<change-name>/` 目录
 3. 运行 `openspec status --change "<change-name>" --json` 检查产物顺序
-4. 按依赖顺序完成产物：`proposal.md` → `design.md` → `specs/.../spec.md` → `tasks.md`
+4. 按依赖顺序完成产物，`proposal.md` → `design.md` → `specs/.../spec.md` → `tasks.md`
 5. 每写一个产物前先读 `openspec instructions <artifact> --change "<change-name>" --json`
 
-**适用场景**：
+**适用场景**。
 - 仓库策略要求 OpenSpec 规范先于编码
 - 用户明确要求先写 proposal/design/tasks
 - 行为变更需要持久的变更记录
 
-**关键约束**：
+**关键约束**。
 - 不得跳过依赖顺序
 - 不得将 instruction 元数据复制到产物文件
 - 产物未完成前不得开始编码
 
 ---
 
-### 2.6 `superpowers-learning-workflow` — 会话反思与记忆更新
+### 2.6 `superpowers-learning-workflow` ， 会话反思与记忆更新
 
-**作用**：在有意义的工作完成后，捕获应该跨会话保留的内容。
+**作用**，在有意义的工作完成后，捕获应该跨会话保留的内容。
 
-**执行流程**：
+**执行流程**。
 
 <MermaidDiagram chart={`flowchart TD
     A["1. 回顾近期工作、决策和验证证据"] --> B["2. 分类学习内容"]
@@ -206,7 +206,7 @@ Use $superpowers-openspec-execution-workflow for this feature: first explore wit
     E --> F["6. 总结应被记住的内容"]
 `} />
 
-**学习分类四桶**：
+**学习分类四桶**。
 
 | 桶 | 目标文件 | 特点 |
 |----|---------|------|
@@ -215,15 +215,15 @@ Use $superpowers-openspec-execution-workflow for this feature: first explore wit
 | 会话结果 | `session-journal/` | 短小精悍 |
 | 可复用模式 | `LEARNING_BACKLOG.md` | 可晋升为 checklist/rule/skill |
 
-**持久条目必要元数据**：
-- `id` — 唯一标识
-- `status` — 状态（candidate / confirmed / verified）
-- `confidence` — 置信度
-- `source` — 来源（空来源不得标记为 verified）
-- `last_updated` — 最后更新日期
-- `review_after` — 复查周期
+**持久条目必要元数据**。
+- `id` ， 唯一标识
+- `status` ， 状态（candidate / confirmed / verified）
+- `confidence` ， 置信度
+- `source` ， 来源（空来源不得标记为 verified）
+- `last_updated` ， 最后更新日期
+- `review_after` ， 复查周期
 
-**适用场景**：
+**适用场景**。
 - 有意义的工作刚完成
 - 希望下次会话继承正确上下文
 - 发现了反复出现的陷阱或可复用模式
@@ -235,7 +235,7 @@ Use $superpowers-openspec-execution-workflow for this feature: first explore wit
 
 ### 3.1 设计理念
 
-Superpowers Memory 是一套 **repo-owned 的跨会话记忆层**，不是自动学习系统。核心理念是：把 AI 从"每次从零开始"变成"从仓库恢复上下文"。
+Superpowers Memory 是一套 **repo-owned 的跨会话记忆层**，不是自动学习系统。核心理念是，把 AI 从"每次从零开始"变成"从仓库恢复上下文"。
 
 ### 3.2 记忆文件体系
 
@@ -269,7 +269,7 @@ Superpowers Memory 是一套 **repo-owned 的跨会话记忆层**，不是自动
 
 ### 3.3 分层采用模型
 
-项目引入了 **Core / Enhanced / Advanced** 三层采用模型，避免"功能越强，仓库越重"：
+项目引入了 **Core / Enhanced / Advanced** 三层采用模型，避免"功能越强，仓库越重"。
 
 | 维度 | Core | Enhanced | Advanced |
 |------|------|----------|----------|
@@ -281,24 +281,24 @@ Superpowers Memory 是一套 **repo-owned 的跨会话记忆层**，不是自动
 | 学习闭环 | 弱 | 中 | 强 |
 | 维护成本 | 低 | 中 | 高 |
 
-**Core 层**（最小可用）：
-- `PROJECT_CONTEXT.md` — 项目长期事实
-- `CURRENT_STATE.md` — 当前状态
-- `session-journal/` — 会话日志
-- `validate-superpowers-memory.*` — 校验脚本
+**Core 层**（最小可用）。
+- `PROJECT_CONTEXT.md` ， 项目长期事实
+- `CURRENT_STATE.md` ， 当前状态
+- `session-journal/` ， 会话日志
+- `validate-superpowers-memory.*` ， 校验脚本
 
-**Enhanced 层**（+ Core）：
-- `DECISIONS.md` — 决策记录
-- `KNOWN_FAILURES.md` — 失败模式
-- `VERIFICATION_BASELINE.md` — 验证基线
-- `TEAM_PREFERENCES.md` — 团队偏好
-- `memory-index.yaml` — 健康索引
+**Enhanced 层**（+ Core）。
+- `DECISIONS.md` ， 决策记录
+- `KNOWN_FAILURES.md` ， 失败模式
+- `VERIFICATION_BASELINE.md` ， 验证基线
+- `TEAM_PREFERENCES.md` ， 团队偏好
+- `memory-index.yaml` ， 健康索引
 - 检索、建议、收尾脚本
 
-**Advanced 层**（+ Enhanced）：
-- `USER_PROFILE.md` — 用户偏好
-- `AGENT_NOTES.md` — Agent 提醒
-- `LEARNING_BACKLOG.md` — 学习候选
+**Advanced 层**（+ Enhanced）。
+- `USER_PROFILE.md` ， 用户偏好
+- `AGENT_NOTES.md` ， Agent 提醒
+- `LEARNING_BACKLOG.md` ， 学习候选
 - 晋升草案生成脚本
 
 ### 3.4 治理脚本
@@ -313,14 +313,14 @@ Superpowers Memory 是一套 **repo-owned 的跨会话记忆层**，不是自动
 
 ### 3.5 记忆运作规则
 
-1. **稳定事实与会话笔记分离** — 不混入同一文件
-2. **会话日志保持短小** — 不是完整回顾
-3. **重要条目需要元数据** — id、source、confidence、review_after
-4. **有意义工作后更新记忆** — 设计批准后、实现验证后、重大决策后
-5. **记忆不等于自动激活权限** — 工作流仍是显式启用
-6. **优先修正而非堆叠** — 旧记忆有错就修，不叠加矛盾笔记
-7. **候选条目不是自动规则** — 反复出现才晋升
-8. **收尾前检查清单** — 确认状态、日志、元数据、晋升候选
+1. **稳定事实与会话笔记分离** ， 不混入同一文件
+2. **会话日志保持短小** ， 不是完整回顾
+3. **重要条目需要元数据** ， id、source、confidence、review_after
+4. **有意义工作后更新记忆** ， 设计批准后、实现验证后、重大决策后
+5. **记忆不等于自动激活权限** ， 工作流仍是显式启用
+6. **优先修正而非堆叠** ， 旧记忆有错就修，不叠加矛盾笔记
+7. **候选条目不是自动规则** ， 反复出现才晋升
+8. **收尾前检查清单** ， 确认状态、日志、元数据、晋升候选
 
 ---
 
@@ -328,7 +328,7 @@ Superpowers Memory 是一套 **repo-owned 的跨会话记忆层**，不是自动
 
 ### 4.1 支持的 AI 工具
 
-项目通过 `dist/` 目录和 `scripts/` 安装脚本为三种主流 AI 工具提供适配：
+项目通过 `dist/` 目录和 `scripts/` 安装脚本为三种主流 AI 工具提供适配。
 
 | 工具 | 适配方式 | 安装位置 |
 |------|---------|---------|
@@ -365,20 +365,20 @@ Superpowers Memory 是一套 **repo-owned 的跨会话记忆层**，不是自动
 .\scripts\install-superpowers-memory-integration.ps1 -Tool all -ProjectRoot <project-root>
 ```
 
-安装脚本支持通用参数：
-- `-DryRun` / `--dry-run`：预览不实际写入
-- `-Backup` / `--backup`：备份已有文件
-- `-Force` / `--force`：跳过覆盖确认
-- `-CheckDependencies` / `--check-dependencies`：检查运行时依赖
+安装脚本支持通用参数。
+- `-DryRun` / `--dry-run`，预览不实际写入
+- `-Backup` / `--backup`，备份已有文件
+- `-Force` / `--force`，跳过覆盖确认
+- `-CheckDependencies` / `--check-dependencies`，检查运行时依赖
 
 ### 4.4 显式激活原则
 
-安装后工作流**不会自动激活**，只有以下情况才生效：
+安装后工作流**不会自动激活**，只有以下情况才生效。
 - 用户显式命名工作流
 - 用户显式要求工作流风格
 - 仓库策略显式要求
 
-例如在 Codex 中：
+例如在 Codex 中。
 ```
 Use $superpowers-openspec-execution-workflow for this feature.
 ```
@@ -394,7 +394,7 @@ Use $superpowers-openspec-execution-workflow for this feature.
 
 ## 六、实际应用示例
 
-### 示例 1：新功能完整开发（全流程）
+### 示例 1，新功能完整开发（全流程）
 
 ```
 用户：Use $openspec-superpowers-workflow to implement user authentication.
@@ -407,7 +407,7 @@ Use $superpowers-openspec-execution-workflow for this feature.
 5. 记忆更新 → 更新 CURRENT_STATE.md → 写日志条目
 ```
 
-### 示例 2：四步显式路径
+### 示例 2，四步显式路径
 
 ```
 用户：Use $superpowers-openspec-execution-workflow for dark mode support.
@@ -419,7 +419,7 @@ Use $superpowers-openspec-execution-workflow for this feature.
 步骤4（归档）：确认对齐 → 归档变更 → 更新记忆
 ```
 
-### 示例 3：仅使用 Superpowers 工程纪律
+### 示例 3，仅使用 Superpowers 工程纪律
 
 ```
 用户：Use $superpowers-feature-workflow for the search performance fix.
@@ -434,7 +434,7 @@ Use $superpowers-openspec-execution-workflow for this feature.
 7. 更新 KNOWN_FAILURES.md → 写日志
 ```
 
-### 示例 4：仅使用 OpenSpec 规范
+### 示例 4，仅使用 OpenSpec 规范
 
 ```
 用户：Use $openspec-feature-workflow to create the change for rate limiting.
@@ -446,7 +446,7 @@ Use $superpowers-openspec-execution-workflow for this feature.
 4. 用户后续自行编码实现
 ```
 
-### 示例 5：会话后反思学习
+### 示例 5，会话后反思学习
 
 ```
 用户：Use $superpowers-learning-workflow to capture what this session taught us.
@@ -504,21 +504,21 @@ Use $superpowers-openspec-execution-workflow for this feature.
 
 ### 8.1 设计亮点
 
-1. **显式启用而非自动激活** — 避免了工作流成为默认行为污染日常编码
-2. **仓库拥有记忆** — 不依赖外部记忆服务，全部在 repo 内可追溯
-3. **分层采用模型** — Core/Enhanced/Advanced 让不同项目选择合适复杂度
-4. **双重分层结构** — 源工作流 vs 工具包，维护者和用户各得其所
-5. **晋升机制** — 学习不会停留在聊天记录中，可以逐步变成正式规则
-6. **治理脚本** — validate/search/suggest/closeout 形成完整的记忆治理工具链
-7. **三个决策门控** — 不设计不实现、不编码不实现、不验证不完成
+1. **显式启用而非自动激活** ， 避免了工作流成为默认行为污染日常编码
+2. **仓库拥有记忆** ， 不依赖外部记忆服务，全部在 repo 内可追溯
+3. **分层采用模型** ， Core/Enhanced/Advanced 让不同项目选择合适复杂度
+4. **双重分层结构** ， 源工作流 vs 工具包，维护者和用户各得其所
+5. **晋升机制** ， 学习不会停留在聊天记录中，可以逐步变成正式规则
+6. **治理脚本** ， validate/search/suggest/closeout 形成完整的记忆治理工具链
+7. **三个决策门控** ， 不设计不实现、不编码不实现、不验证不完成
 
 ### 8.2 当前局限
 
-1. **仅支持三个 AI 工具** — Codex、Cursor、Claude Code，暂不支持 Windsurf、Copilot 等
-2. **PowerShell 脚本为主** — Shell 版本为辅助，跨平台一致性待验证
-3. **无 runtime 级自动记忆** — 不像 Hermes 那样的自动编排
-4. **晋升机制需人工审核** — 没有自动 skill 演化
-5. **Advanced 层仍需持续治理** — 文件多、维护成本高
+1. **仅支持三个 AI 工具** ， Codex、Cursor、Claude Code，暂不支持 Windsurf、Copilot 等
+2. **PowerShell 脚本为主** ， Shell 版本为辅助，跨平台一致性待验证
+3. **无 runtime 级自动记忆** ， 不像 Hermes 那样的自动编排
+4. **晋升机制需人工审核** ， 没有自动 skill 演化
+5. **Advanced 层仍需持续治理** ， 文件多、维护成本高
 6. **记忆脚本的 Linux/macOS 验证不如 Windows 充分**
 
 ---
@@ -564,7 +564,7 @@ Use $superpowers-openspec-execution-workflow for this feature.
 
 ## 十、总结
 
-**superpowers-openspec-team-skills** 是一个设计精良的 AI 编程工作流技能库，其核心价值在于：
+**superpowers-openspec-team-skills** 是一个设计精良的 AI 编程工作流技能库，其核心价值在于。
 
 1. **让 AI 遵循结构化流程**，而非直接跳入代码
 2. **将探索、规范、执行、学习**四个阶段显式分离并协调
@@ -572,4 +572,4 @@ Use $superpowers-openspec-execution-workflow for this feature.
 4. **提供分层采用路径**，小项目从 Core 起步不感负担
 5. **内置治理工具链**，让记忆质量可校验、可检索、可晋升
 
-它不是一个全自动 agent 平台，而是一个**显式触发、repo-owned、可审计**的项目级知识体系——这正是其稳健性所在。
+它是一个**显式触发、repo-owned、可审计**的项目级知识体系，这正是其稳健性所在。

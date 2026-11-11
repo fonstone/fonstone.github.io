@@ -1,9 +1,10 @@
-﻿---
-title: "课程总览"
+---
+title: "课程总纲：AI Agent 互动教程"
 description: "AI Agent 体系化课程——从原理到实践，从构建到进化。"
 date: "2026-07-29"
 order: 0
 tags: ["目录", "课程体系", "AI Agent"]
+est_time: "25 分钟"
 ---
 
 ## AI Agent 体系化课程
@@ -38,6 +39,7 @@ tags: ["目录", "课程体系", "AI Agent"]
 | [08. 记忆与检索](08-memory-and-rag) | 第3章 | 用户记忆系统（三层次框架/四种存储格式/User as Code）、RAG 技术栈、混合检索、知识图谱 RAG |
 | [09. 上下文工程](09-context-engineering) | 第2章 | 上下文构成、Agent 状态栏、上下文压缩、提示注入防御 |
 | [10. 工具与协议](10-communication-protocols) | 第4章 | MCP 协议、工具分类（感知/执行/协作/事件/沟通）、事件驱动架构 |
+| [附 A. 工具系统与 MCP](17-tools-and-mcp) | 第4章补充 | 工具分类与设计原则、MCP 协议细节、事件驱动异步架构、主动工具发现 |
 
 ### 第四部分：进阶能力（11–13 章）
 
@@ -45,6 +47,7 @@ tags: ["目录", "课程体系", "AI Agent"]
 |------|----------|----------|
 | [11. Agentic-RL](11-agentic-rl) | 第7章 | 预训练-SFT-RL 三阶段、**SFT 记忆 vs RL 泛化**、GRPO、RLVP |
 | [12. 智能体评估](12-agent-evaluation) | 第6章 | 评估环境（工具调用型/人机交互型）、LLM-as-a-Judge、Rubric 四准则、统计显著性 |
+| [附 B. Agent 评估体系](19-agent-evaluation-deep) | 第6章补充 | 评估环境构建、数据集与任务规范、LLM-as-a-Judge、评估驱动的选型与持续改进 |
 | [13. Coding Agent](18-coding-agent) | 第5章 | 七个核心工具、OpenClaw 架构、Sessionless、提议者-审核者、安全 |
 
 ### 第五部分：进化与协作（14–16 章）

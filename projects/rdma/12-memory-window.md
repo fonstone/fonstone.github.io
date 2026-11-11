@@ -1,9 +1,10 @@
-﻿---
+---
 title: "RDMA 之 Memory Window"
 description: "详解 Memory Window 的概念、类型、绑定流程，以及 MW 如何实现对远程内存的细粒度动态访问控制。"
 date: "2026-07-19"
 order: 12
 tags: ["RDMA", "Memory Window", "MW", "远程访问"]
+est_time: "40 分钟"
 ---
 # RDMA 之 Memory Window
 
@@ -17,7 +18,7 @@ tags: ["RDMA", "Memory Window", "MW", "远程访问"]
 
 Memory Window简称MW，中文就翻译成内存窗口吧。是一种由用户申请的，用于让远端节点访问本端内存区域的RDMA资源。每个MW都会绑定（称为bind）在一个已经注册的MR上，但是它相比于MR可以提供更灵活的权限控制。MW可以粗略理解为是MR的子集，一个MR上可以划分出很多MW，每个MW都可以设置自己的权限。MW和MR的关系如下图所示：
 
-![](/images/rdma/33a08ecd9991f1986f87799d3711e125.png)
+![](/images/rdma/33a08ecd9991f1986f87799d3711e125.webp)
 
 MR与MW的关系
 
@@ -44,7 +45,7 @@ MR与MW的关系
 
 Key是一串数字，由两部分组成：24bit的Index以及8bit的Key：
 
-![](/images/rdma/95b69641f087245c22095adb5690f90c.png)
+![](/images/rdma/95b69641f087245c22095adb5690f90c.webp)
 
 L_Key/R_Key的组成
 
@@ -58,7 +59,7 @@ Memory Key按照用途分为两种，Local Key和Remote Key：
 
 我们在[SRQ](https://zhuanlan.zhihu.com/p/279904125 "SRQ")一文中描述过sge，sge由起始地址、长度和秘钥组成。用户在填写WR时，如果需要HCA访问本端内存，那么就需要通过一个sge的链表（sgl）来描述内存块，这里sge的秘钥填的就是L_Key，也就是下图中的key1和key3，他们分别是MR1的L_Key和MR2的L_Key。如果没有L_Key，那么任何一个本地用户进程都可以指挥硬件访问其他本地用户注册的MR的内容，硬件也难以高效的将虚拟地址翻译成物理地址。
 
-![](/images/rdma/0616396d278dc50d2eacb01b76a394cf.png)
+![](/images/rdma/0616396d278dc50d2eacb01b76a394cf.webp)
 
 L_Key的作用
 
@@ -68,7 +69,7 @@ L_Key的作用
 
 凡是RDMA操作（即Write/Read/Atomic），用户都要在WR中携带远端内存区域的R_Key。
 
-![](/images/rdma/deed32e4f49eadec9d04be3944d2a009.png)
+![](/images/rdma/deed32e4f49eadec9d04be3944d2a009.webp)
 
 R_Key的作用
 
@@ -128,7 +129,7 @@ MW在数据路径有一套独特的接口，分为Bind和Invalidate两类：
 
 Bind(ing)意为“绑定”，指的是将一个MW“关联”到一个已经注册的MR的指定范围上，并配置一定的读写权限。绑定的结果会产生一个R_key，用户可以把这个R_Key传递给远端节点用于远程访问。注意一个MW可以被多次绑定，一个MR上也可以绑定多个MW。如果一个MR还有被绑定的MW，那么这个MR是不能被取消注册的。
 
-![](/images/rdma/6ff6b03426ccc039378a44fbecd6b4dc.jpeg)
+![](/images/rdma/6ff6b03426ccc039378a44fbecd6b4dc.webp)
 
 Bind的软硬件交互
 
@@ -150,7 +151,7 @@ Bind有两种方式，一种是调用Post Send接口下发Bind MW WR，一种是
 
 上述两种操作的关系是这样的：
 
-![](/images/rdma/285d26a002985625abcf849320e93cab.png)
+![](/images/rdma/285d26a002985625abcf849320e93cab.webp)
 
 两种Bind操作的关系
 
@@ -171,7 +172,7 @@ Invalidate操作只能用于下文介绍的Type 2的MW。
 
 因为是本地操作，所以硬件收到这个WR之后也不会发送消息到链路上。
 
-![](/images/rdma/a946b8b017b22a887f2081ba9e158166.png)
+![](/images/rdma/a946b8b017b22a887f2081ba9e158166.webp)
 
 Local Invalidate操作的软硬件交互
 
@@ -180,7 +181,7 @@ Local Invalidate操作的软硬件交互
 
 远端无效操作。当一个远端用户不再使用一个R_Key之后，可以主动发送消息，让本端回收这个R_Key。远端用户下发一个带有此操作码的WR到SQ中，其硬件收到后，将会组装一个报文并发送到本端。本端硬件收到远端的Remote Invalidate操作之后，将会把对应的R_Key置为不可用状态。同Local Invalidate一样，此后对端将无法使用这个R_Key对对应的MW进行RDMA操作。
 
-![](/images/rdma/81faf3158bb980f5b1716bd46da5b3d9.png)
+![](/images/rdma/81faf3158bb980f5b1716bd46da5b3d9.webp)
 
 Remote Invalidate操作的软硬件交互
 

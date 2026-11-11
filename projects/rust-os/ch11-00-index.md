@@ -1,10 +1,10 @@
 ---
-title: "地址空间"
+title: "第 11 章索引：地址空间"
 description: "第 11 章（调度器）已完成，理解了任务切换与分时调度；本章为任务增加独立的地址空间，实现内存隔离。"
 date: "2026-07-12"
 order: 71
 tags: ["地址空间", "虚拟内存", "页表", "SV39", "内存隔离", "分页"]
-est_time: "20分钟"
+est_time: "20 分钟"
 ---
 # 本章目标
 
@@ -141,7 +141,7 @@ Test sleep OK!
 
 头甲龙操作系统 - Address Space OS的总体结构如下图所示：
 
-![../../os-lectures/lec5/figs/addr-space-os-detail.png](/images/rust-os/rcore/chapter4/addr-space-os-detail.png)
+![../../os-lectures/lec5/figs/addr-space-os-detail.png](/images/rust-os/rcore/chapter4/addr-space-os-detail.webp)
 
 通过上图，大致可以看出头甲龙操作系统 - Address Space OS为了提高操作系统和应用程序执行的安全性，增强了内存管理能力，提供了地址空间隔离机制，给APP的内存地址空间划界，不能越界访问OS和其他APP。在具体实现上，扩展了 TaskManager 的管理范围，每个 Task 的上下文 Task Context 还包括该任务的地址空间，在切换任务时，也要切换任务的地址空间。新增的内存管理模块主要包括与内核中动态内存分配相关的页帧分配、堆分配，以及表示应用地址空间的 Apps MemSets 类型和内核自身地址空间的 Kernel MemSet`类型。 `MemSet 类型所包含的页表 PageTable 建立了虚实地址映射关系，而另外一个 MemArea 表示任务的合法空间范围。
 

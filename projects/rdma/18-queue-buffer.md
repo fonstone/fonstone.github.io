@@ -4,6 +4,7 @@ description: "详解 RDMA Queue Buffer 的分配、管理与 DMA 映射，以及
 date: "2026-07-19"
 order: 18
 tags: ["RDMA", "Queue Buffer", "DMA", "缓冲区"]
+est_time: "40 分钟"
 ---
 # Queue Buffer
 

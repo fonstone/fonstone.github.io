@@ -1,4 +1,4 @@
-﻿---
+---
 title: "智能体发展史"
 description: "从符号主义到多智能体系统，自感知单体到分布式协作与 RL 融合的演进。"
 date: "2026-07-12"
@@ -12,7 +12,7 @@ est_time: "45 分钟"
 
 
 
-![](/images/courses/2-figures/1757246501849-00.png)
+![](/images/courses/2-figures/1757246501849-00.webp)
 
 *图 2.1 AI智能体的演进阶梯*
 
@@ -39,7 +39,7 @@ est_time: "45 分钟"
 
 
 
-![](/images/courses/2-figures/1757246501849-0.png)
+![](/images/courses/2-figures/1757246501849-0.webp)
 
 *图 2.2 物理符号系统的构成元素*
 
@@ -57,7 +57,7 @@ est_time: "45 分钟"
 
 
 
-![](/images/courses/2-figures/1757246501849-1.png)
+![](/images/courses/2-figures/1757246501849-1.webp)
 
 *图 2.3 专家系统的通用架构*
 
@@ -83,7 +83,7 @@ MYCIN是历史上最著名、最具影响力的专家系统之一，由斯坦福
 
 
 
-![](/images/courses/2-figures/1757246501849-2.png)
+![](/images/courses/2-figures/1757246501849-2.webp)
 
 *图 2.4 MYCIN反向链推理流程示意图*
 
@@ -98,7 +98,7 @@ MYCIN是历史上最著名、最具影响力的专家系统之一，由斯坦福
 
 
 
-![](/images/courses/2-figures/1757246501849-3.png)
+![](/images/courses/2-figures/1757246501849-3.webp)
 
 *图 2.5 SHRDLU的“积木世界”交互界面*
 
@@ -345,7 +345,7 @@ ELIZA的实践清晰地揭示了符号主义方法的核心矛盾：系统看似
 
 
 
-![](/images/courses/2-figures/1757246501849-4.png)
+![](/images/courses/2-figures/1757246501849-4.webp)
 
 *图 2.6 “心智社会”中搭建积木塔行为的涌现机制示意图*
 
@@ -385,7 +385,7 @@ ELIZA的实践清晰地揭示了符号主义方法的核心矛盾：系统看似
 
 
 
-![](/images/courses/2-figures/1757246501849-5.png)
+![](/images/courses/2-figures/1757246501849-5.webp)
 
 *图 2.7 符号主义与联结主义范式对比*
 
@@ -413,7 +413,7 @@ ELIZA的实践清晰地揭示了符号主义方法的核心矛盾：系统看似
 
 
 
-![](/images/courses/2-figures/1757246501849-6.png)
+![](/images/courses/2-figures/1757246501849-6.webp)
 
 *图 2.8 强化学习的核心交互循环*
 
@@ -444,7 +444,7 @@ ELIZA的实践清晰地揭示了符号主义方法的核心矛盾：系统看似
 
 
 
-![](/images/courses/2-figures/1757246501849-7.png)
+![](/images/courses/2-figures/1757246501849-7.webp)
 
 *图 2.9 “预训练-微调”范式示意图*
 
@@ -467,7 +467,7 @@ ELIZA的实践清晰地揭示了符号主义方法的核心矛盾：系统看似
 
 
 
-![](/images/courses/2-figures/1757246501849-8.png)
+![](/images/courses/2-figures/1757246501849-8.webp)
 
 *图 2.10 LLM驱动的智能体核心组件架构*
 
@@ -502,7 +502,7 @@ ELIZA的实践清晰地揭示了符号主义方法的核心矛盾：系统看似
 
 
 
-![](/images/courses/2-figures/1757246501849-9.png)
+![](/images/courses/2-figures/1757246501849-9.webp)
 
 *图 2.11 智能体发展演进时间线（未完全版）*
 
@@ -512,7 +512,7 @@ ELIZA的实践清晰地揭示了符号主义方法的核心矛盾：系统看似
 
 
 
-![](/images/courses/2-figures/1757246501849-10.png)
+![](/images/courses/2-figures/1757246501849-10.webp)
 
 *图 2.12 AI Agent 技术栈概览*
 

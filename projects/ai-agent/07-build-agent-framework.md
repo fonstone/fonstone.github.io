@@ -1,4 +1,4 @@
-﻿---
+---
 title: "构建你的 Agent 框架"
 description: "从 0 开始构建智能体框架 HelloAgents，版本迭代式开发。"
 date: "2026-07-12"
@@ -456,7 +456,7 @@ for chunk in llm.think(messages):
 相比于4.1.3节的基础实现，现在的HelloAgentsLLM具有以下显著优势：
 
 <p>表 7.1 HelloAgentLLM不同版本特性对比</p>
-  ![](/images/courses/7-figures/table-01.png)
+  ![](/images/courses/7-figures/table-01.webp)
 
 如上表7.1所示，这种演进体现了框架设计的重要原则：**从简单开始，逐步完善**。我们在保持接口简洁的同时，增强了功能的完整性。
 
@@ -1282,7 +1282,7 @@ print(f"数学专用Agent结果: {math_result}")
 如表7.2所示，通过这种框架化的重构，我们不仅保持了第四章中各种Agent范式的核心功能，还大幅提升了代码的组织性、可维护性和扩展性。所有Agent现在都共享统一的基础架构，同时保持了各自的特色和优势。
 
 <p>表 7.2 Agent不同章节实现对比</p>
-  ![](/images/courses/7-figures/table-02.png)
+  ![](/images/courses/7-figures/table-02.webp)
 
 ### 7.4.5 FunctionCallAgent
 
@@ -1662,7 +1662,7 @@ if __name__ == "__main__":
 
 
 
-![](/images/courses/7-figures/01.png)
+![](/images/courses/7-figures/01.webp)
 
 *图 7.1 基于Helloagents的SimpleAgent运行工作流*
 

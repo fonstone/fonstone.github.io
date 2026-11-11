@@ -1,7 +1,11 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import ProjectMdx from "@/components/projects/ProjectMdx";
 import MarkCompleteButton from "@/components/course/MarkCompleteButton";
+import { ChapterFooterLinks } from "@/components/RelatedContent";
+import ArticleEnhancements from "@/components/reading/ArticleEnhancements";
+import { getCourseMeta } from "@/lib/constants/courses";
 import {
   getProjectPost,
   getProjectStaticParams,
@@ -9,12 +13,57 @@ import {
   slugToProject,
   projectToSlug,
   getProjectCategories,
+  isChapterIndex,
 } from "@/lib/projects/projects";
+import {
+  SITE_AUTHOR,
+  SITE_DESCRIPTION,
+  SITE_NAME,
+  SITE_URL,
+  absoluteUrl,
+  toValidDate,
+} from "@/lib/constants/site";
 
 export const dynamicParams = false;
 
 export async function generateStaticParams() {
   return getProjectStaticParams();
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ project: string; slug: string }>;
+}): Promise<Metadata> {
+  const resolvedParams = await params;
+  const project = slugToProject(resolvedParams.project);
+  const data = await getProjectPost({ ...resolvedParams, project });
+  if (!data) return { title: "章节不存在" };
+
+  const { post } = data;
+  const pathname = `/projects/${projectToSlug(post.project)}/${post.slug}`;
+  const description = post.description ?? `${post.project} 课程章节，${post.title}`;
+
+  return {
+    title: post.title,
+    description,
+    keywords: post.tags,
+    alternates: { canonical: pathname },
+    openGraph: {
+      type: "article",
+      title: post.title,
+      description,
+      url: absoluteUrl(pathname),
+      siteName: SITE_NAME,
+      locale: "zh_CN",
+      publishedTime: toValidDate(post.date)?.toISOString(),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: post.title,
+      description,
+    },
+  };
 }
 
 export default async function ProjectPostPage({
@@ -37,9 +86,34 @@ export default async function ProjectPostPage({
   const idx = posts.findIndex((p) => p.slug === post.slug);
   const prev = idx > 0 ? posts[idx - 1] : null;
   const next = idx >= 0 && idx < posts.length - 1 ? posts[idx + 1] : null;
+  const pathname = `/projects/${projSlug}/${post.slug}`;
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: post.title,
+    description: post.description ?? SITE_DESCRIPTION,
+    datePublished: toValidDate(post.date)?.toISOString(),
+    inLanguage: "zh-CN",
+    keywords: post.tags.join(", "),
+    author: { "@type": "Person", name: SITE_AUTHOR, url: SITE_URL },
+    isPartOf: {
+      "@type": "Course",
+      name: post.project,
+      url: absoluteUrl(`/projects/${projSlug}`),
+    },
+    mainEntityOfPage: { "@type": "WebPage", "@id": absoluteUrl(pathname) },
+  };
 
   return (
-    <div className="flex gap-8">
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c"),
+        }}
+      />
+      <div className="flex gap-8">
       <article className="flex-1 min-w-0">
         <header className="flex flex-col gap-3 mb-8">
           <nav className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
@@ -51,7 +125,7 @@ export default async function ProjectPostPage({
               href={`/projects/${projSlug}`}
               className="hover:text-blue-500 transition-colors"
             >
-              {post.project}
+              {getCourseMeta(projSlug)?.shortTitle ?? post.project}
             </Link>
             <span className="text-slate-300 dark:text-slate-600">/</span>
             <span className="text-slate-500 dark:text-slate-400 line-clamp-1">
@@ -86,7 +160,7 @@ export default async function ProjectPostPage({
           <ProjectMdx source={mdxSource} format={post.filePath.endsWith(".mdx") ? "mdx" : "md"} />
         </div>
 
-        {(projSlug === "autosar-functional-safety" || projSlug === "ai-infra" || projSlug === "ai-agent" || projSlug === "qemu" || projSlug === "chcore" || projSlug === "rust-learning" || projSlug === "rust-os") && (
+        {!isChapterIndex(post.slug) && (
           <div className="mt-8 flex justify-center">
             <MarkCompleteButton projectSlug={projSlug} chapterSlug={post.slug} />
           </div>
@@ -126,6 +200,9 @@ export default async function ProjectPostPage({
             )}
           </nav>
         )}
+
+        <ChapterFooterLinks courseSlug={projSlug} />
+        <ArticleEnhancements />
       </article>
 
       {headings.length > 0 && (
@@ -151,6 +228,7 @@ export default async function ProjectPostPage({
           </div>
         </aside>
       )}
-    </div>
+      </div>
+    </>
   );
 }

@@ -4,7 +4,7 @@ description: "在上一节介绍了如何在用户态实现对多线程的管理
 date: "2026-07-12"
 order: 47
 tags: ["内核态线程", "线程管理", "TCB", "内核"]
-est_time: "40分钟"
+est_time: "40 分钟"
 ---
 ## 本节导读
 
@@ -457,7 +457,7 @@ impl ProcessControlBlockInner {
 
 可以看到进程控制块中有一个名为 task\_res\_allocator 的通用分配器，同时还提供了 alloc\_tid 和 dealloc\_tid 两个接口来分别在创建线程和销毁线程的时候分配和回收 TID 。除了 TID 之外，每个线程都有自己独立的用户栈和 Trap 上下文，且它们在所属进程的地址空间中的位置可由 TID 计算得到。参考新的进程地址空间如下图所示：
 
-![app-as-full-with-threads.png](/images/rust-os/rcore/chapter8/app-as-full-with-threads.png)
+![app-as-full-with-threads.png](/images/rust-os/rcore/chapter8/app-as-full-with-threads.webp)
 
 可以看到，在低地址空间中，在放置完应用 ELF 的所有段之后，会预留 4KiB 的空间作为保护页，得到地址 ustack\_base ，这部分实现可以参考创建应用地址空间的 MemorySet::from\_elf ， ustack\_base 即为其第二个返回值。接下来从 ustack\_base 开始按照 TID 从小到大的顺序向高地址放置线程的用户栈，两两之间预留一个保护页放置栈溢出。在高地址空间中，最高的虚拟页仍然作为跳板页，跳板页中放置的是只读的代码，因此线程之间可以共享。然而，每个线程需要有自己的 Trap 上下文，于是我们在跳板页的下面向低地址按照 TID 从小到大的顺序放置线程的 Trap 上下文。也就是说，只要知道线程的 TID ，我们就可以计算出线程在所属进程地址空间内的用户栈和 Trap 上下文的位置，计算方式由下面的代码给出：
 

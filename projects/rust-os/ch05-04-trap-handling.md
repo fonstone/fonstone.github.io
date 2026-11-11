@@ -4,7 +4,7 @@ description: "由于处理器具有硬件级的特权级机制，应用程序在
 date: "2026-07-12"
 order: 35
 tags: ["trap", "特权级切换", "上下文保存", "系统调用", "RISC-V"]
-est_time: "50分钟"
+est_time: "50 分钟"
 ---
 ## 本节导读
 
@@ -606,7 +606,7 @@ challenge: 支持多核，实现多个核运行用户程序。
 
 见下图
 
-![./interrupts.png](/images/rust-os/rcore/chapter3/interrupts.png)
+![./interrupts.png](/images/rust-os/rcore/chapter3/interrupts.webp)
 
 4. \* 如何判断进入操作系统内核的起因是由于中断还是异常？
 

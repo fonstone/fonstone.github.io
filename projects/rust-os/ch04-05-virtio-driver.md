@@ -4,7 +4,7 @@ description: "本节主要介绍了QEMU模拟的RISC-V计算机中的virtio设�
 date: "2026-07-12"
 order: 28
 tags: ["virtio", "驱动", "虚拟设备", "队列"]
-est_time: "35分钟"
+est_time: "35 分钟"
 ---
 ## 本节导读
 
@@ -16,7 +16,7 @@ est_time: "35分钟"
 
 Rusty Russell 在2008年左右设计了virtio协议，并开发了相应的虚拟化解决方案 lguest，形成了VirtIO规范（Virtual I/O Device Specification）。其主要目的是为了简化和统一虚拟机（Hypervisor）的设备模拟，并提高虚拟机环境下的I/O性能。virtio 协议是对hypervisor 中的一组通用模拟设备的抽象，即virtio协议定义了虚拟设备的输入/输出接口。而基于virtio协议的I/O设备称为virtio设备。下图列出了两种在虚拟机中模拟外设的总体框架。
 
-![../../os-lectures/lec13/figs/two-hypervisor-io-arch.png](/images/rust-os/rcore/chapter9/two-hypervisor-io-arch.png)
+![../../os-lectures/lec13/figs/two-hypervisor-io-arch.png](/images/rust-os/rcore/chapter9/two-hypervisor-io-arch.webp)
 
 在上图左侧的虚拟机模拟外设的传统方案中，如果guest VM 要使用底层 host主机的资源，需要 Hypervisor 截获所有的I/O请求指令，然后模拟出这些I/O指令的行为，这会带来较大的性能开销。
 
@@ -44,7 +44,7 @@ Rusty Russell 在2008年左右设计了virtio协议，并开发了相应的虚�
 
 另外，各种类型的virtio设备，如块设备（virtio-blk）、网络设备（virtio-net）、键盘鼠标类设备（virtio-input）、显示设备（virtio-gpu）具有共性特征和独有特征。对于共性特征，virtio设计了各种类型设备的统一抽象接口，而对于独有特征，virtio尽量最小化各种类型设备的独有抽象接口。这样，virtio就形成了一套通用框架和标准接口（协议）来屏蔽各种hypervisor的差异性，实现了guest VM和不同hypervisor之间的交互过程。
 
-![../../os-lectures/lec13/figs/compatable-hypervisors-io-arch.png](/images/rust-os/rcore/chapter9/compatable-hypervisors-io-arch.png)
+![../../os-lectures/lec13/figs/compatable-hypervisors-io-arch.png](/images/rust-os/rcore/chapter9/compatable-hypervisors-io-arch.webp)
 
 上图意味着什么呢？它意味着在guest VM 上看到的虚拟设备具有简洁通用的优势，这对运行在guest VM上的操作系统而言，可以设计出轻量高效的设备驱动程序（即上图的 Front-end drivers）。
 
@@ -56,7 +56,7 @@ virtio设备是虚拟外设，存在于QEMU模拟的RISC-V 64 virt 计算机中�
 
 总体上看，virtio 架构可以分为上中下三层，上层包括运行在QEMU模拟器上的前端操作系统中各种驱动程序（Front-end drivers）；下层是在QEMU中模拟的各种虚拟设备 Device；中间层是传输（transport）层，就是驱动程序与虚拟设备之间的交互接口，包含两部分：上半部是virtio接口定义，即I/O数据传输机制的定义：virtio 虚拟队列（virtqueue）；下半部是virtio接口实现，即I/O数据传输机制的具体实现：virtio-ring，主要由环形缓冲区和相关操作组成，用于保存驱动程序和虚拟设备之间进行命令和数据交互的信息。
 
-![virtio-arch.png](/images/rust-os/rcore/chapter9/virtio-arch.png)
+![virtio-arch.png](/images/rust-os/rcore/chapter9/virtio-arch.webp)
 
 操作系统中virtio 驱动程序的主要功能包括：
 
@@ -72,7 +72,7 @@ Qemu或Hypervisor中virtio 设备的主要功能包括：
 
 运行在Qemu中的操作系统中的virtio 驱动程序和Qemu模拟的virtio设备驱动的关系如下图所示：
 
-![../../os-lectures/lec13/figs/virtio-driver-device.png](/images/rust-os/rcore/chapter9/virtio-driver-device.png)
+![../../os-lectures/lec13/figs/virtio-driver-device.png](/images/rust-os/rcore/chapter9/virtio-driver-device.webp)
 
 ### I/O设备基本组成结构
 
@@ -174,7 +174,7 @@ virtqueue由三部分组成（如下图所示）：
 - 可用环 Available Ring：一种vring，记录了virtio设备驱动程序发出的I/O请求索引，即被virtio设备驱动程序更新的描述符索引的集合，需要virtio设备进行读取并完成相关I/O操作；
 - 已用环 Used Ring：另一种vring，记录了virtio设备发出的I/O完成索引，即被virtio设备更新的描述符索引的集合，需要vrtio设备驱动程序进行读取并对I/O操作结果进行进一步处理。
 
-![../../os-lectures/lec13/figs/virtqueue-arch.png](/images/rust-os/rcore/chapter9/virtqueue-arch.png)
+![../../os-lectures/lec13/figs/virtqueue-arch.png](/images/rust-os/rcore/chapter9/virtqueue-arch.webp)
 
 **描述符表 Descriptor Table**
 
@@ -339,7 +339,7 @@ impl VirtIOHeader {
 3. 设备完成I/O处理或出错后，将结果作为I/O响应放入已用环中，并以某种通知机制（如外部中断）通知CPU；
 4. 驱动程序解析已用环，获得I/O响应的结果，在进一步处理后，最终返回给用户进程。
 
-![vring.png](/images/rust-os/rcore/chapter9/vring.png)
+![vring.png](/images/rust-os/rcore/chapter9/vring.webp)
 
 ### **发出I/O请求的过程**
 

@@ -4,6 +4,7 @@ description: "从下载 QEMU 源码、注册自定义 Quard-Star 仿真板，到
 date: "2026-06-27"
 order: 1
 tags: ["QEMU", "RISC-V", "嵌入式", "Bootloader", "Quard-Star"]
+est_time: "60 分钟"
 ---
 
 本篇对应原教程 ch0–ch4，是整个"基于 qemu-riscv 从 0 构建嵌入式 Linux 系统"学习路线的起点。目标是不使用真实开发板、也不使用 QEMU 自带的 ELF 快速加载方式，而是定制一块属于自己的虚拟板卡 **Quard-Star**，从 CPU 上电执行第一条指令开始，一步步把系统跑起来。
@@ -14,7 +15,7 @@ tags: ["QEMU", "RISC-V", "嵌入式", "Bootloader", "Quard-Star"]
 
 在动手之前，先建立全局视图。整个 Quard-Star 项目的硬件架构、软件启动流程与内存分布如下三图所示，后续所有章节都是围绕这三张图展开的。
 
-![Quard-Star 硬件架构](/images/qemu/img3.png)
+![Quard-Star 硬件架构](/images/qemu/img3.webp)
 
 硬件上，Quard-Star 是一颗多核 RISC-V SoC 仿真：内部包含 maskrom、sram、ddr、多组 uart、CLINT/PLIC 中断控制器、pflash、virtio、fw_cfg、rtc、syscon 等外设 IP，全部由 QEMU 模拟代码注册到系统总线上。
 
@@ -46,7 +47,7 @@ tags: ["QEMU", "RISC-V", "嵌入式", "Bootloader", "Quard-Star"]
   CPU --> SYSCON
 `} />
 
-![Quard-Star 软件流程](/images/qemu/img4_zh_CN.png)
+![Quard-Star 软件流程](/images/qemu/img4_zh_CN.webp)
 
 软件启动呈多级 BootLoader 结构：maskrom(BL0) → lowlevelboot(BL1) → opensbi(BL2) → u-boot → linux kernel，并存在一个独立的 trusted-domain 运行 RTOS。
 
@@ -59,7 +60,7 @@ tags: ["QEMU", "RISC-V", "嵌入式", "Bootloader", "Quard-Star"]
     D -->|"mret U模式"| G["trusted-domain<br/>core7 RTOS/裸机"]
 `} />
 
-![Quard-Star 内存分布](/images/qemu/img5.png)
+![Quard-Star 内存分布](/images/qemu/img5.webp)
 
 内存上，pflash 存放所有低阶固件与设备树资源，DDR 高地址划分出 opensbi 安全域与 trusted-domain 区域，其余供 linux 内核使用。
 
@@ -103,7 +104,7 @@ sudo apt install ninja-build pkg-config libglib2.0-dev libpixman-1-dev \
 
 解压 QEMU 源码后编写 `build.sh`，先在不修改源码的情况下编译：
 
-![build.sh 目录结构](/images/qemu/ch1-0.png)
+![build.sh 目录结构](/images/qemu/ch1-0.webp)
 
 ```bash
 SHELL_FOLDER=$(cd "$(dirname "$0")";pwd)
@@ -529,7 +530,7 @@ config QUARD_STAR
 
 本节核心是新增 `hw/riscv/quard_star.c` 与 `.h` 文件定义虚拟板卡，并将其加入 QEMU 编译体系。
 
-![ch2 新增源文件](/images/qemu/ch2-0.png)
+![ch2 新增源文件](/images/qemu/ch2-0.webp)
 
 ### 3.2 源码解析
 
@@ -714,7 +715,7 @@ static PFlashCFI01 *quard_star_flash_create(RISCVVirtState *s,
 CROSS_PREFIX=/opt/riscv64--glibc--bleeding-edge-2020.08-1/bin/riscv64-linux-
 ```
 
-![交叉编译器下载](/images/qemu/ch4-0.png)
+![交叉编译器下载](/images/qemu/ch4-0.webp)
 
 ### 5.2 编写 lowlevelboot 代码
 
@@ -786,7 +787,7 @@ $SHELL_FOLDER/output/qemu/bin/qemu-system-riscv64 \
   -nographic --parallel none
 ```
 
-![串口打印验证](/images/qemu/ch4-1.png)
+![串口打印验证](/images/qemu/ch4-1.webp)
 
 看到 "Hello Quard Star board!" 输出即说明外设添加与固件均正常。本节 tag：`ch4`。
 

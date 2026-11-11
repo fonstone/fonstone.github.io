@@ -25,7 +25,7 @@ tags: ["OS", "超低时延", "光计算", "光互连", "体系结构"]
     F --> D
 `} />
 
-![流星一号的系统结构，微腔光频梳、波长解复用、MZI 网格、探测和 ADC 连成一条光路（eLight 2025 图 1）](/images/ultra-low-latency/meteor1-architecture.jpg)
+![流星一号的系统结构，微腔光频梳、波长解复用、MZI 网格、探测和 ADC 连成一条光路（eLight 2025 图 1）](/images/ultra-low-latency/meteor1-architecture.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">流星一号的系统结构，微腔光频梳、波长解复用、MZI 网格、探测和 ADC 连成一条光路（eLight 2025 图 1）</p>
 
@@ -39,7 +39,7 @@ tags: ["OS", "超低时延", "光计算", "光互连", "体系结构"]
 
 论文的另一个结论是，靠波长并行可以把算力提升两个数量级，而不用扩大芯片面积。这个结论有条件，它假设光源的梳齿数、调制器带宽和探测带宽都能同步扩展。任何一环跟不上，并行度就上不去。
 
-![100 个波长的光谱和输出，梳齿间隔 50GHz，图中标出 f1 到 f100（eLight 2025 图 3）](/images/ultra-low-latency/meteor1-spectrum.jpg)
+![100 个波长的光谱和输出，梳齿间隔 50GHz，图中标出 f1 到 f100（eLight 2025 图 3）](/images/ultra-low-latency/meteor1-spectrum.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">100 个波长的光谱和输出，梳齿间隔 50GHz，图中标出 f1 到 f100（eLight 2025 图 3）</p>
 
@@ -53,7 +53,7 @@ tags: ["OS", "超低时延", "光计算", "光互连", "体系结构"]
 
 这两颗芯片代表了两种路线。PACE 走专用求解器，把光矩阵乘用在 Ising 和 Max-Cut 这类迭代问题上，光路的低延迟优势能直接兑现。论文报告，单次迭代 5 纳秒，对比 NVIDIA A10 的 2300 纳秒以上，差约 500 倍。Lightmatter 走通用加速，用自适应块浮点格式处理不同精度的层，目标是让同一颗芯片跑多种模型。两条路线都还没有解决通用编程的问题，前者绑定问题类型，后者绑定模型结构。
 
-![PACE 的系统实现，PIC 和 EIC 通过 flip-chip 封装，右上角是矩阵规模与器件数的关系（Nature 2025 图 2）](/images/ultra-low-latency/pace-system.jpg)
+![PACE 的系统实现，PIC 和 EIC 通过 flip-chip 封装，右上角是矩阵规模与器件数的关系（Nature 2025 图 2）](/images/ultra-low-latency/pace-system.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">PACE 的系统实现，PIC 和 EIC 通过 flip-chip 封装，右上角是矩阵规模与器件数的关系（Nature 2025 图 2）</p>
 
@@ -76,7 +76,7 @@ tags: ["OS", "超低时延", "光计算", "光互连", "体系结构"]
 
 上海交大团队在 Nature Communications 2026 年报告了薄膜 PZT 电光调制器，四个波长通道都实现超过 100GHz 的调制带宽，论文摘要给的记录值是 110GHz。计算密度 266 TOPS/mm²，16 通道波分复用芯片的吞吐是 1.92 TOPS，数字识别准确率 95.64%，求解时变偏微分方程的精度 94.5%。非易失调谐只需要 0.05 纳瓦，相比热光方案低了很多个数量级。光互连模式下，16 个调制器各 130Gbps，合计 2.08Tbps，线密度 9.24Tbps/mm。
 
-![PZT 调制器的晶圆、器件截面和 S21 响应，四个周期的调制带宽都超过 100GHz（Nature Communications 2026 图 2）](/images/ultra-low-latency/pzt-modulator.jpg)
+![PZT 调制器的晶圆、器件截面和 S21 响应，四个周期的调制带宽都超过 100GHz（Nature Communications 2026 图 2）](/images/ultra-low-latency/pzt-modulator.webp)
 
 <p className="mt-2 mb-8 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">PZT 调制器的晶圆、器件截面和 S21 响应，四个周期的调制带宽都超过 100GHz（Nature Communications 2026 图 2）</p>
 

@@ -4,7 +4,7 @@ description: "应用程序员在开发并发应用的过程中，经常由于各
 date: "2026-07-12"
 order: 62
 tags: ["并发", "竞争条件", "死锁", "活锁", "饥饿"]
-est_time: "30分钟"
+est_time: "30 分钟"
 ---
 ## 本节导读
 
@@ -137,7 +137,7 @@ unsafe fn thr2() -> ! {
 
 当线程thr1持有锁mutex1，正在等待另外一个锁mutex2，而线程thr2持有锁mutex2，正在等待另外一个锁mutex1时，死锁就产生了。
 
-![dead-lock.png](/images/rust-os/rcore/chapter8/dead-lock.png)
+![dead-lock.png](/images/rust-os/rcore/chapter8/dead-lock.webp)
 
 对于这个代码，可以很容易避免死锁：
 
@@ -175,7 +175,7 @@ unsafe fn thr2() -> ! {
 
 我们需要知道，不安全状态并不等于死锁，而是指有死锁的可能性。安全状态和不安全状态的区别是：从安全状态出发，操作系统通过调度线程执行序列，能够保证所有线程都能完成，一定不会出现死锁；而从不安全状态出发，就没有这样的保证，可能出现死锁。
 
-![avoid-dead-lock.png](/images/rust-os/rcore/chapter8/avoid-dead-lock.png)
+![avoid-dead-lock.png](/images/rust-os/rcore/chapter8/avoid-dead-lock.webp)
 
 #### 银行家算法的数据结构
 

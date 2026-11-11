@@ -9,7 +9,7 @@ tags: ["自动驾驶", "VLA", "Qwen-Drive", "BEV", "视觉语言模型", "运动
 
 8 月 31 日 arXiv 挂出一篇 Qwen 团队和华中科技大学合写的稿子，编号 2609.00111，标题 Qwen-Drive-1.0。权重当天放到 HuggingFace 和 ModelScope，仓库落在 QwenLM 名下，Qwen/Qwen-Drive-1.0-4B。我把 arXiv 的 HTML 全文和 alphaXiv 的注释页对着读了一遍，表里的数字逐个核对过。核心做法一句话能讲完，一个预训练好的视觉语言模型架构完全不动，外挂两个模块，就同时输出 3D 检测框、语义占用、地图分割、场景问答和未来 5 秒的自车轨迹。
 
-![性能总览](/images/qwen-drive/intro.png)
+![性能总览](/images/qwen-drive/intro.webp)
 
 *论文 Figure 1，Qwen-Drive-1.0 在驾驶 VQA、通用 VQA、3D 感知和运动规划四块的表现概览，模型保留通用能力的同时把驾驶指标抬上去。*
 
@@ -33,7 +33,7 @@ Qwen-Drive-1.0 的处理对象是多视角摄像头序列、时间图像帧和�
 
 模型主体是 Qwen3.5-4B，原生多模态。视觉编码器把每张图转成视觉 token，VLM 把 token 和文本提示一起编码，自回归生成回答。两个外部模块从这条共享通路取特征，不改 VLM 结构。BEV 感知头融合视觉编码器特征和 VLM 输出特征，构造 BEV 表示，做 3D 检测、语义占用和地图分割。规划专家拿缓存的 VLM key 和 value 条件化轨迹 token，用流匹配生成未来自车运动。
 
-![统一架构](/images/qwen-drive/qwendrive_overview.png)
+![统一架构](/images/qwen-drive/qwendrive_overview.webp)
 
 *论文 Figure 2，共享视觉编码器和 VLM 支撑文本生成，外部 BEV 感知头输出几何预测，规划专家输出未来轨迹。*
 
@@ -49,7 +49,7 @@ BEV 表示的关键一步，是把 2D 图像放到 3D 空间里。单目图像�
 
 聚合出的 BEV 特征同时服务三个任务分支。3D 检测用 DETR 式解码器，deformable attention 在 BEV 特征上精修目标查询。语义占用把 BEV 特征沿高度展开，和保留垂直结构的体积融合，浅 3D UNet 逐体素预测语义。地图分割用 UNet 式头在 BEV 平面上栅格化车道线、人行横道等元素。
 
-![外部模块](/images/qwen-drive/head.png)
+![外部模块](/images/qwen-drive/head.webp)
 
 *论文 Figure 3，(a) BEV 感知头融合体素化的视觉编码器特征和 VLM 输出的特征金字塔，(b) 规划专家用缓存的 VLM key 和 value 条件化带噪轨迹 token，恢复干净轨迹。*
 
@@ -73,7 +73,7 @@ BEV 表示的关键一步，是把 2D 图像放到 3D 空间里。单目图像�
 
 训练分四步。前两步把 BEV 感知头初始化出来，并把共享通路适配到显式 3D 预测。后两步在固定的表示上训练规划专家。
 
-![训练配方](/images/qwen-drive/training_recipe.png)
+![训练配方](/images/qwen-drive/training_recipe.webp)
 
 *论文 Figure 4，四阶段训练流程。前两阶段适配共享视觉语言通路，先初始化 BEV 感知头，再用感知和 VQA 监督更新视觉编码器和 VLM。后两阶段在固定表示上先流匹配再基于奖励优化训练规划专家。火焰表示可训练，雪花表示冻结。*
 
@@ -123,7 +123,7 @@ BEV 表示的关键一步，是把 2D 图像放到 3D 空间里。单目图像�
 
 两套都有缺口，各自补。nuScenes 缺 generic_object 的占用注释，从 3D 框生成伪标签，只改已经带语义标签的体素。OpenScene 缺可行驶类，用 nuPlan 矢量地图把路面内原本标成背景的地面体素改标成可行驶。地图分割不重映射现有栅格，两套矢量地图在共享六类 schema 下在线栅格化，可行驶面、道路线、路沿、人行横道、步道加背景。
 
-![标签统一](/images/qwen-drive/occ_process_vis.png)
+![标签统一](/images/qwen-drive/occ_process_vis.webp)
 
 *论文 Figure 5，(a) 各任务统一与标签补全策略，(b) nuScenes 和 OpenScene 占用标签处理前后对比。两套数据集体素尺寸和坐标系不同，不能直接混。*
 
@@ -137,7 +137,7 @@ BEV 表示的关键一步，是把 2D 图像放到 3D 空间里。单目图像�
 
 先用 Qwen3.5-Plus 把提示和回答重写成统一对话 schema，源注释仍是后面一致性过滤的参照。重写统一了格式，但不去验证源注释本身对错，所以再用 Qwen3.5-Flash 判每条改写后的回答和源注释是否语义一致，只保留一致的样本。这一步把 5.53M 条筛到 3.09M 条，保留率 55.9%。重写时把大部分选择题转成开放式问答，也留一部分保持选择题形式，保住这种指令类型。保留集里多视角占 61.6%，单视角 20.1%，单视角时序 10.1%，多视角时序 4.4%，视频 3.7%。
 
-![视觉语言数据](/images/qwen-drive/data_analysis.png)
+![视觉语言数据](/images/qwen-drive/data_analysis.webp)
 
 *论文 Figure 6，(a) 过滤后 3.09M 条公开驾驶样本的输入格式分布，(b) 第二阶段 1.54M 训练集的组成，(c) 覆盖多种道路环境、光照和天气的样本场景。*
 
@@ -180,7 +180,7 @@ nuScenes 上检测比 BEVFormerV2* 高 2.01 mAP，NDS 高 3.05，地图 mIoU 比
 
 跨数据集迁移是另一道坎。nuScenes-only 的头到 OpenScene 上只有 16.50 NDS，不到自己在 nuScenes 上 34.13 的一半。混合源训练把 OpenScene NDS 抬到 41.86，但标签语义和注释管线的残差给 nuScenes 带来负迁移，占用 mIoU 掉 26.6%。机器生成的 OpenScene 体素标签带源特有的语义和构造伪影，联合适配后 OpenScene 占用两项变化都小于 0.3 分，检测和地图却明显改善。这就是为什么 Qwen-Drive-1.0-SFT 检测和地图领先、占用却不领先。
 
-![感知可视化](/images/qwen-drive/perception_vis.png)
+![感知可视化](/images/qwen-drive/perception_vis.webp)
 
 *论文 Figure 7，Qwen-Drive-1.0-SFT 在 OpenScene 和 nuScenes 验证集的定性结果，每行是 3D 检测、语义占用、BEV 地图分割输出。OpenScene 里预处理没能完全去掉路面上方的浮动体素，预测反而把这些伪影压下去，正确恢复了路面语义。*
 
@@ -213,7 +213,7 @@ nuScenes 上检测比 BEVFormerV2* 高 2.01 mAP，NDS 高 3.05，地图 mIoU 比
 
 和其它专用模型比这个保留更显眼。Qwen-Drive-1.0-SFT 在 15 个设置里 10 个打平或超过 Cosmos-Reason2-32B，平均高 5.48 分。几个专用模型在部分基准上直接给无效输出，说明强的领域专门化不一定保住跨任务都要的通用指令跟随接口。座舱驾驶一体化下，一个车端模型要同时应付座舱的对话、开放式视觉查询和驾驶感知规划，Qwen-Drive-1.0-SFT 驾驶能力到手、通用组差不到一分、空间组反而涨，一个实例能覆盖两个域，省掉单独座舱模型的算力和维护成本。
 
-![VQA 定性对比](/images/qwen-drive/drivevqa-vis1.png)
+![VQA 定性对比](/images/qwen-drive/drivevqa-vis1.webp)
 
 *论文 Figure 8，驾驶 VQA 定性对比，绿标正确、红标错误。四组分别验证时间范围理解、规划因果推理、跨视角距离感知和自车道识别。*
 
@@ -270,11 +270,11 @@ AlpaSim 分不能单独看。DriveWAM 的 at-fault 分 0.53 最高，但进展�
 
 SimWAM 反过来，策略明显更激进，频繁加速前冲却对前车和障碍物减速不足，进展 62.0%，at-fault 近距离率 22.0%、越野率 19.0%，at-fault 分只有 0.30。Qwen-Drive-1.0-RL 在 48.0% 进展下把 at-fault 近距离压到 11.0%、越野压到 12.0%，评估闭环驾驶确实要进展、安全事件、AlpaSim 分一起看。
 
-![规划可视化](/images/qwen-drive/planning_vis.png)
+![规划可视化](/images/qwen-drive/planning_vis.webp)
 
 *论文 Figure 9，(a) WOD-E2E 测试集和 PAI-AV 的开环预测，看到横穿动物减速、跟右转专用车道、绕过停着的车横向调整，(b) AlpaSim 两条闭环 rollout，跟车过绿灯、红灯停下、右转时被超车做横向调整。*
 
-![RL 效果](/images/qwen-drive/navsim-rl.png)
+![RL 效果](/images/qwen-drive/navsim-rl.webp)
 
 *论文 Figure 10，同一个 NAVSIM 左转场景上强化学习前后的轨迹，红色是预测、绿色是记录未来。RL 修掉一段小幅横向偏离，把轨迹拉回更符合打分标准的位置，和 PDMS 提升一致。*
 
@@ -310,7 +310,7 @@ NAVSIM 单源训练，PDMS 奖励加位移项从 90.4 涨到 90.8。NAVSIM、WOD
 
 感知通路还能直接跑在训练没见过的相机设备上。论文从 WOD-E2E 的八相机环视和 PAI-AV 的六相机采样，完整环视都不在感知训练数据里，去畸变到针孔模型后直接跑。投影框跨视角看起来合理，占用和地图输出路面、物体区域、可行驶区域、车道线、路沿都连贯。两个数据集都没有统一感知真值，所以只证明通路在新设备上还能运作、输出定性连贯，不能当 3D 精度证据，需要目标平台带高质量标注的量化评估。
 
-![跨设备感知](/images/qwen-drive/ood_perception_vis.png)
+![跨设备感知](/images/qwen-drive/ood_perception_vis.webp)
 
 *论文 Figure 13，Qwen-Drive-1.0-SFT 在未见相机设备上的定性感知输出，WOD-E2E 在 (a,b)、PAI-AV 在 (c,d)，都是只有预测没有真值。*
 
@@ -328,27 +328,27 @@ NAVSIM 单源训练，PDMS 奖励加位移项从 90.4 涨到 90.8。NAVSIM、WOD
 
 推理式规划把两件事接到一起。输入多视角时序图像、历史轨迹和导航指令，模型先给一句话理由，再输出一串 JSON 航点。红灯路口跟车减速这种场景，理由和轨迹在相机视图和 BEV 视图里都和真值贴合。附录 C 里 LingoQA 的时间范围题更直白，问最后有几辆停着的车，Qwen-Drive-1.0-SFT 答没有，Qwen3.5-4B 把停在路中间的车也算进去了。
 
-![相机 3D grounding](/images/qwen-drive/grounding_vis_wide_turn.jpg)
+![相机 3D grounding](/images/qwen-drive/grounding_vis_wide_turn.webp)
 
 *论文附录 B.1，给定相机内参，从单张图恢复三辆车的度量级 3D 框。*
 
-![红绿灯检测](/images/qwen-drive/traffic_light_vis.jpg)
+![红绿灯检测](/images/qwen-drive/traffic_light_vis.webp)
 
 *论文附录 B.2，一帧检出十二个信号对象，每个带类型、朝向和对当前路口的相关性。*
 
-![施工区检测](/images/qwen-drive/roadwork_vis.jpg)
+![施工区检测](/images/qwen-drive/roadwork_vis.webp)
 
 *论文附录 B.3，施工区识别作业车、管状标、锥桶共十三例。*
 
-![路面标识理解](/images/qwen-drive/vladbench_pavement_marking.jpg)
+![路面标识理解](/images/qwen-drive/vladbench_pavement_marking.webp)
 
 *论文附录 B.4，中国高速单虚线黄线语义理解，八个对比方法全错，Qwen-Drive-1.0-SFT 选对专用车道。*
 
-![推理式规划输入](/images/qwen-drive/navsim_coc_traj_input.jpg)
+![推理式规划输入](/images/qwen-drive/navsim_coc_traj_input.webp)
 
 *论文附录 B.5 输入，多视角时序图像、历史轨迹与导航指令。*
 
-![推理式规划输出](/images/qwen-drive/navsim_coc_traj_vis.jpg)
+![推理式规划输出](/images/qwen-drive/navsim_coc_traj_vis.webp)
 
 *论文附录 B.5 输出，一句话理由加 JSON 航点，相机视图和 BEV 视图与真值贴合。*
 

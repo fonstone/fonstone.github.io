@@ -1,4 +1,4 @@
-﻿---
+---
 title: "构建赛博小镇"
 description: "Agent 与游戏结合，模拟社会动态的多智能体交互。"
 date: "2026-07-12"
@@ -38,7 +38,7 @@ est_time: "70 分钟"
 
 
 
-![](/images/courses/15-figures/15-1.png)
+![](/images/courses/15-figures/15-1.webp)
 
 *图 15.1 赛博小镇技术架构*
 
@@ -50,7 +50,7 @@ est_time: "70 分钟"
 
 
 
-![](/images/courses/15-figures/15-2.png)
+![](/images/courses/15-figures/15-2.webp)
 
 *图 15.2 数据流转过程*
 
@@ -152,7 +152,7 @@ Godot 的安装非常简单，Windows 提供了直接打开的`.exe`文件，Mac
 
 
 
-![](/images/courses/15-figures/15-3.png)
+![](/images/courses/15-figures/15-3.webp)
 
 *图 15.3 赛博小镇游戏场景*
 
@@ -162,7 +162,7 @@ Godot 的安装非常简单，Windows 提供了直接打开的`.exe`文件，Mac
 
 
 
-![](/images/courses/15-figures/15-4.png)
+![](/images/courses/15-figures/15-4.webp)
 
 *图 15.4 与 NPC 对话界面*
 
@@ -238,7 +238,7 @@ NPC Agent 的工作流程如图 15.5 所示：
 
 
 
-![](/images/courses/15-figures/15-5.png)
+![](/images/courses/15-figures/15-5.webp)
 
 *图 15.5 NPC Agent 工作流程*
 
@@ -302,7 +302,7 @@ npc_wang = {
 
 
 
-![](/images/courses/15-figures/15-6.png)
+![](/images/courses/15-figures/15-6.webp)
 
 *图 15.6 记忆系统架构*
 
@@ -350,7 +350,7 @@ def process_dialogue(agent, player_message):
 
 
 
-![](/images/courses/15-figures/15-7.png)
+![](/images/courses/15-figures/15-7.webp)
 
 *图 15.7 批量生成 vs 传统模式*
 
@@ -521,7 +521,7 @@ async def background_dialogue_update():
 
 
 
-![](/images/courses/15-figures/15-8.png)
+![](/images/courses/15-figures/15-8.webp)
 
 *图 15.8 好感度等级划分*
 
@@ -549,7 +549,7 @@ async def background_dialogue_update():
 
 
 
-![](/images/courses/15-figures/15-9.png)
+![](/images/courses/15-figures/15-9.webp)
 
 *图 15.9 好感度计算流程*
 
@@ -686,7 +686,7 @@ def create_npc_agent_with_affinity(npc_id: str, name: str, role: str,
 
 
 
-![](/images/courses/15-figures/15-10.png)
+![](/images/courses/15-figures/15-10.webp)
 
 *图 15.10 后端应用结构*
 
@@ -878,7 +878,7 @@ API 路由的调用流程如图 15.11 所示：
 
 
 
-![](/images/courses/15-figures/15-11.png)
+![](/images/courses/15-figures/15-11.webp)
 
 *图 15.11 API 调用流程*
 
@@ -1091,7 +1091,7 @@ Player (CharacterBody2D)  ← 根节点,负责物理移动
 
 
 
-![](/images/courses/15-figures/15-12.png)
+![](/images/courses/15-figures/15-12.webp)
 
 *图 15.12 赛博小镇的四个核心场景*
 
@@ -1647,7 +1647,7 @@ func _on_npcs_request_completed(_result: int, response_code: int, _headers: Pack
 
 
 
-![](/images/courses/15-figures/15-13.png)
+![](/images/courses/15-figures/15-13.webp)
 
 *图 15.13 对话 UI 结构*
 
@@ -1862,7 +1862,7 @@ func get_npc_node(npc_name: String) -> Node2D:
 
 
 
-![](/images/courses/15-figures/15-14.png)
+![](/images/courses/15-figures/15-14.webp)
 
 *图 15.14 前后端通信完整流程*
 
@@ -1902,7 +1902,7 @@ func get_npc_node(npc_name: String) -> Node2D:
 
 
 
-![](/images/courses/15-figures/15-15.png)
+![](/images/courses/15-figures/15-15.webp)
 
 *图 15.15 赛博小镇技术栈*
 

@@ -1,0 +1,333 @@
+---
+title: "store buffer、invalidate queue 与五种语言的内存模型"
+description: "从多核共享文档的类比讲清 MESI、store buffer、invalidate queue 和内存屏障，再对比 C、C++、Java、Go、Rust 的内存模型、原子顺序与指令代价。"
+date: "2026-11-12"
+tags: ["内存模型", "缓存一致性", "MESI", "内存屏障", "C++", "Java", "Go", "Rust", "C"]
+---
+
+## 一、两个核，一段会失败的代码
+
+McKenney 在 2010 年的《Memory Barriers, a Hardware View for Software Hackers》里给过一段两核代码。变量 `a` 和 `b` 初始都是 0，CPU 0 执行 `foo`，CPU 1 执行 `bar`。
+
+```c
+void foo(void) {
+    a = 1;
+    b = 1;
+}
+
+void bar(void) {
+    while (b == 0) continue;
+    assert(a == 1);
+}
+```
+
+按代码顺序看，`a = 1` 在 `b = 1` 前面。CPU 1 看到 `b == 1` 时，`a` 应该已经是 1。McKenney 的结论是，这段代码在真实机器上可能让断言失败。代码顺序没有变，其他核看到这些写的顺序变了。变化来自两个队列，写路径上的 store buffer 和读路径上的 invalidate queue。
+
+写这篇之前，我把 McKenney 的论文、Linux 内核的内存屏障文档和几份语言规范对了一遍。硬件部分的口径主要来自前两份，语言部分按各自的正式文档。
+
+## 二、把四个核想成四个办公室
+
+先把四个核想成一栋楼里的四个办公室。每个办公室墙上贴着一份共享文档的本地副本，楼中央的档案柜存着原件。办公室改文档时，不直接跑到档案柜前排队。它把改好的那页放进出门文件盘，继续干别的事。送件员会按自己的节奏把文件送到其他办公室，顺便更新档案柜。
+
+别的办公室改了同一份文档，会寄来一张「你墙上那份作废」的通知。办公室收到通知，先签收，把通知放进收件盘，等手头这段活干完再处理。签收不等于已经处理，收件盘里的通知可能还躺着。
+
+这就是两个队列的分工。出门文件盘对应 store buffer，收件盘对应 invalidate queue。写屏障像一条规矩，继续写下一份文件前，先把出门盘里已经放进去的文件排到后面文件前面，不让新文件插队。读屏障像另一条规矩，读下一份文件前，先把收件盘里的作废通知处理完。全屏障两条都做。
+
+| 生活对象 | 技术对象 |
+| --- | --- |
+| 办公室 | CPU 核 |
+| 墙上那份共享文档 | cache line 的本地副本 |
+| 中央档案柜 | 主存 |
+| 出门文件盘 | store buffer |
+| 收件盘 | invalidate queue |
+| 作废通知 | invalidate message |
+| 签收 | invalidate acknowledge |
+| 清空出门盘 | 把 store buffer 里的写排到前面 |
+| 处理收件盘 | 处理 invalidate queue 里的失效请求 |
+| 写屏障 | write barrier，也叫 store barrier |
+| 读屏障 | read barrier，也叫 load barrier |
+| 全屏障 | full barrier |
+
+这个类比只解释两件事，写和读为什么各自排队，屏障为什么只约束本核的队列。它不解释 MESI 的四个状态怎么迁移，也不解释缓存行大小、伪共享和编译器重排。办公室自己写的文件，自己读的时候会先从出门盘里找，这个动作对应 store forwarding。它让本核看到自己的写，也让本核更容易忽略其他核还没看到这些写。类比里的排队和签收看起来像等对方收件，硬件屏障只画顺序线，不保证所有核已经看到。
+
+## 三、MESI 管的是同一行，不是先后
+
+MESI 把每个 cache line 标成四种状态，modified、exclusive、shared、invalid。modified 表示这行被本核改过，其他核的副本已经失效，主存里的值可能是旧的。exclusive 表示这行只在本核，主存是最新的。shared 表示至少还有一个核也拿着这行，本核要写就得先发失效消息。invalid 表示这行是空的。
+
+这套协议解决的是同一行的副本问题。两个核同时读同一行，协议保证它们最终看到同一个值。两个变量落在不同的 cache line 上时，协议不负责规定哪个写先被其他核看到。store buffer 和 invalidate queue 就是在这个范围内工作的。
+
+假设 `x` 和 `y` 在两个不同的 cache line 上。CPU 0 先把 `x` 改成 1，再把 `y` 改成 1。CPU 1 可能先看到 `y == 1`，再看到 `x == 0`。MESI 保证 `x` 行和 `y` 行各自的副本最终一致，不保证两行之间的先后。
+
+单核没有这个问题。一个核读写自己的缓存，代码顺序就是它看到的顺序。加入多核和私有缓存以后，同一份数据有了多个副本，MESI 把副本的一致性接过去。到这里，两个核最终会同意某个变量的值，但某个核什么时候看到另一个核的写，仍然没有保证。
+
+日常说的 CPU 乱序执行，常把三件事混在一起。流水线里的指令调度、store buffer 造成的写可见顺序变化、invalidate queue 造成的读顺序变化。前一件是执行层面的乱序，后两件是内存操作在核外的可见顺序变化。内存屏障约束的是后两件，编译器重排还要另外约束。
+
+## 四、写路径上的 store buffer
+
+写操作要等 MESI 的失效确认。CPU 0 要写一个不在自己缓存里的行，得先发 read invalidate，等其他核把行交出来并失效。这段时间 CPU 0 不想干等，于是把新值放进 store buffer，继续执行后面的指令。等到行到手，再把 store buffer 里的值应用到缓存。
+
+store buffer 让写命中和写缺失走了两条路。写命中且本核独占这行时，新值可以直接进缓存。写缺失时，新值先在 store buffer 里排队。排队的那条写，可能比后面一条写更晚被其他核看到。
+
+如果本核随后读同一个变量，它不能只查缓存。缓存里还是旧值，新值在 store buffer 里。CPU 会把 store buffer 也查一遍，这个动作叫 store forwarding。举个具体的例子，本核执行 `a = 1; b = a + 1;`。如果读 `a` 只查缓存，会读到 0，`b` 变成 1。store forwarding 让读 `a` 先查 store buffer，读到 1，`b` 才是 2。它保证本核至少能看到自己的写，不至于出现自相矛盾的结果。
+
+store forwarding 只照顾本核。其他核看不到这个缓冲区，它们只能等送件员把写送到。
+
+回到开头那段代码。假设 `a` 所在的行只在 CPU 1 的缓存里，`b` 所在的行由 CPU 0 独占。CPU 0 执行 `a = 1`，缓存缺失，把 1 放进 store buffer，发 read invalidate。接着执行 `b = 1`，这行已经在 CPU 0 手里，1 直接进缓存。CPU 1 正在自旋等 `b`，它读到 1，跳出循环，然后读 `a`。此时 CPU 0 的 read invalidate 还没走完，CPU 1 手里的 `a` 还是 0。断言失败。
+
+把 `smp_mb()` 放在 `a = 1` 和 `b = 1` 之间，CPU 0 后面的写就不能越过前面的写。它可以把后面的写先留在 store buffer 里，等前面的写应用到缓存再放行。CPU 1 看到 `b == 1` 时，`a` 的写已经排在前面。McKenney 用 `smp_mb()` 表示全屏障，用户态 C 对应 `atomic_thread_fence(memory_order_seq_cst)`，C++ 对应 `std::atomic_thread_fence(std::memory_order_seq_cst)`。
+
+## 五、读路径上的 invalidate queue
+
+写路径上的排队问题解决了，读路径上还有一处。CPU 0 改了一个在 CPU 1 缓存里共享的行，会发 invalidate 消息。CPU 1 如果正忙着读写自己的缓存，处理失效请求可能要等。为了不让 CPU 0 干等确认，CPU 1 可以先把消息放进 invalidate queue，立刻回一个 acknowledge。CPU 0 收到确认，继续走。CPU 1 的实际失效动作可以晚一点做。
+
+假设 CPU 1 的缓存里有 `x = 0`。CPU 0 把 `x` 改成 1，发来失效通知。CPU 1 先签收，通知还在收件盘里。这时 CPU 1 读 `x`，缓存命中，读到的还是 0。等收件盘处理完，再读才是 1。
+
+晚做的失效会让后面的读拿到旧值。CPU 1 的缓存里还留着那行，读命中，读到的就是旧值。invalidate queue 把收到失效消息和实际让本地副本失效拆成了两步。
+
+还是 `foo` 和 `bar`，这次假设 `a` 在 CPU 1 的缓存里是 shared，`b` 由 CPU 0 独占。CPU 0 写 `a = 1`，发 invalidate。CPU 1 把消息放进 invalidate queue，立刻确认。CPU 0 写 `b = 1`，这行在自己手里，直接进缓存。CPU 1 自旋看到 `b == 1`，然后读 `a`。`a` 的失效请求还在收件盘里，缓存里仍是旧值，断言失败。
+
+在 `bar` 的自旋后面加一条读屏障，CPU 1 会把收件盘里当前的失效请求标记出来，后面的读必须等这些请求处理完。`a` 的失效被处理掉，再读 `a` 就能拿到新值。
+
+## 六、屏障划的是顺序线
+
+写屏障、读屏障、全屏障的分工到这里就清楚了。常见分法是这三种，Linux 文档把地址依赖屏障单列一类，又把 acquire 和 release 作为两种单向操作。写屏障管 store buffer，读屏障管 invalidate queue，全屏障两边都管。McKenney 的文章还提到，很多架构把读屏障和写屏障做成两条更弱的指令，全屏障则是两条都做。
+
+写屏障可以看成 `x = 1; smp_wmb(); y = 1;`。其他核看到 `y == 1` 时，`x = 1` 已经排在前面。读屏障可以看成 `while (y == 0); smp_rmb(); read(x);`。读 `x` 之前，收件盘里关于 `x` 的失效通知已经处理完。全屏障把这两条都做。
+
+屏障划的是一条顺序线。Linux 内核的内存屏障文档写得很直接，不保证屏障之前的访问在屏障指令完成时已经完成。它保证的是其他核看到的顺序，屏障之前的访问排在屏障之后的访问前面。把屏障理解成等所有前面的操作都做完，会写出错误的预期。
+
+屏障还有作用范围。它只约束执行屏障的那个核。CPU 0 发了写屏障，CPU 1 没有配对的读屏障或 acquire，CPU 1 仍然可能按自己的顺序看这些写。两个核要配对，单边加屏障不够。比如 CPU 0 写了 `x` 再写 `y`，只发写屏障；CPU 1 读了 `y` 再读 `x`，却没有读屏障。CPU 1 仍可能先看到 `y` 的新值，再看到 `x` 的旧值。
+
+全屏障最省心，代价通常也更高。Linux 文档把 acquire 和 release 单独列出来。release 保证它之前的读写排在 release 写之前，acquire 保证它之后的读写排在 acquire 读之后。一个 release store 和一个读到这个值的 acquire load 配对，就能建立跨核的先后关系。它们只约束一个方向，比全屏障轻。
+
+## 七、编译器也在重排，语言内存模型接手
+
+硬件只是第一层。编译器也会重排。它可以把一个写挪到循环外面，可以把两次读合并，可以在寄存器里缓存一个值。CPU 的屏障指令管不了编译器，编译器的屏障也管不了 CPU。一段代码要在多核上正确，得同时约束这两层。
+
+举个编译器重排的例子。读线程用非 volatile 的 `done` 写 `while (!done) {}`。编译器可以把 `done` 的读提到循环外面，只读一次，循环永远不退出。JLS 17.3 就给了这个例子，用来说明 `Thread.sleep` 和 `Thread.yield` 没有同步语义。
+
+语言内存模型就是这份约束的规则集。它不规定编译器生成哪条指令，也不规定 CPU 怎么排队。它规定一个多线程程序允许出现哪些读值结果。C、C++、Java、Go、Rust 都提供一条基本保证，没有数据竞争的程序可以按顺序一致的方式执行，通常叫 DRF-SC。Go 内存模型明确说，这个目标和 C、C++、Java、JavaScript、Rust、Swift 一致。
+
+数据竞争的定义各家差不多，两个线程访问同一个位置，至少一个是写，而且没有 happens-before 关系。happens-before 是语言定义的先后关系，前面的写对后面的读可见。分歧在竞争之后会发生什么。C、C++、Rust 把它定为未定义行为。Java 和 Go 没有采用这种定义，它们用允许的执行来描述竞争程序，读仍然要读到某个真实写过的值，不能凭空造值。
+
+这套规则不是一开始就有。C 和 C++ 在 C11 和 C++11 才把多线程内存模型写进标准，Java 的旧模型由 JSR-133 重写，Go 在 2022 年改了内存模型，Rust 的原子规则跟随 C++20。
+
+Java 和 Go 的选择有各自的目标。JSR-133 的 FAQ 把错误同步程序的行为定义列为目标，目的是减少安全风险。Go 内存模型说，这样能让出错程序更容易调试。C 和 C++ 选了另一条路，编译器可以把竞争程序当成不存在。
+
+## 八、C 和 C++，同一套原子词汇
+
+C11 标准里出现了 `<stdatomic.h>`、`_Atomic` 和 `memory_order`，C23 草案 N3096 继续保留这套接口。原子对象的 load 和 store 默认用 `memory_order_seq_cst`，要更弱的顺序就显式写 `atomic_load_explicit`、`atomic_store_explicit` 和 `memory_order_acquire`、`memory_order_release`。`atomic_thread_fence` 单独提供栅栏，`atomic_signal_fence` 只约束编译器和同线程的信号处理函数，不生成硬件栅栏。
+
+C 标准把数据竞争写成未定义行为。N3096 第 5.1.2.4 节的定义是，两个不同线程的冲突动作，至少一个不是原子的，而且没有 happens-before 关系，这样的执行包含数据竞争，结果是未定义行为。
+
+`volatile` 在 C 里不是线程同步工具。C 标准把同步操作限定为原子操作和互斥量，`volatile` 访问不在其中。它的用途更窄，约束编译器不要把这个对象的访问优化掉。常见用途是 MMIO 寄存器，以及 C 标准明确提到的 `volatile sig_atomic_t` 信号处理场景。拿 `volatile int` 当跨线程标志，编译器可能不重排这个变量的访问，但 CPU 和缓存仍然可以重排，语言也不保证其他线程什么时候看到。
+
+假设写线程执行 `data = 42; flag = 1;`。如果 `flag` 是 `volatile int`，编译器不会把 `flag` 的访问优化掉，但 CPU 仍可能让其他核先看到 `flag == 1`，后看到 `data == 42`。把 `flag` 换成 `atomic_int`，写用 `memory_order_release`，读用 `memory_order_acquire`，才能建立先后关系。
+
+C++11 标准把内存模型写进了语言，N3337 里已经有 `<atomic>`、`std::atomic`、`memory_order` 和 `atomic_thread_fence`。`std::atomic<T>` 的 `store` 和 `load` 默认也是 `seq_cst`。`memory_order_relaxed` 只保证这个原子操作本身不可分割，不建立跨线程的先后关系。`release` store 和读到它的 `acquire` load 配对，才能把 store 之前的写带给读线程。
+
+`seq_cst` 比 acquire 和 release 多一条全局总序。C++ 草案的 `atomics.order` 一节规定，所有 `seq_cst` 操作存在一个单一总序 S，每个线程看到的顺序不能和这个总序冲突。Dekker 模式里两个线程各写一个变量，再读对方的变量，acquire 和 release 单独配对不够，`seq_cst` 才能排除两个读都看到旧值的结果。
+
+C11 和 C++11 的 `memory_order` 里还有 `consume`，它依赖数据依赖，实际代码很少用。当前 C++ 草案的枚举里不再列出 `consume`，C23 仍然保留。
+
+C++ 的数据竞争同样是未定义行为。C++ 草案的 `intro.races` 一节的措辞和 C 很接近，两个潜在并发的冲突动作，至少一个不是原子的，又没有 happens-before 关系，执行就有数据竞争，行为未定义。
+
+`volatile` 在 C++ 里也不是同步。标准说它的语义由实现定义，作用是提示实现不要对这个对象做激进优化，某些实现还会为它生成特殊的硬件访问指令。它和 C 的 `volatile` 意图相同，和 Java 的 `volatile` 不是一回事。C 和 C++ 的原子写法几乎一样，标准是两份，编译器和运行库的实现可以不同。
+
+C 和 C++ 的原子类型不保证无锁。C 提供 `atomic_is_lock_free`，C++ 提供 `is_lock_free`，让实现报告某个类型是否用锁实现。机器字大小的原子类型通常能落到硬件指令，更大的结构体可能退化成内部锁。比如 `std::atomic<long long>` 在 64 位机器上通常是一条指令，`std::atomic<BigStruct>` 可能内部加锁。选类型时，别只看 `std::atomic<T>` 的名字，先看它在这台机器上是不是无锁。
+
+## 九、Java，volatile 是同步动作
+
+Java 的内存模型在 JLS 第 17 章。它用 synchronization order、happens-before 和 causality 来描述一次执行允许读到哪些值。`volatile` 读和 `volatile` 写都是同步动作，写一个 volatile 变量 synchronizes-with 后续读这个变量的线程，因此写之前的普通写对读线程可见。`synchronized` 的 unlock 和后续 lock 也建立同样的关系。
+
+Java 的 `volatile` 在 JSR-133 之后被加强了。JSR-133 的 FAQ 说，在旧模型里 volatile 写可以和普通变量访问重排，新模型把 volatile 写当成 monitor release，把 volatile 读当成 monitor acquire。这样 `data = 42; ready = true;` 里的 `data` 写就能被读到 `ready == true` 的线程看到。FAQ 还提醒，两个线程必须访问同一个 volatile 变量，release 和 acquire 要配对。
+
+`final` 字段有额外的初始化安全保证。JLS 17.5.1 用 freeze 动作描述它，构造器结束时 freeze 针对 final 字段发生，正确构造的对象发布出去以后，其他线程看到引用时也能看到构造器里写好的 final 字段值。这个保证不覆盖普通字段。
+
+假设一个 `Point` 类有两个 final 字段 `x` 和 `y`，构造器里写 `x = 1; y = 2;`。对象正确构造后，把引用放到一个普通字段里，另一个线程拿到引用时，能看到 `x == 1` 和 `y == 2`，不需要额外同步。普通字段没有这个保证。
+
+Java 9 的 `VarHandle` 把顺序控制做得更细。它提供 plain、opaque、acquire、release、volatile 几种访问模式，还有 `fullFence`、`acquireFence`、`releaseFence`、`loadLoadFence`、`storeStoreFence`。`setVolatile` 的文档说它的内存顺序效果和 C++ 的 `memory_order_seq_cst` 兼容。Java 没有把数据竞争定义成未定义行为，JLS 描述的是允许的执行集合，读不能凭空读到从未写过的值。
+
+Java 的 `volatile long` 和 `volatile double` 读写是原子的。普通 `long` 和 `double` 在 32 位平台上可能被拆成两次 32 位访问，JLS 17.7 专门写了这个例外。假设 32 位平台上有一个非 volatile 的 `long value`。写线程写 `0x0000000100000002`，读线程可能读到高 32 位来自新值、低 32 位来自旧值的组合，得到一个从未写过的数。`volatile long` 不会出现这种撕裂。跨线程共享 64 位值时，声明成 `volatile` 或放进同步块，能避免读到一半新一半旧的值。
+
+## 十、Go，只提供 seq_cst
+
+Go 的内存模型在 2022 年 6 月改过一版，目标是和 C、C++、Java、JavaScript、Rust、Swift 保持一致。Go 也提供 DRF-SC，没有数据竞争的程序按顺序一致执行。数据竞争在 Go 里是错误，运行时可以用 race detector 报出来并终止程序，读仍然要读到某个真实写过的值。Go 内存模型直接说，这一点更像 Java 和 JavaScript，不像 C 和 C++ 那样把竞争程序整个定为未定义行为。
+
+Go 的原子操作只有一种顺序，顺序一致。Go 1.19 的发布说明写得很清楚，Go 只提供 sequentially consistent atomics，不提供其他语言里的 relaxed 形式。`sync/atomic` 在 Go 1.19 加了 `atomic.Bool`、`atomic.Int64`、`atomic.Pointer[T]` 这些类型，调用 `Store`、`Load` 时没有 order 参数。
+
+Go 的同步手段主要是 channel、mutex、once 和原子操作。`go` 语句启动新 goroutine 时，启动动作 synchronizes-with 新 goroutine 的开始。goroutine 退出不保证和任何事件同步，想让别人看到它的写，得用 channel 或锁建立关系。Go 内存模型还列了一串编译器限制，不能凭空引入写，一次读不能看到多个值，一次写也不能拆成多个值。这些限制是语言内存模型对编译器的约束，和硬件屏障是两件事。
+
+写 goroutine 先 `data = 42`，再 `close(done)`；读 goroutine 从 `<-done` 返回后读 `data`，channel 的关闭建立了 happens-before，读到的就是 42。把 `close(done)` 去掉，读 goroutine 可能永远看不到 42。如果改用 `atomic.Bool`，写 goroutine `ready.Store(true)`，读 goroutine `for !ready.Load() {}`，Go 的顺序一致原子操作也会建立同样关系。
+
+## 十一、Rust，原子规则跟随 C++20
+
+Rust 的 `std::sync::atomic` 提供 `AtomicBool`、`AtomicUsize`、`AtomicPtr` 这些类型，`Ordering` 有 `Relaxed`、`Acquire`、`Release`、`AcqRel`、`SeqCst` 五个值。标准库文档说，Rust 原子访问的规则跟随 C++20 的 `intro.races`，只是没有 consume 这个顺序。Rust 的 `Ordering` 文档也直接说，五个值和 C++20 的 `memory_order` 对应。Rust 的原子类型只要目标平台支持，就保证无锁，文档说它们不保证 wait-free，某些操作可能用 CAS 循环实现。
+
+只写 `DATA.store(42, Ordering::Relaxed)`，读线程用 `Relaxed` 读，可能看到 0，也可能看到 42。`Relaxed` 只保证 `DATA` 这个原子变量本身不会被读到半个值，不保证读线程能看到写线程之前的其他操作。把 `READY.store(true, Release)` 和 `READY.load(Acquire)` 配上，读线程看到 `READY == true` 时，才能保证看到 `DATA == 42`。
+
+Rust 把数据竞争定为未定义行为。Rust 标准库的 atomic 模块文档写得很直接，数据竞争是未定义行为，竞争指至少一个访问是非原子的冲突访问，而且两者没有 happens-before 关系。Rust Reference 的未定义行为清单里也列了数据竞争。安全 Rust 靠借用检查和 `Sync`、`Send` 把这类访问挡住，`UnsafeCell` 是内部可变性的入口，`unsafe` 里绕过检查，责任就落到写代码的人身上。比如两个线程同时对同一个 `static mut COUNTER` 做 `+= 1`。这段代码需要 `unsafe`，而且构成数据竞争，结果是未定义行为。安全 Rust 里同样的代码编译不过。
+
+Rust 的整体内存模型还没定完。Rust Reference 开头就写着，Rust 的内存模型不完整，也没有完全决定。原子顺序这部分有 C++20 的规则可以靠，别名、provenance 和 `unsafe` 代码的边界还没有完全定下来。这个状态不影响日常用 `Ordering` 写同步代码，但遇到特别底层的优化问题，不能假设 Rust 有一套和 C++ 完全一样的正式模型。
+
+`volatile` 在 Rust 里也不是线程同步。`read_volatile` 和 `write_volatile` 的文档说，它们用于 I/O 内存，保证不被编译器省略，也不会和其他可见事件重排。文档紧接着说，和 C 一样，volatile 对多线程并发访问没有任何影响，行为和非原子访问一样。跨线程同步要用原子类型和 `Ordering`。
+
+## 十二、五种语言放在一张表里
+
+把前面的规则压成一张表，最容易看出各家的差别在哪一列。
+
+| 语言 | 数据竞争 | 原子接口 | 顺序参数 | 默认顺序 | volatile 能否同步 |
+| --- | --- | --- | --- | --- | --- |
+| C | 未定义行为 | `_Atomic`、`<stdatomic.h>`、`atomic_thread_fence` | `relaxed`、`acquire`、`release`、`acq_rel`、`seq_cst` | `seq_cst` | 不能，只约束编译器 |
+| C++ | 未定义行为 | `std::atomic<T>`、`atomic_thread_fence` | 同上 | `seq_cst` | 不能，语义实现定义 |
+| Java | JMM 定义允许的执行，不写成未定义行为 | `volatile`、`synchronized`、`VarHandle` | VarHandle 提供 plain、opaque、acquire、release、volatile | `volatile` 接近 `seq_cst` | 能，volatile 是同步动作 |
+| Go | 竞争是错误，不是 C/C++ 式未定义行为 | `sync/atomic`、channel、mutex | 只有 `seq_cst` | `seq_cst` | 没有 volatile 关键字 |
+| Rust | 未定义行为 | `std::sync::atomic`、`fence` | `Relaxed`、`Acquire`、`Release`、`AcqRel`、`SeqCst` | 无默认，必须显式传 | 不能，volatile 函数不用于线程同步 |
+
+这张表里最容易被忽略的一列是 volatile。C、C++、Rust 的 volatile 只约束编译器对这个对象的访问，不建立线程间的 happens-before，也不保证 CPU 顺序。Java 的 volatile 是同步动作，JLS 明确把它写进 synchronization order。把 Java 的经验搬到 C 或 C++，容易把 volatile 当成跨线程同步。
+
+Russ Cox 在 2021 年 6 月写过一个 Memory Models 系列，三篇分别讲硬件内存模型、编程语言内存模型和 Go 内存模型的修订。这个系列把硬件和语言的交界讲得更细，适合读完这篇以后接着看。
+
+## 十三、同一段消息传递，五种写法
+
+同一段消息传递，五种语言写出来是这样。写线程先写数据，再置 ready；读线程等 ready，再读数据。如果没有 release、acquire 或 volatile，读线程可能看到 `ready == true`，却读到旧的 `data`。
+
+C 的写法。
+
+```c
+#include <stdatomic.h>
+#include <stdbool.h>
+
+int data;
+atomic_bool ready = false;
+
+void writer(void) {
+    data = 42;
+    atomic_store_explicit(&ready, true, memory_order_release);
+}
+
+int reader(void) {
+    while (!atomic_load_explicit(&ready, memory_order_acquire)) {
+    }
+    return data;
+}
+```
+
+C++ 的写法。
+
+```cpp
+#include <atomic>
+
+int data;
+std::atomic<bool> ready{false};
+
+void writer() {
+    data = 42;
+    ready.store(true, std::memory_order_release);
+}
+
+int reader() {
+    while (!ready.load(std::memory_order_acquire)) {
+    }
+    return data;
+}
+```
+
+Java 的写法。
+
+```java
+int data;
+volatile boolean ready;
+
+void writer() {
+    data = 42;
+    ready = true;
+}
+
+int reader() {
+    while (!ready) {
+    }
+    return data;
+}
+```
+
+Go 的写法。
+
+```go
+import "sync/atomic"
+
+var data int
+var ready atomic.Bool
+
+func writer() {
+    data = 42
+    ready.Store(true)
+}
+
+func reader() int {
+    for !ready.Load() {
+    }
+    return data
+}
+```
+
+Rust 的写法。
+
+```rust
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+
+static DATA: AtomicI32 = AtomicI32::new(0);
+static READY: AtomicBool = AtomicBool::new(false);
+
+fn writer() {
+    DATA.store(42, Ordering::Relaxed);
+    READY.store(true, Ordering::Release);
+}
+
+fn reader() -> i32 {
+    while !READY.load(Ordering::Acquire) {}
+    DATA.load(Ordering::Relaxed)
+}
+```
+
+五段代码做同一件事，差别在语言把哪一部分写进了规则。C、C++、Rust 的例子里，order 都写在调用点上。Java 用 volatile 一个关键字表达 release 和 acquire。Go 把所有原子操作定成 seq_cst，省掉参数，也放弃更弱的顺序。C 和 C++ 的写法几乎一样，标准是两份。Java 的 `volatile` 不能换成 C 的 `volatile`，Go 没有 `volatile` 关键字，Rust 的 `volatile` 函数也不管线程同步。
+
+## 十四、落到指令，x86 和 ARM 的代价不一样
+
+落到指令，x86 和 ARM 的代价不一样。x86 是 TSO，标量 load 自带 acquire，标量 store 自带 release，普通读写不需要额外指令。它主要防的是 store 之后的 load 越过 store，也就是 StoreLoad。Arm 官方文档给的映射是，`__ATOMIC_ACQUIRE` 用 `LDAR` 或 `DMB ISHLD`，`__ATOMIC_RELEASE` 用 `STLR` 或 `DMB ISH`，`__ATOMIC_SEQ_CST` 一栏写的是 `STLR`。这张表是编译器 builtin 的对照，具体指令还要看操作是 load 还是 store。x86 的对应关系里，acquire 和 release 就是普通标量 load 和 store，seq_cst 常用 `XCHG`。
+
+这张映射表解释了一个常见现象。同一段只用 acquire 和 release 的 C++ 代码，在 x86 上可能几乎不付额外指令，换到 ARM 上会多出 `LDAR` 和 `STLR`。举个具体的对照，同一个 release store，x86 上通常就是一条普通 `mov`，ARM 上是 `stlr`。同一个 acquire load，x86 上是普通 `mov`，ARM 上是 `ldar`。如果代码里用了 `seq_cst`，x86 上可能多一条 `xchg`；如果只用 release 和 acquire，x86 上通常就是普通 load 和 store。屏障不是免费的，`seq_cst` 通常更贵。能用 release 和 acquire 解决的地方，不要顺手写成 `seq_cst`。
+
+还有一层经常混。很多编译器用 `asm volatile("" ::: "memory")` 实现编译器屏障，它告诉编译器不要把内存访问跨过这条线，但不生成 CPU 指令。Linux 的 `barrier()` 是这一类。`smp_mb()` 是 CPU 屏障，会生成架构相关的指令。C++ 的 `atomic_signal_fence` 只约束编译器和同线程信号处理函数，标准明确说不生成 `atomic_thread_fence` 会生成的硬件栅栏。Rust 的 `compiler_fence` 也是这样，文档说它不生成机器码。写驱动或内核代码时，编译器屏障和 CPU 屏障要分开看。
+
+## 十五、几个容易踩的坑
+
+`volatile` 是最容易混的一个。C、C++、Rust 的 volatile 只约束编译器，不建立线程间关系。Java 的 volatile 是同步动作。名字一样，语义不一样。C 里 `volatile int flag` 不会让 `data` 的写对其他核可见；Java 里 `volatile boolean flag` 会。
+
+只在一侧加屏障也不够。屏障约束本核的访问顺序，另一个核没有配对的 acquire 或读屏障，仍然可能看到旧的顺序。release 和 acquire 要成对，写屏障和读屏障也要成对。CPU 0 写了 `x` 再写 `y`，只发写屏障；CPU 1 读 `y` 再读 `x`，没有读屏障，仍可能看到旧的 `x`。
+
+屏障不是完成线。Linux 文档明确说，屏障不保证之前的访问在屏障指令完成时已经完成。它画的是顺序线。`smp_mb()` 返回后，别的核不一定已经看到屏障前的写；它只保证本核后续访问不越线。等所有核都看到，需要的是更强的同步协议，不是一条屏障指令。
+
+编译器这一层常被漏掉。源码里的顺序不等于机器指令的顺序。编译器可以把循环里的读提到外面，可以把两个写合并。`while (!done) {}` 里的 `done` 不是 volatile 或 atomic，编译器可能只读一次，循环永远不退出。C/C++ 的原子操作和 `std::atomic_thread_fence` 同时约束编译器和 CPU，`volatile` 只约束一部分，普通变量什么都不约束。
+
+`seq_cst` 也不是默认选择。它通常最贵，很多时候 release 和 acquire 就够了。引用计数里 `fetch_add(1, relaxed)` 只需要原子性，不需要全局总序；一律 `seq_cst` 会多付指令。消息传递、引用计数、自旋锁的慢路径，各自需要的顺序不一样。先写清楚哪两个操作要建立先后关系，再选 order，比一律 `seq_cst` 更稳。
+
+## 参考资料
+
+- Paul E. McKenney, [Memory Barriers, a Hardware View for Software Hackers](https://www.rdrop.com/~paulmck/scalability/paper/whymb.2010.07.23a.pdf), 2010.
+- Linux kernel documentation, [Linux kernel memory barriers](https://docs.kernel.org/core-api/wrappers/memory-barriers.html).
+- Linux kernel documentation, [LKMM explanation](https://docs.kernel.org/dev-tools/lkmm/docs/explanation.html) 和 [LKMM ordering](https://docs.kernel.org/dev-tools/lkmm/docs/ordering.html).
+- ISO/IEC 9899-2011, [N1570](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf).
+- ISO/IEC 9899-2023 working draft, [N3096](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3096.pdf).
+- ISO/IEC 14882-2011, [N3337](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2012/n3337.pdf).
+- C++ working draft, [intro.races](https://eel.is/c++draft/intro.races), [atomics.order](https://eel.is/c++draft/atomics.order), [atomics.fences](https://eel.is/c++draft/atomics.fences), [dcl.type.cv](https://eel.is/c++draft/dcl.type.cv).
+- Java Language Specification, [Chapter 17. Threads and Locks](https://docs.oracle.com/javase/specs/jls/se25/html/jls-17.html).
+- Jeremy Manson and Brian Goetz, [JSR 133 (Java Memory Model) FAQ](https://www.cs.umd.edu/~pugh/java/memoryModel/jsr-133-faq.html), 2004.
+- Java SE 21 API, [VarHandle](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/invoke/VarHandle.html).
+- The Go Project, [The Go Memory Model](https://go.dev/ref/mem), June 6, 2022.
+- The Go Project, [Go 1.19 Release Notes](https://go.dev/doc/go1.19).
+- Rust standard library, [`std::sync::atomic`](https://doc.rust-lang.org/std/sync/atomic/index.html), [Ordering](https://doc.rust-lang.org/std/sync/atomic/enum.Ordering.html), [compiler_fence](https://doc.rust-lang.org/std/sync/atomic/fn.compiler_fence.html).
+- The Rust Reference, [Memory model](https://doc.rust-lang.org/reference/memory-model.html), [Behavior considered undefined](https://doc.rust-lang.org/reference/behavior-considered-undefined.html).
+- Rust standard library, [read_volatile](https://doc.rust-lang.org/std/ptr/fn.read_volatile.html).
+- Arm, [Memory Systems, Ordering, and Barriers](https://support.arm.com/documentation/102336/0101/Load-Acquire-and-Store-Release-instructions), [ARMv8-A memory systems](https://support.arm.com/documentation/100941/0101/Barriers).
+- Russ Cox, [Memory Models](https://research.swtch.com/mm), June 29, 2021.

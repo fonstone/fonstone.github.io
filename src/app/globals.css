@@ -10,6 +10,18 @@
   --card: #ffffff;
   --accent: #3b82f6;
   --font-gilroy: 'Gilroy', sans-serif;
+  --font-code: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* 代码配色与 Shiki 的 github-light / github-dark 主题对齐，两种模式都保证高对比度 */
+  --code-bg: #f6f8fa;
+  --code-fg: #24292e;
+  --code-border: #d0d7de;
+  --code-inline-bg: #e9eef5;
+  --code-inline-fg: #1f2937;
+  --code-inline-border: #d3dce8;
+  --code-copy-bg: #ffffff;
+  --code-copy-fg: #475569;
+  --code-copy-border: #cbd5e1;
 }
 
 @theme inline {
@@ -18,7 +30,7 @@
   --color-accent: var(--accent);
   --color-card: var(--card);
   --font-sans: var(--font-gilroy);
-  --font-mono: var(--font-gilroy);
+  --font-mono: var(--font-code);
 }
 
 :root.dark {
@@ -26,6 +38,16 @@
   --foreground: #e2e8f0;
   --card: #0f172a;
   --accent: #38bdf8;
+
+  --code-bg: #0d1117;
+  --code-fg: #e1e4e8;
+  --code-border: #30363d;
+  --code-inline-bg: #1b2739;
+  --code-inline-fg: #e2e8f0;
+  --code-inline-border: #334155;
+  --code-copy-bg: #1e293b;
+  --code-copy-fg: #cbd5e1;
+  --code-copy-border: #475569;
 }
 
 body {
@@ -95,17 +117,51 @@ body {
   }
 }
 
+/* 代码块：背景 / 前景由主题变量统一提供，不再用 color-mix 混出灰底 */
 .prose pre {
-  background: color-mix(in oklab, var(--color-card) 70%, black);
+  position: relative;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border: 1px solid var(--code-border);
   border-radius: 0.75rem;
-  padding: 1rem;
+  padding: 1rem 1.15rem;
   overflow-x: auto;
+  font-family: var(--font-code);
+  font-size: 0.875em;
+  line-height: 1.7;
+  tab-size: 2;
 }
 
+.prose pre code {
+  background: transparent;
+  color: var(--code-fg);
+  font-family: var(--font-code);
+  font-weight: 400;
+}
+
+/* rehype-pretty-code 双主题只输出 --shiki-light / --shiki-dark 变量，必须显式消费 */
+.prose pre code span[style*="--shiki-light"] {
+  color: var(--shiki-light);
+}
+:root.dark .prose pre code span[style*="--shiki-light"] {
+  color: var(--shiki-dark);
+}
+
+/* 行内代码：清晰胶囊 + 去掉 typography 注入的字面反引号 */
 .prose :where(code):not(:where(pre code)) {
-  background: color-mix(in oklab, var(--color-card) 55%, black);
-  padding: 0.15rem 0.35rem;
+  background: var(--code-inline-bg);
+  color: var(--code-inline-fg);
+  border: 1px solid var(--code-inline-border);
+  padding: 0.1rem 0.35rem;
   border-radius: 0.35rem;
+  font-family: var(--font-code);
+  font-size: 0.85em;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.prose :where(code):not(:where(pre code))::before,
+.prose :where(code):not(:where(pre code))::after {
+  content: none;
 }
 
 .prose :where(h2, h3, h4) {
@@ -148,24 +204,21 @@ section[id] {
   top: 1rem;
 }
 
-/* 阅读增强：代码复制按钮 */
-.prose pre {
-  position: relative;
-}
+/* 阅读增强：代码复制按钮，配色跟随同一组代码主题变量 */
 .sf-copy-btn {
   position: absolute;
   top: 0.5rem;
   right: 0.5rem;
   z-index: 2;
-  border: 1px solid rgba(148, 163, 184, 0.4);
+  border: 1px solid var(--code-copy-border);
   border-radius: 0.5rem;
-  background: rgba(248, 250, 252, 0.92);
+  background: var(--code-copy-bg);
   padding: 0.25rem 0.6rem;
   font-size: 0.7rem;
   line-height: 1.4;
-  color: #475569;
+  color: var(--code-copy-fg);
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.8;
   transition: opacity 0.15s ease, color 0.15s ease;
 }
 .prose pre:hover .sf-copy-btn,
@@ -174,12 +227,7 @@ section[id] {
   opacity: 1;
 }
 .sf-copy-btn:hover {
-  color: #2563eb;
-}
-:root.dark .sf-copy-btn {
-  background: rgba(15, 23, 42, 0.92);
-  color: #cbd5e1;
-  border-color: rgba(100, 116, 139, 0.5);
+  color: var(--accent);
 }
 
 /* 阅读增强：图片灯箱 */

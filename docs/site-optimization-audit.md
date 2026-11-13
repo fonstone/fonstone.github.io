@@ -601,3 +601,37 @@ First Load JS 共享 103 kB，首页 114 kB。
 | 再次展开 | 712 / 712 | true | `"true"` | 109px |
 
 6 个胶囊在展开态全部可见；收起态胶囊区宽度归零、只剩居中的小胶囊。390px 窄屏下整组左对齐并可横向滚动，开关按钮未被裁切。预览服务 `/`、`/start/`、`/knowledge/`、`/projects/`、`/search/` 均 HTTP 200。临时测试页与脚本已清理，未留在产物里。
+
+
+## 十七、文章代码段配色与行内代码可读性（2026-11-12）
+
+### 问题定位
+
+访客截图反馈浅色模式下代码块和 `` `字段` `` 显示不明显。实测（无头 Chrome 读取计算样式）根因有四处，全部集中在 `src/app/globals.css`：
+
+1. `.prose pre` 的背景用 `color-mix(in oklab, var(--color-card) 70%, black)`。浅色 `--color-card` 是白色，混出来是 `#b3b3b3` 左右的中灰；而 typography 插件的 `pre` 前景仍是默认的浅灰 `--tw-prose-pre-code`，两者互相打架。
+2. `rehype-pretty-code` 配的是 `github-light` / `github-dark` 双主题，HTML 里每个 token 都带 `--shiki-light` / `--shiki-dark` 变量，但 CSS 从未消费这些变量，因此**语法高亮完全没有生效**，所有 token 都继承同一个颜色。
+3. 行内代码背景是 `color-mix(... 55%, black)`，浅色下是偏深的灰胶囊；同时 `prose-code:text-slate-900` 把字压成深色，还叠加 typography 自动注入的 `content:"`"` 字面反引号，字段又暗又带多余符号。
+4. `@theme inline` 里 `--font-mono: var(--font-gilroy)`，代码块继承的是无衬线比例字体，等宽对齐缺失。
+
+### 改动
+
+- `globals.css` 新增一组代码主题变量（`:root` / `:root.dark`）：`--code-bg / --code-fg / --code-border`、`--code-inline-*`、`--code-copy-*`，分别对齐 Shiki `github-light` 的 `#f6f8fa / #24292e` 与 `github-dark` 的 `#0d1117 / #e1e4e8`。
+- `.prose pre` / `.prose pre code` 改用主题变量，补边框、圆角、`tab-size` 与真正的等宽字体栈（`ui-monospace, SFMono-Regular, Menlo, Consolas…`），`@theme inline` 的 `--font-mono` 同步改为 `var(--font-code)`。
+- 新增 `.prose pre code span[style*="--shiki-light"] { color: var(--shiki-light) }` 与 `:root.dark … { color: var(--shiki-dark) }`，让语法高亮随主题实时切换，无需 JS 重渲染。
+- 行内代码改成浅色/深色高对比胶囊，并用 `::before / ::after { content: none }` 去掉字面反引号；`overflow-wrap: anywhere` 防止长标识符撑破版心。
+- 复制按钮配色并入同一组变量，默认从 `opacity: 0` 改为 `0.8`，触屏也能看到。
+- `src/app/knowledge/[category]/[slug]/page.tsx` 与 `src/app/projects/[project]/[slug]/page.tsx` 移除 `prose-code:*` / `prose-pre:border*` 这些互相打架的 utility，代码配色统一由 `globals.css` 单点维护。
+
+### 验证
+
+`tsc --noEmit` 0；静态导出 282 个 HTML / 1622 个文件、`out/` 133.2 MB；`verify-build.mjs` 通过（独立 title 279、重复 0，canonical 279/282、JSON-LD 258 页，站内链接 494 条与静态资源 842 条失效均为 0，sitemap 280 URL、RSS 40 条）。编译产物里旧 `color-mix(...var(--color-card))` 已归零，新变量、`--shiki-light` / `--shiki-dark` 消费规则、等宽字体栈均已写入 CSS。
+
+无头 Chrome + DevTools Protocol 实测三类页面（知识文章、课程章节、纯文本日志代码块）× 两种主题，对比度按 sRGB 相对亮度计算：
+
+| 模式 | 代码块文字对比度 | 行内代码对比度 | token 着色 | 字面反引号 |
+| --- | --- | --- | --- | --- |
+| 浅色 | 13.78:1 | 12.59:1 | github-light（`#D73A49` / `#6F42C1` / `#005CC5`…） | 无 |
+| 深色 | 14.84:1 | 12.2:1 | github-dark（`#F97583` / `#B392F0` / `#79B8FF`…） | 无 |
+
+三类页面的代码块底色、边框、等宽字体完全一致；全站 3968 个 `<pre>` 中未带语言标记的纯文本日志块也继承正确前景色。浅色/深色对比截图已核对，`store buffer`、`a = 1` 一类字段清晰可辨。临时测试脚本未留在产物里。

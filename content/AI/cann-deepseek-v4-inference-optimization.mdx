@@ -1,0 +1,414 @@
+---
+title: "CANN 针对 DeepSeek V4 的推理优化拆解"
+description: "DeepSeek V4 用 CSA/HCA、mHC 和 MoE 把长上下文成本压了下来，推理瓶颈却转到离散访存、算子调度和跨卡通信。按模型结构、KV Cache、融合算子、多流并行、量化与图模式几条线，拆解 CANN 在昇腾上的应对方式，并核对官方 benchmark 的口径与边界。"
+date: "2026-11-19"
+tags: ["CANN", "昇腾", "DeepSeek V4", "推理优化", "NPU", "KV Cache", "算子融合", "量化", "AI Infra"]
+---
+
+想象你是一家餐厅唯一的厨师，一道菜要过 43 道工序，每道工序只给你 225 微秒。
+
+这不是夸张。DeepSeek-V4-Flash 在昇腾 950DT 上跑 128K 上下文解码，一步是 9.66 毫秒。16 张卡、MTP3、global batch 256，单卡吞吐 1655.64 tokens/s。把这一步摊到 43 层，平均每层只有 225 微秒的预算。
+
+而这一步里要干的活，一点没少。窗口注意力、4 倍压缩的 CSA、128 倍压缩的 HCA 轮着来；4 路并行的 mHC 残差得先捏成 1 路喂给注意力，算完再撑回 4 路；256 个路由专家里得挑出 6 个来干活。矩阵乘只占其中一段，剩下的是排队，算地址、下发算子、等跨卡数据。
+
+更麻烦的是，V4 本身已经很省了。1M 上下文下，Pro 的单 token 算力只要 V3.2 的 27%，KV Cache 只要 10%；Flash 是 10% 和 7%；跟传统的 BF16 + GQA8 比，KV Cache 只剩大约 2%。
+
+模型把活儿减到了两成，为什么时间没跟着减到两成？
+
+因为省下来的计算和缓存，被更碎的算子和更离散的访存吃掉了一大块。这就像你把菜谱从二十道精简到五道，却发现五道菜分布在五个不同的厨房，光跑腿就把时间耗光了。这个比方只解释“活少了、跑腿多了”，不解释 225 微秒里计算和通信怎样重叠；225 微秒是墙钟预算，不是矩阵乘的纯计算时间。
+
+CANN 这轮优化的主线，就是在这 225 微秒里，把跑腿和排队的时间省出来。
+
+材料方面，我拿 CANN 的 V4 推理 recipe、DeepSeek-V4 技术报告和 V4.1 实践文档，把关键数字逐条对了一遍。V4 发布首日，CANN 已在 Atlas A3 和 950PR/DT 上给出 0-day 支持，1M 序列可跑。材料并不均衡，模型结构的数据很完整，CANN 侧的整网逐项 ablation 几乎没有。文中涉及性能归因的地方，我会尽量标清楚是官方口径、单算子数据，还是按公开数字做的估算。
+
+## 一、先看 V4 给推理栈出了什么题
+
+先认识一下主角。**V4-Flash 是个 284B 参数的 MoE 模型**，每生成一个 token 只激活 13B，相当于雇了 284 个人的公司，每天实际干活的只有 13 个。MoE 的常规玩法就是用大总参、小激活来省算力。
+
+它一共 43 层，每层的 hidden size 是 4096。同系列的 Pro 是 61 层、hidden 7168、总参 1.6T、激活 49B，体量差不多是 Flash 的五六倍。
+
+**让它区别于老模型的，是每一层怎么看历史。**
+
+以前所有层都用同一种注意力，把历史一口气全看。V4 改了三处。
+
+- **最前面两层**只看最近 128 个 token，像人说话只记上一句，叫**滑窗注意力（SWA）**。
+- 后面 41 层用两种压缩注意力交替排列。**CSA** 每 4 个 token 压成 1 条记忆，压缩时前后还有重叠，压完再用 **Lightning Indexer** 挑 512 条最相关的来读，也就是压缩 4 倍再加稀疏挑选；**HCA** 每 128 个 token 压成 1 条，压完全读，不再挑，也就是压缩 128 倍再全读。
+- **两种层都额外留一条滑窗分支**，窗口同样是 128。
+
+Pro 的差别在几处参数。前两层直接用 HCA，CSA 的挑选数从 512 放到 1024，路由专家从 256 个加到 384 个，每个 token 还是只选 6 个。两款都用了 **mHC**，把残差流从 1 路扩成 4 路，进 Attention/MoE 前压回 1 路，出来再展开，其中 res 那组要过 20 次 Sinkhorn 迭代做约束。
+
+**所以从第三层开始，这一层是 CSA 还是 HCA，它要看的历史长度、要更新的缓存规则、要挑多少条，全都不一样。** 推理栈最怕这种“每层不一样”，后面的优化都是被这件事逼出来的。
+
+打个比方。以前的模型像一家标准化连锁餐厅，每层厨房布局一样，一套排班表、一辆配送车通吃。V4 变成了一条美食街，隔壁是“4 份食材打一盒、再挑 512 盒上桌”的 CSA，再隔壁是“128 份压一箱、全上”的 HCA，还有个只做最近 128 个 token 的现炒窗口。**你没法再用同一套排班表管这条街。** 它只解释三种层不能用同一套 Cache 规则；kernel 里的 tiling 和 mask 不在这里。
+
+| 模块 | V4-Flash 的设置 | 推理侧多出来的开销 |
+|---|---|---|
+| 注意力 | 前两层 SWA，后面 CSA 4 倍 + HCA 128 倍交替，窗口 128，CSA top-512 | 每层 KV 长度和更新规则都不同，top-k 是离散访存，Indexer 还有一份自己的 Cache |
+| mHC | 残差流 4 路，进 Attention/MoE 前压回 1 路，出来再展开 | 每层多出 pre/post mapping 和 res mapping，都是小 reshape 和小矩阵乘 |
+| MoE | 1 个共享专家 + 256/384 个路由专家，每 token 选 6 个，前 3 层 hash routing | 专家权重常驻显存，token 要走 all-to-all，路由还分 hash 和 soft 两种 |
+| MTP | 原生 MTP，一次验证多个 draft token | 草稿 token 也会写进压缩 Cache，被拒后要能回滚 |
+
+一层内部的数据流和 Cache 归属大致是这样。
+
+<MermaidDiagram chart={`flowchart TB
+    subgraph Layer["V4 的一层"]
+        R["mHC 残差流<br/>4 路"] --> PA["HCPre<br/>4 路压回 1 路"]
+        PA --> A["Attention<br/>SWA / CSA / HCA"]
+        A --> QA["HCPost<br/>展开回 4 路<br/>加 Res Mapping"]
+        QA --> R2["残差流<br/>4 路"]
+        R2 --> PM["HCPre<br/>4 路压回 1 路"]
+        PM --> M["MoE<br/>1 个共享专家 + 256/384 个路由专家<br/>每 token 选 6 个"]
+        M --> QM["HCPost<br/>展开回 4 路<br/>加 Res Mapping"]
+        QM --> R3["输出到下一层"]
+    end
+
+    subgraph Cache["三类 Cache"]
+        SC["State Cache<br/>最近 128 个 SWA KV<br/>+ 未凑满压缩块的 remainder"]
+        KC["经典 KV Cache<br/>128 token 一块<br/>32 个 CSA 条目 + 1 个 HCA 条目"]
+        IC["Indexer Cache<br/>按 4 倍压缩后的长度存"]
+    end
+
+    A -.->|"SWA"| SC
+    A -.->|"CSA / HCA"| KC
+    A -.->|"LI 打分"| IC
+`}/>
+
+**这些结构变化，第一个打掉的是 PagedAttention 的均匀分页假设。**
+
+PagedAttention 能工作，靠一个前提。每层的 KV 长得一样，可以按固定 token 数切成统一的页，用一套页表管到底。V4 技术报告写得很直接，混合注意力让每层的 KV 条目在大小和更新规则上都不一样，滑窗层还有自己的淘汰策略，固定分页的 kernel 没法把所有层塞进一套页表。
+
+打个比方。以前是一栋标准宿舍，每间房一样大，后勤按“间”发钥匙就行。现在同一栋楼里有人住单间、有人住套房、还有人按小时租床位，各带各的退租规则，**原来的钥匙管理系统直接失效**。它只解释页表为什么失效；kernel 的边界约束还得看真实实现。
+
+KV Cache 的账本也跟着变了。128K 序列下，HCA 层只剩 1K 条 KV，CSA 层剩 32K 条。1M 上下文下，Flash 的 KV Cache 是 V3.2 的 7%，Pro 是 10%；拿 BF16 + GQA8、head dim 128 的常规注意力做基线，V4 的 KV Cache 只有约 **2%**。
+
+这些数字是模型侧的收益。**推理栈要做的，是在这个不规则的布局上，把访存和调度重新排好。**
+
+## 二、KV Cache 先分成两类
+
+V4 技术报告把 KV Cache 分成两块。**一块是经典 KV Cache**，装 CSA/HCA 压缩后的条目。**另一块叫 state cache**，装两样东西，滑窗注意力最近的 128 个 KV，以及还没凑满压缩块的尾部状态。
+
+state cache 是个固定大小的池子，按请求动态分配，每个请求拿到一个定长块，**按位置覆盖写**。论文把它当成一个只依赖当前位置的状态空间来管，也就是说，只要你知道现在走到第几个 token，就知道该写哪个槽，不需要额外的分配逻辑。
+
+**经典 KV Cache 的块大小按 lcm(m, m′) 的整数倍取。** Flash 的 m 是 4，m′ 是 128，最小公倍数 128，所以最小块覆盖 128 个原始 token，产出 32 个 CSA 条目和 1 个 HCA 条目。这样 CSA 层和 HCA 层看到的块边界天然一致，块表只用一套。
+
+把 128K 的请求摊到块上，这套布局为什么省就很直观了。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph Tokens["原始 token"]
+        T1["token 0 - 127"]
+        T2["token 128 - 255"]
+        T3["token 256 起<br/>还没凑满 128 的尾部（如果有）"]
+    end
+
+    subgraph Blocks["经典 KV Cache"]
+        B1["块 0<br/>32 个 CSA 条目 + 1 个 HCA 条目"]
+        B2["块 1<br/>32 个 CSA 条目 + 1 个 HCA 条目"]
+    end
+
+    subgraph State["State Cache"]
+        S1["最近 128 个 SWA KV"]
+        S2["kv_state / score_state<br/>indexer_kv_state / indexer_score_state"]
+    end
+
+    T1 --> B1
+    T2 --> B2
+    T3 --> S1
+    T3 --> S2
+`}/>
+
+打个比方。这像中央厨房配菜，CSA 是“4 份食材打一小盒”，HCA 是“128 份压一大箱”。为了让货架整齐，托盘尺寸直接按 4 和 128 的最小公倍数 128 来做，一托盘刚好装 32 个小盒加 1 个大箱，盘点时地址偏移是固定的，不用每层重新算。零散没凑够一个压缩块的食材，先扔在灶台边的小保鲜盒里，凑齐了再上架。那个小保鲜盒，就是 state cache。它只解释块边界和尾部缓存；state cache 的覆盖写和淘汰策略不在这里。
+
+128K 序列就是 1024 个这样的块。HCA 层每块取 1 条，共 1024 条，正好是 1K；CSA 层每块取 32 条，共 32768 条，正好是 32K。Indexer 在全部压缩条目上打分，选出 top-512 给注意力，128K 请求在 CSA 层有 32K 个候选。**块边界一致，块表只用一套，这就是 lcm(4, 128) 的实际用途。**
+
+这套布局是 DeepSeek 在模型侧定的，CANN 的 recipe 要在它上面实现 kernel 和调度。V4 的推理实践里，Window KV 和 Compressor 的 kv_state/score_state 用 **Ring Buffer** 管，靠 block_table 和 slot_mapping 复用少数几块 Cache，避免长序列下反复申请释放造成的碎片；其余 KV Cache 按压缩后的最大长度申请。CSA 层还有一份 Indexer Cache，按 4 倍压缩后的长度存，没凑满的 indexer_kv_state 和 indexer_score_state 也留在 remainder 里。
+
+**MTP 让这件事更难。**
+
+草稿 token 也会在 kv_length 维度上往前走，满足压缩条件就压进 Cache。可一旦草稿被拒，下一个 step 要重新推导这个 token，Cache 就脏了。
+
+打个比方。这像编辑部的审稿，实习生一次交 5 页草稿，主编逐页批，批到第 3 页发现写歪了。传统做法是把整摞稿子撕了重打，纸浪费还慢。Ring Buffer 相当于**用白板写**，写错了擦掉那几行重写，白板还是那块白板。而 LI 和 SAS 里放的**梯形掩码**，相当于给草稿盖个“内部讨论稿，不得引用”的章，保证待验证 token 的压缩 Cache 不参与主模型 token 的计算。这个比方只解释回收和隔离，不解释环形缓冲的槽位计算。
+
+每个 batch 预留的 Cache 组数按 next_n 和 compress_ratio 算。官方 recipe 给的公式是，num_ratio_group 在 next_n 为 0 时取 1，否则取 2；CSA 再加 1 个 overlap 组，HCA 不用。每 batch 的块数是 `num_ratio_group × ratio / block_size` 向上取整。
+
+**这套管理的收益很直接**，1M 上下文下 Flash 的 Cache 只剩 V3.2 的 7%。代价是状态变多，**prefix cache 命中时不能只读压缩 KV**。V4.1 的做法是把压缩 KV 和 index KV 持久化，滑窗 KV 不存，命中后向前补算 128 个 token 重建窗口。补算窗口是固定的，代价可控，但确实多了一步计算。
+
+**KV Cache 也不只活在 HBM 里。** V4 技术报告还给了一套落盘策略，压缩 KV 直接存盘，命中前缀时读到最后一个完整压缩块，尾部不完整的块重新算。SWA 的 KV 体积约为压缩条目的 8 倍，报告给了三档。
+
+| 档位 | 做法 | 命中时 | 适合 |
+|---|---|---|---|
+| **Full** | 存全部 SWA | 零重算 | SSD 带宽充裕、不在乎写盘量 |
+| **Periodic** | 每隔 p 个 token 存一个窗口 | 补算尾部 | 折中 |
+| **Zero** | 完全不存 | 重算 n_win × L 个 token | 存储极紧、重算便宜 |
+
+打个比方。这像图书馆的分馆体系，HBM 是桌面，摊着正在读的几本；DDR 是馆内书架，走两步能拿到；SSD 是地下书库，要叫电梯但能存几十倍。**三档没有哪一档通吃**，取决于 SSD 带宽、前缀命中率和可接受的重算量。这个比方只解释容量层级，不解释每层的带宽和命中代价。
+
+## 三、融合算子，把中间结果留在片上
+
+先补一个硬件背景。昇腾的 AI Core 里有两个计算单元，**Cube 负责矩阵乘，Vector 负责归一化、激活、量化这类逐元素计算**，它们之间隔着一层 GM，也就是全局内存。
+
+算子不融合，中间结果就要从片上写到 GM，下一个算子再读回来。这像两个工位隔着一个中转站，A 做完一件先送进去，B 再从里面取出来做下一步，每道工序都多一趟往返。Decode 阶段每个 token 的计算量本来就小，这种固定开销占比就上来了。而 V4 一层里的小算子特别多，Compressor 要算 KV 两路、Gate 两路权重、Softmax 和加权求和；LI 要算低秩 Q、ReLU 点积、Top-K；mHC 还有 pre/post mapping。拆开跑，单步预算会被切得很碎。
+
+CANN 在 V4 上开源了一组融合算子，覆盖 Attention、MoE 和 mHC。
+
+**Attention 侧**有 Compressor、KvCompressEpilog、IndexerCompressEpilog、LightningIndexer 和 SAS。
+
+- **Compressor** 把 KV/Gate 的 Linear、kv_state/score_state 更新、overlap 数据选取和压缩 KV 输出放进一个 kernel。拆开跑，KV 投影、Gate 权重、Softmax 和压缩结果之间会多出几次 GM 往返；融合后中间结果留在片上，GM 只碰输入和输出。
+- **KvCompressEpilog** 接着做压缩 KV 的量化、scale 拼接和 Cache 写入；**IndexerCompressEpilog** 做 Indexer Cache 的量化和刷新。
+- **LI** 把 score 的 batch matmul、ReLU、reduce_sum 和 topk 合在一起，打分结果不落盘，选出的索引直送下一步。
+- **SAS** 用一个接口吃下 Window、Sparse、Compress 三类注意力。
+
+打个比方。老做法是物流公司每次只送一个包裹，货车出站、填单、回站，往返十趟。融合算子是**一趟车跑完全程**，车上分前后舱，前舱在拼装货物，后舱已经把下一站要用的包装材料拆好了。这个比方只解释一趟下发和流水重叠，不解释 Cube/Vector 的核间分工。
+
+**mHC 的融合算子是 HCPre 和 HCPost。**
+
+顺着数据流算一下搬运量。pre mapping 读 4 路写 1 路，post mapping 读 1 路写 4 路，Res Mapping 再读 4 路写 4 路。不融合的话，一层里光这部分就要往返内存好几次。融合后，4 路数据在片上完成加权合并，Attention 只看到 1 路输入，出来再一次性展开。
+
+打个比方。这像四车道汇一车道、再分流回四车道。用碎算子拼，得四次往返；HCPre/HCPost 做的是**在路口直接架一座立交桥**，数据只在进门和出门各碰一次内存。这个比方只解释 4 路和 1 路之间的来回，不解释 Res Mapping 的双随机约束。
+
+**MoE 侧有 GatingTopK**，把路由打分、Top-K 和 hash/soft 分支合在一起。这是个不大但关键的优化，路由结果不再先写进 GM、再被 TopK 读一遍，改走片上直传，单层省下的时间乘上 40 层就相当可观。
+
+mHC 的麻烦还不只在 4 路残差。**V4 的 mHC 系数是动态生成的**，每层要用当前 hidden state 算 pre、res、post 三组参数，res 那组还要过 Sinkhorn 迭代，把残差映射约束成双随机矩阵。V4.1 的文档说，V4 的 mHC 用三个顺序 kernel 完成残差更新、输入混合和系数预测，激活内存流量是理想下界的 **2 倍**；V4.1 把系数预测错位一个 block，做成 Single-Pass mHC，再融合成 Mega-mHC，把流量减半。这条优化线从 V4 的 HCPre/HCPost 开始，到 V4.1 才把三个 kernel 收成一个。
+
+**SAS 的价值不只是少几次下发。** V4 的层是交织的，同一段代码要处理 SWA、CSA、HCA 三种注意力，三者的 KV 长度、mask、压缩比都不一样。没有统一接口，host 侧要为每种层走不同的 dispatch，kernel 边界也跟着变。SAS 把这些差异收进一个算子，上层按层的类型传参数，**调度路径就稳定了**，这对后面的图捕获尤其重要。
+
+MoE 侧的 **MegaMoE** 走的是同一条路。V4.1 的 MegaMoE 把量化、token 分发、两次专家 Linear、SwiGLU、token 聚合和共享专家合成一个算子，Prefill 阶段接入；Decode 还是 Dispatch、GMM、Combine 三步。**共享专家的计算被藏在路由专家的通信和计算下面**，阶段之间少了几次等待。V4 的 recipe 里，MoE 共享专家的多流并行已经在做类似的事，MegaMoE 把这件事收到了算子内部。
+
+到了 V4.1，融合继续往更大的粒度走。CANN 的算子文档里，Attention Prologue 把 QA/KV 投影、RMSNorm、RoPE、量化和 Cache 写入串成一个 kernel，单算子从 71.84µs 降到 49.14µs；Engram 的 hash 从 1118.97µs 降到 25.88µs；QLI 和 QSLI 也把打分、TopK 和候选寻址合在一起。这些数字来自具体形状和采集条件，**不能直接外推到 V4**，但方向很清楚，融合的粒度从“几个算子”变成了“一条计算链”。
+
+**融合也有代价，这点得说清楚。**
+
+一个 kernel 把量化、布局、流水都绑在一起，换一个 shape 或一种量化格式，可能就要另写一套模板。V4.1 的 Attention Prologue 就分了 split_k 和 split_t 两套，T≤256 走 split_k，更大的 T 走 split_t。调试也难，中间结果不落 GM，出错时看不到完整的张量。
+
+**省下来的开销，是用灵活性换的。**
+
+## 四、多流和 AICPU，把等的时间填掉
+
+融合解决的是“一趟活分几趟跑”，多流解决的是“几个人同时干活”。
+
+V4 的 Attention 前处理里，**Query 的计算流和 KV 的计算流没有数据依赖**，可以双流并发。CSA 层里，**LI 的打分和 CSA 的 Compressor 也没有依赖**，可以同时跑。HCA 层没有 LI，MLAProlog 的计算可以直接盖住一部分 Compressor。MoE 里，共享专家和路由专家之间也有计算与计算、计算与通信的重叠空间。CANN 的做法是用算子控核和多流，把这些独立的工作放到不同流上，再用 event 连起依赖。
+
+打个比方。老做法是一个厨师切完菜、等配送车把料送到 3 号灶、再开火，灶台空转。多流是切 3 号灶的菜时，配送车**同时在路上**送 5 号灶的料；等 3 号灶下锅，5 号灶的料已经到位。这个比方只解释计算和通信的重叠，不解释 event 同步和流间依赖。
+
+**更麻烦的是 tiling。**
+
+Attention 和 LI 这类算子，光看输入 shape 定不下分核策略，必须知道运行时真实的上下文长度，才能把工作均衡分到各个核。三条路都堵。
+
+- 回 Host 算，执行流水被打断；
+- 放在 kernel 里算，这部分耗时没法被掩盖；
+- 干脆不算，分核不均，算力利用率直接掉。
+
+昇腾芯片上自带 **AICPU**。CANN 把 Scheduler 放在上面跑，算子执行前先算出 metadata，再交给 SAS 或 LI 用，既保证算子能入图，耗时又被完全掩盖。
+
+CANN 的实践把 metadata 分成两类。
+
+| 只看 shape 就能定（提前算） | 必须知道真实长度（运行时在 AICPU 算） |
+|---|---|
+| max workspace（预分配显存） | 每个核算哪一段 |
+| tiling key（选算子模板） | |
+| block dim（开几个核） | |
+| tiling data（常量折叠） | |
+
+打个比方。这像剧院的分座员，老做法每场戏开场前，观众全站在门口等经理从办公楼赶来画座位表，几十层的戏就得等几十次。AICPU 方案是**在门厅常驻一个分座员**，座位表的大框架开幕前就画好了，只有“这场实际来了多少人、怎么分排”这种必须现场看的东西由他现场定。而且他一边分，台上演员一边已经在走位了，Scheduler 被放到独立 stream 上，和 Embedding、MLAProlog 并行，用 event 同步。这个比方只解释现场计算和提前计算的划分，不解释 tiling 信息怎样跨层复用。
+
+官方 recipe 说，整网一轮只需要调用 **4 次** AICPU Scheduler 算子，因为每种 SAS（SWA、CSA、HCA）和 LI 的 Scheduler 一轮里只需执行一次，tiling 信息跨层复用。
+
+这套思路和 DeepSeek 在模型侧做的事很像。V4 技术报告里，TileLang 的 host codegen 把 CPU 侧的校验和参数打包从几十到几百微秒降到 1µs 以内；细粒度 EP 把 Dispatch、Linear、Combine 切成 wave，计算、通信和结果发送同时走，在昇腾上也验证过，通用推理有 1.50 到 1.73 倍加速，RL rollout 这类低时延场景最高 1.96 倍。**两边都在削同一类固定开销，只是一个在框架层，一个在芯片的调度层。**
+
+**多流不是免费的。** 流多了，同步和资源争抢也会多。所以边界划得很讲究。
+
+- CANN 在 LI 和 CSA Compressor 并行时用了 **CV 控核**，给 Cube 和 Vector 分配合适的核数，减少互相抢资源；
+- V4.1 的 Engram 多流也只在副流上跑 Hash、Embedding、WKV 这些**不依赖当前层 hidden_states** 的阶段，Gate 还是留在主流，等 event 到齐再算。
+
+**能提前算的才提前算，有依赖的一律留在原地。**
+
+## 五、精度按数据分工
+
+V4 的 checkpoint 本身就是混合精度的。**主干和 Attention 走 FP8，MoE 路由专家的权重走 FP4**，而且 FP4 来自量化感知训练，checkpoint 里就是 FP4。Indexer 的 QK 路径也用 FP4。
+
+这把“用什么精度”从推理侧的自由度变成了必答题，你得能原生吃下这两种格式，否则就得反量化，性能和精度都白丢。
+
+CANN 按芯片代际给了几套配方。
+
+| 平台 | 方案 | 说明 |
+|---|---|---|
+| **Atlas A3** | W8A8C16（权重/激活 INT8，KV 保 16 位） | A3 的 recipe 走 INT8，没有原生 FP8/MXFP4 路径 |
+| **Atlas A3（Pro）** | Hybrid INT8-INT4（路由专家 INT4，共享专家 INT8） | 避开纯 W8A8 在 MoE 上的访存瓶颈 |
+| **950PR/DT** | 原生 Hybrid FP8-MXFP4 | 与官方 checkpoint 一致 |
+| **950PR/DT** | MXFP8 替代原生 FP8 跑 Linear | Prefill 或大 batch Decode 下提高算力利用率 |
+| **950PR/DT** | Hybrid HiF8-MXFP8-MXFP4 | 再往前一步 |
+
+**精度要按“数据脾气”分工，不能一刀切。** 这是这节最要紧的一点。
+
+V4 的 KV Cache 里，**最后 64 维 RoPE 用 BF16，其余维度用 FP8**，整体比纯 BF16 省近一半。V4.1 分得更细，滑窗 KV 用 FP8，压缩 KV 用 FP4，Indexer Cache 用 MXFP4。A3 上的 V4 把 KV 保在 C16，950 上的 V4 用 C8 伪量化，LI 的 Q 和 Indexer Cache 走 A8C8。C16 指 KV Cache 按 16 位存，C8 指按 8 位存，A8C8 指 LI 的 Q 和 Indexer Cache 都走 8 位。
+
+为什么这么分，有四条理由。
+
+1. **RoPE 留 BF16**，它负责位置，相位误差会直接影响长距离的相对位置，这是保守但必须的选择；
+2. **滑窗 KV 留 FP8**，它是最近 128 个 token，马上要被精确读到，误差会立刻污染输出；
+3. **压缩 KV 压到 FP4**，它是加权求和后的摘要，本身已经是模糊信息，再压一档感知不到；
+4. **Indexer 用 FP4**，打分只需要排序，不需要精确值，FP4 够用。
+
+打个比方。这像冰箱分层，**冷藏室**（滑窗 KV）放今天要吃的菜，保鲜做得精细一点；**冷冻室**（压缩 KV）放已经做好的半成品冻块，塞得紧一点也无所谓，反正化冻后还要再加工；**货架上的罐头**（专家权重、Engram 表）直接按最省空间的 MXFP4 码放。而 RoPE 那几维，像需要恒温保存的药，不能省。它只解释不同数据用不同精度；同一张量内部的分层还得看 V4 的 KV 布局，RoPE 维和其余维就是分开存的。
+
+这些是模型侧的设计判断，CANN 的 recipe 按层、按张量去实现，**没有把整网统一压到最低位**。这一点很关键，也是它和“暴力量化”的区别。
+
+**HiF8 把低精度再往前推了一步，思路也变了。**
+
+CANN 的 HiF8 实践把问题说得很清楚，**SparseMLA 在长上下文下的堵点在查地址，不在矩阵乘。** 每选一个 KV 块，scalar 单元要算一次偏移、做一次边界检查、发一次离散访存。Cube 跑得再快，也要等这些地址准备好。
+
+**这个瓶颈不太直观。** 以前大家以为长文本慢是“矩阵乘不够快”（算力墙），但稀疏注意力的真实堵点是**查地址**。就像货场里叉车跑得飞快，每次找货却要前台小妹手工查卡片找货架号；叉车再快也没用，卡在小妹手上了。它只解释地址生成为什么卡住 Cube；边界检查和离散访存的具体开销还得看 kernel。
+
+HiF8 的做法是四件套，**Q/K/V/P 全量化、数据表示压紧、scale 复用、访存和计算流水重排**。1M Decode 下，单算子最高 1.39 倍加速；RmsNorm+Quant、Rotary+Quant 这类融合，部分模块 2.31 倍；整网对比 MXFP8，Flash 快 8% 到 30%，Pro 快 7% 到 15%。
+
+**这组整网数字和 recipe 里的 benchmark 表口径不同，得说清楚。** Recipe 表里，8K、batch 256 的 Flash，MXFP8-MXFP4 是 1821.75 tokens/s，HiF8-MXFP8-MXFP4 是 1902.50 tokens/s，差 4.4%；128K、batch 256 从 1655.64 到 1735.36，差 4.8%。HiF8 文章说的 8% 到 30% 是另一套场景、另一版实践的结果。**两组数字都来自 CANN 官方渠道，但采集条件不同，不能直接对比。**
+
+最后一条工程约束，**量化上线前要做逐层精度回归。** V4.1 的 Compressor 里，wkv 和 wgate 两个 Linear 还留在 BF16；A3 上的 V4 也没量化 o_a_proj。低精度不是越多越好，敏感层留高精度，先小流量验证再全量。
+
+## 六、并行按模块配，图模式收掉 host 开销
+
+### Prefill 按序列切
+
+Prefill 是算力密集，长序列下单卡算不完，CANN 在 Attention 上用 **Context Parallel（CP）**，把一条请求的序列切到多张卡。
+
+切分方式用 **zig-zag**。原因是 LI 带 causal mask，越靠后的 chunk 计算越重，如果按序分，最后一张卡还在算，前面几张已经闲着了。zig-zag 把首尾两块配给同一张卡，让“重块 + 轻块”互补。
+
+<MermaidDiagram chart={`flowchart LR
+    subgraph Seq["一条长序列，切成 8 个 chunk"]
+        C0["chunk 0"]
+        C1["chunk 1"]
+        C2["chunk 2"]
+        C3["chunk 3"]
+        C4["chunk 4"]
+        C5["chunk 5"]
+        C6["chunk 6"]
+        C7["chunk 7"]
+    end
+
+    subgraph Cards["4 张卡"]
+        R0["卡 0<br/>chunk 0 + chunk 7"]
+        R1["卡 1<br/>chunk 1 + chunk 6"]
+        R2["卡 2<br/>chunk 2 + chunk 5"]
+        R3["卡 3<br/>chunk 3 + chunk 4"]
+    end
+
+    C0 --> R0
+    C7 --> R0
+    C1 --> R1
+    C6 --> R1
+    C2 --> R2
+    C5 --> R2
+    C3 --> R3
+    C4 --> R3
+`}/>
+
+CP 不是切完就完事，因为**注意力要往前看**。
+
+- SWA 层每个 chunk 要拿前 128 个 token 的 KV；
+- HCA 层要求前序 chunk 长度是 128 的整数倍，这样除最后一个 chunk 外不用处理 remainder；
+- CSA 层有 4 个 token 的 overlap，也要从前面拿。
+
+CANN 的做法是**每个 chunk 向后传 128 个 token，用一次全局 all_gather 收齐，再按 receive_idx 裁出各 chunk 需要的数据**。Attention 起始处通信一次 128 大小的 hidden_states，Compressor 之后再来做一次 CP 域的 all_gather，把压缩 Cache 收齐给 LI 和 SAS。
+
+打个比方。这像拍大场面，按镜头段分工，每人拍一段最后拼起来。但因为因果 mask 的存在，拍后段的人得先看一遍前段发生了什么，与其让每个人单独去要前段素材，不如**开拍前统一发一次“前情提要”包**，每人自己裁出需要的那部分。这个比方只解释统一收齐再裁切，不解释 Attention 起始处和 Compressor 之后的两次通信。
+
+### Decode 按模块配并行
+
+Decode 的瓶颈和 Prefill 完全不同，所以并行策略按模块分别配。
+
+| 模块 | 并行 | 为什么 |
+|---|---|---|
+| Attention | **DP** | 计算量小，权重复制一份最划算，通信最少 |
+| MoE | **EP** | 专家权重太大，必须分卡常驻，靠 all-to-all 换数据 |
+| LM head | **TP** | 词表矩阵大，切开多卡分担 |
+| o_a_proj | **可选 TP** | 权重也大，**访存**耗时超过计算，低时延场景再切 TP，用 all_to_all 和 reduce_scatter 把 DP 布局转成 TP 再转回来 |
+
+打个比方。这像工厂按工序换组织形式。冲压车间活儿轻、模具小，每个车间各配一套各干各的（DP）；涂装车间设备占地巨大，全厂只此一套，工件排队送过去（EP）；质检打包表格太多，分给几个人各看一叠（TP）。o_a_proj 是那个**超大号零件库**，一个人跑腿搬货比干活还累，干脆雇四个人从四个门同时搬，搬完在门口点清总数。这个比方只解释模块和并行方式的对应，不解释 all_to_all 和 reduce_scatter 的转换。
+
+### 图模式，把现场指挥变成时刻表
+
+昇腾上每次算子下发都有固定开销（ACL → GE → Runtime）。Decode 一步才几毫秒，43 层乘下来，host 侧的调度和 Python 开销会占掉可观一块。
+
+CANN 的 **npugraph_ex** 接在 torch.compile 的 FX 阶段，做编译期图优化（算子融合、常量折叠、内存优化），再把整轮 Decode 用 **ACLGraph 捕获**，之后反复重放。
+
+在 vLLM-Ascend 里，FULL 和 FULL_DECODE_ONLY 模式默认启用 npugraph_ex；Prefill 形状变化大，走 PIECEWISE 或不开图。V4.1 的在线部署脚本里，**Prefill 节点关掉 npugraph_ex，Decode 节点打开并设成 FULL_DECODE_ONLY**。原因很实在，Decode 每步都在 KV Cache 末尾追加一个 token，长度一直变，但图结构固定；Prefill 的 batch 和序列长度变化更大，捕获的图很难复用。
+
+打个比方。Eager 模式像每场戏现场读剧本，演员一个个上来问导演“我演什么”，导演答完再叫下一个。图模式是**提前排好一张精确到帧的演出时刻表**，开场后台上自己走，导演彻底下场。编译缓存则是把这张时刻表复印存档，下次重演直接发复印件。这个比方只解释调度开销的转移，不解释动态 shape 下为什么 Prefill 不适合整图捕获。
+
+### MTP 按场景换挡
+
+V4 保留原生 MTP，一次主模型推理验证多个 token。但用几路是有讲究的。
+
+- **高吞吐场景用 MTP1**，避免多个 draft token 把计算推到瓶颈；
+- **低时延场景用 MTP3**，计算密度低，多验证几个 token 换更大的加速比。
+
+官方 benchmark 里，MTP3 平均 3 个 draft token 接受 1.44 个，MTP1 平均 1 个接受 0.7 个。**接受率随数据集变，表里的吞吐要按自己的接受率折算**，不能直接照抄。
+
+## 七、V4.1 把题面改了
+
+V4.1-Flash 是后来的更新，结构又不一样，值得单独说，因为它说明**V4 的优化配方不能直接搬到 V4.1**。
+
+规格是 40 层，552B 骨干参数加 196B Engram，hidden 5120，mHC 还是 4 路。CSA 变成 **CSA2**，Encoder 层 2 倍压缩，Decoder 层 1 倍压缩，**跨层共享 KV 和 index**。40 层里只有 4 层是 Full，4 层是 Reindex，30 层直接复用前一层的 Top-K 索引。
+
+这个改动把优化重点**从逐层压缩挪到跨层复用**。V4 几乎每层都要跑 Compressor，V4.1 只在 4 个 KV 源层跑，Indexer 只在 8 个 index 源层跑。压缩位置固定为 top-512 加窗口 128，**实际读取的 KV 量不随上下文增长**。1M 序列的 KV 从 V4 的约 3.0GB 降到 0.8GB，压缩 KV 640MB，IndexCache 160MB。
+
+### Engram 给模型装一本固定搭配词典
+
+Engram 是 V4.1 新增的条件记忆模块，196B 参数，挂在第 1 层和第 14 层。它用 n-gram 哈希查表，表本体 FP8 存，两表合计约 197GB，**整体 offload 到 host 内存**。
+
+工作流程是这样的。取序列末尾的 2/3/4-gram，哈希成行号；每行 256B 的 FP8 向量加 scale，经 wkv 线性层拆成 key 和 value；用 key 与当前 hidden state 的**余弦相似度**算门控系数；把门控后的 value 加进残差流。
+
+打个比方。Engram 是给模型装的一本**《固定搭配速查词典》**。“张”是个常见姓氏，模型要靠注意力从上下文一点点推；但“张仲景”三个字凑一起就是固定实体，直接查表 O(1) 拿到，不用每层重新推一遍。而余弦相似度那个门控，是**查完还要验证一下**，查出来的词条跟当前话题不搭，就当没查到，门控趋近 0，自动屏蔽哈希冲突的噪声。这样主干网络就不用在前几层干“识别固定模式”这种苦力活，省下的深度拿去做更难的推理。这个比方只解释查表和门控，不解释哈希冲突的概率和 n-gram 的构造。
+
+它之所以能被卸载而 MoE 权重不能，原因在地址。哈希**只依赖 token id**，前向开始前行号就全定了，地址确定、访问局部、每 token 只取十几 KB，是完美的卸载候选。MoE 专家就不行，它的地址要等 hidden state 算出来才知道。
+
+CANN 通过灵衢 UB 把 host memory 注册给 device，用 URMA 建连接，AIV 把通信任务放进队列，后台执行，不占计算核。scale 参数留在 device local memory，由 AIV gather。Hash、Embedding、WKV 投影放在副流，Gate 留在主流，等 event 同步，**边界还是那条，能提前算的才提前算。**
+
+### DSpark 一次生成一组草稿
+
+DSpark 是 V4.1 的投机解码方案，一次草稿模型执行生成一组 draft token，主模型批量验证。官方 benchmark 里，32 卡、128K 序列、DSpark 5，TPOT 13.79ms 时单卡 5800 tokens/s；TPOT 5ms 以内时单卡 2727 tokens/s；单请求最低 2.48ms。
+
+### 这一节的变化
+
+压缩比从 4/128 变成 2/1，KV 从逐层私有变成跨层共享，Cache 的持久化边界也变了。V4.1 只持久化压缩 KV、index KV 和压缩中间状态，滑窗 KV 不存，prefix cache 命中后向前补算 128 个 token。**同一套融合算子和多流框架还在，但每个 kernel 的输入布局、压缩比、Cache 生命周期都要重写。**
+
+## 八、这些数字怎么读
+
+把官方 recipe 的 benchmark 表挑几行出来。
+
+| 平台 | 模型 | 卡数 | Global batch | 序列 | MTP | 精度 | TPOT | 单卡吞吐 |
+|---|---|---|---|---|---|---|---|---|
+| 950DT | V4-Flash | 16 | 256 | 128K | 3 | MXFP8-MXFP4 | 9.66ms | 1655.64 tokens/s |
+| 950DT | V4-Flash | 16 | 16 | 1M | 3 | MXFP8-MXFP4 | 8.04ms | 124.36 tokens/s |
+| 950DT | V4-Pro | 16 | 128 | 8K | 3 | MXFP8-MXFP4 | 20.61ms | 388.23 tokens/s |
+| Atlas A3 | V4-Flash | 64 | 8192 | 8K | 1 | W8A8C16 | 29.17ms | 4388 tokens/s |
+
+**这张表有几条限定，不看清很容易误读。**
+
+1. 数据都是 **Offline 推理模式**采集，不含 Serving 调度和框架负载均衡；
+2. MTP 的接受率是**强制 EPLB 配置**下测的（MTP3 平均 1.44 个，MTP1 平均 0.7 个），换数据集吞吐会变；
+3. 表中的吞吐是**单卡值**，global batch 是**整个部署的 batch**，两个数不能直接相乘相除；
+4. A3 和 950DT 的精度方案不同，**跨平台比 TPOT 可以，比吞吐要谨慎**。
+
+两边的部署目标也不同，**A3 用 64 卡大 EP 换吞吐，950DT 用 16 卡换低时延**。看这两行，先看它们各自想解决什么问题。
+
+还有一条最重要。**官方 recipe 没有给逐项 ablation。** 9.66ms 是 Cache 布局、融合算子、多流、低精度和图模式一起作用的结果，**不能把其中任何一项单独摘出来当成全部原因**。V4.1 的算子文档给了单算子级别的数字，比如 Attention Prologue 从 71.84µs 降到 49.14µs，但那是特定 shape 和采集条件下的结果，不能直接加到整网 TPOT 上。
+
+## 结语
+
+V4 这类模型把推理优化的重心，从**算力峰值**推向了**数据移动和调度**。
+
+算法把计算量和 KV 压到了两成，端到端时延却没有同比下降，差额被更碎的算子和更离散的访存重新吃了回去。CANN 这几招都在补这个差额，Cache 双轨制管住离散布局，融合算子减少往返，多流和 AICPU 填上等待，混合精度降低每字节成本，图模式收掉 host 开销。
+
+所以判断一个优化点值不值得做，可以只问一句，**它减少了哪一类搬运，又增加了哪一类状态？**
+
+最后提醒一句。把 128K decode 压进 10ms，是几类手段一起作用的结果。**上线前拿自己的序列长度分布和 MTP 接受率重跑一遍，表里的数字才有意义。**
+
+## 资料来源
+
+- [DeepSeek-V4 技术报告](https://arxiv.org/abs/2606.19348)，arXiv 2606.19348。
+- [NPU DeepSeek-V4 推理优化实践](https://github.com/hicann/cann-recipes-infer/blob/master/docs/models/deepseek_v4/deepseek_v4_inference_guide.md)，CANN recipes。
+- [DeepSeek-V4.1-Flash CANN 优化实践](https://github.com/hicann/cann-recipes-infer/blob/master/docs/models/deepseek_v4_1/deepseek_v4.1_flash_cann_tech_report.md)，CANN recipes。
+- [DeepSeek-V4.1 推理部署说明](https://github.com/hicann/cann-recipes-infer/blob/master/models/deepseek_v4_1/README.md)，CANN recipes。
+- [DeepSeek V4 950 实践，整网统一低精度数据流优化](https://cann.csdn.net/6a9a661a48977663a5dd07b7.html)，CANN 开发者社区。
+- [vLLM-Ascend 图模式文档](https://docs.vllm.ai/projects/ascend/en/latest/user_guide/feature_guide/graph_mode.html)。
+- [NPU DeepSeek-V4.1 CANNBot-DSL 融合算子优化](https://github.com/hicann/cann-recipes-infer/blob/master/docs/models/deepseek_v4_1/deepseek_v4.1_cannbotdsl_operator_guide.md)，CANN recipes。

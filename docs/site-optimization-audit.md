@@ -635,3 +635,113 @@ First Load JS 共享 103 kB，首页 114 kB。
 | 深色 | 14.84:1 | 12.2:1 | github-dark（`#F97583` / `#B392F0` / `#79B8FF`…） | 无 |
 
 三类页面的代码块底色、边框、等宽字体完全一致；全站 3968 个 `<pre>` 中未带语言标记的纯文本日志块也继承正确前景色。浅色/深色对比截图已核对，`store buffer`、`a = 1` 一类字段清晰可辨。临时测试脚本未留在产物里。
+
+
+## 十八、Mermaid 图配色与深浅主题适配（2026-11-20）
+
+### 问题定位
+
+访客截图反馈深色模式下文章里的 Mermaid 图显示不明显：整张图压着一块中灰底板，节点近黑、边标签也是中灰，层次混乱。用无头 Chrome 读取 SVG 内嵌 `<style>` 与实际计算样式，根因有四层：
+
+1. `MermaidDiagram.tsx` 用 `theme: isDark ? "dark" : "neutral"` 并只覆盖 4 个 `themeVariables`。Mermaid 只有 `base` 主题允许完全自定义变量，`dark` / `neutral` 会在 `calculate()` 里锁死自己那套色板 —— 传入的 `primaryColor` 直接被忽略。实测深色下节点仍是 `#1f2020`、cluster 是 `#474949`、边标签是 `#585858`、箭头是 `lightgrey`；浅色下节点 `#eee`、cluster `#fcfcfc`（与白底对比度仅 1.03），两套都不成体系。
+2. 容器用 `dark:bg-slate-900`，与代码块的 `--code-bg` 不是同一块表面，代码块修好之后图表成了新的割裂点。
+3. 改用 `base` 主题后，mindmap 暴露第二个坑：`darkMode` 为真时 Mermaid 把 `cScale` 色板再 `darken`，`.section-N rect` 被压成 `hsl(215, 51%, 0%)` 纯黑，连线也几乎隐形（全站 12 张 mindmap 受影响）。
+4. 部分图类型把字体写死成 `trebuchet ms`，与站点字体不一致。
+
+### 改动
+
+- `src/components/knowledge/MermaidDiagram.tsx`：主题固定为 `base`，`themeVariables` 改为运行时读取 `globals.css` 的 CSS 自定义属性，配色与字体不再散落在组件里。渲染中 / 失败 / 成功三种状态统一用 `.sf-mermaid` 容器。
+- `src/app/globals.css`：新增 `--mm-*` 变量组（`:root` 浅色 / `:root.dark` 深色），容器 `--mm-surface` 直接引用 `--code-bg`，图表与代码块共用同一块表面；层次靠「容器 → cluster → 节点」的蓝色亮度递进。新增 `.sf-mermaid` 规则统一容器、边标签、箭头与字体；针对 `svg.mindmapDiagram` 覆盖节点填充 / 描边、section 连线与文字，兜住 Mermaid 内嵌 `<style>` 的 id 前缀高优先级规则。
+- 主题切换链路不变：`stonefon-theme-change`（手动切换与 layout 首帧脚本的系统主题监听都会派发）触发组件重绘，实测浅色 → 深色节点色即时从 `#dbeafe` 变为 `#1c3559`。
+
+### 验证
+
+`tsc --noEmit` 0；静态导出 283 个 HTML / 1624 个文件、`out/` 133.5 MB；`verify-build.mjs` 通过（独立 title 280、重复 0，canonical 280/283、JSON-LD 259 页，站内链接 495 条与静态资源 842 条失效均为 0，sitemap 281 URL、RSS 40 条）。产物 CSS 里 `--mm-node-bg` / `--mm-cluster-bg` / `--font-chart` / `mindmapDiagram` 覆盖规则均已编译，旧的 `color-mix(...var(--color-card))` 归零。
+
+全站 373 个 Mermaid 图（flowchart 306 / graph 40 / mindmap 12 / sequence 10 / state 3 / class 1 / gantt 1），取 5 个代表页面共 53 张图 × 浅色深色做 CDP 实测，全部渲染成功，0 张卡在渲染中、0 张失败：
+
+| 模式 | 容器 | cluster | 节点 | 连线 | 节点文字对比度 | cluster 标题对比度 | 连线对比度 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 浅色 | `#f6f8fa` | `#eaf1f9` | `#dbeafe` | `#4b6b94` | 11.87:1 | 9.1:1 | 5.15:1 |
+| 深色 | `#0d1117` | `#16243c` | `#1c3559` | `#7dd3fc` | 10.44:1 | 10.46:1 | 11.35:1 |
+
+深色下原来的中灰底板（与容器对比 1.97）改为深蓝递进（1.22），刺眼感消失；mindmap 的 34 / 52 个纯黑元素全部变为站点蓝，连线可见。浅色 / 深色 / mindmap 对比截图已核对。临时测试脚本未留在产物里。
+
+
+## 十九、Mermaid 字号层级与配色再平衡（2026-11-21）
+
+### 诉求与问题定位
+
+第十八节解决了「深色下图看不清」，但访客继续反馈配色不舒服，并要求关注图中整体字体大小与色彩搭配。用无头 Chrome 读 SVG 的 `viewBox`、内嵌 `<style>` 与计算样式，定位出四类残留问题：
+
+1. **字被缩放没了**：`useMaxWidth: true` 下 SVG 宽度铺满容器。首页示例图 `viewBox` 宽 1296.6，实际渲染 854px，缩放比 0.665；SVG 内 `fontSize: 14px` 在屏幕上只剩 **9.3px**。而单纯把字号调大会让节点变宽、`viewBox` 一起变大，缩放比同步下降，屏幕字号几乎不变。
+2. **缺少字号层级**：Mermaid 内嵌样式只有 `#id { font-size:14px }`、tooltip 12px、图标题 18px，节点 / 分组标题 / 边标签全部同级；另外 cluster 标题里的 `<p>` 会被 `foreignObject *` 的基础字号规则抢走。
+3. **层层色块压住正文**：容器 → cluster → 节点是三层逐渐加深的蓝（浅色）或三层暗蓝（深色），大块底色让图显得又闷又重；深色连线 `#7dd3fc` 亮青过于跳；`style ... fill:#3B82F6 !important` 这类内容自定义色在深色下是霓虹糖果色。
+4. **甘特图漏配**：`sectionBkgColor` 等甘特图变量没传，深色下有 3 个 `rect.section` 仍是纯白。
+
+### 改动
+
+- **字号**（`globals.css` 新增 `--mm-font-size / -title / -small / -heading`，组件从 CSS 读取）：节点 17px、分组标题 15px 加粗、边标签 14px、图标题 20px，mindmap 层级多单独收一档到 14px；cluster 标题的 `<p>` 也纳入规则，避免被基础规则覆盖。所有字号规则带 `!important` 压过 Mermaid 的 `#id` 内嵌样式。
+- **保证最小可读字号**：`MermaidDiagram.tsx` 渲染后解析 `viewBox` 宽，超过 700px 时把 `min-width = 0.8 × viewBox宽` 写进容器的 `--mm-render-min`，CSS 给 SVG 设 `min-width`，容器本来就有 `overflow-x-auto`。这样宽图缩放比不再低于 0.8（屏幕字号 13.6px），窄图仍按原尺寸显示（17px）不受影响；代价是极宽的图可横向滚动。`flowchart.nodeSpacing/rankSpacing` 从 50 收到 30 / 34，补偿字号变大带来的节点变宽，实测 `viewBox` 宽基本没涨（1296.6 → 1307.8）。
+- **配色收敛**：分组框底色改成与容器同色、只留 1.2px 细虚线边框，节点成为唯一带填充的元素；分组标题改用主题蓝。浅色是白卡片 + 淡蓝节点（`#e8f2fd`）+ 灰蓝连线（`#7f97b4`），深色是深蓝容器（`#0f1a2b`）+ 亮蓝节点（`#203a5e`）+ 柔和灰蓝连线（`#829cbe`），深色不再出现亮青箭头。节点补 `rx/ry: 7px` 圆角、连线 2px。容器 padding 从组件的 `p-4` 收到 CSS 单点维护的 `1.25rem`。
+- **内容自定义色**：`style A fill:#... !important` 是 inline `!important`，CSS 改不动 `fill`，改用 `filter` 作用在形状元素上：浅色 `saturate(.88)` 轻微柔化，深色 `saturate(.6) brightness(.78)` 压低饱和与亮度，保留六个范式的色相区分但不再刺眼。文字在 `foreignObject` 里，不受滤镜影响。
+- **补齐甘特图变量**：`readMermaidTheme()` 增加 `sectionBkgColor / sectionBkgColor2 / taskBkgColor / doneTaskBkgColor / activeTaskBkgColor / critBkgColor / gridColor / excludeBkgColor / todayLineColor` 等 18 项，全部由 `--mm-*` 派生。
+
+### 验证
+
+`tsc --noEmit` 0；静态导出 283 个 HTML / 1624 个文件、`out/` 133.5 MB；`verify-build.mjs` 通过（独立 title 280、重复 0，canonical 280/283、JSON-LD 259 页，站内链接 495 条与静态资源 842 条失效均为 0，sitemap 281 URL、RSS 40 条）。编译 CSS 里 `--mm-font-size` / `--mm-render-min` / `stroke-dasharray` / `rx:7px` / `saturate` 均已写入。
+
+5 个代表页面共 53 张图（flowchart / graph / mindmap / sequence / state / class / gantt）× 浅色深色，全部渲染成功，0 失败、0 纯黑、深色下 0 纯白（第十八节遗留的 3 个白色甘特 section 已消除）：
+
+| 指标 | 改前 | 改后 |
+| --- | --- | --- |
+| 宽图缩放比 | 0.665 | 0.80（下限） |
+| 宽图屏幕字号 | 9.3px | 13.6px |
+| 窄图屏幕字号 | 14px（缩放前） | 17px（不缩放） |
+| 节点 / 分组 / 边标签 | 全 14px 同级 | 17 / 15 / 14px 三级 |
+| 深色连线 | `#7dd3fc` 亮青 | `#829cbe` 柔和灰蓝 |
+| 深色纯白块 | 3 个甘特 section | 0 |
+
+主题切换仍由 `stonefon-theme-change` 触发重绘，实测节点填充 `#203a5e` ↔ `#e8f2fd` 即时生效。浅色 / 深色 / mindmap / 混合图截图已核对，4 个页面 HTTP 200。临时测试脚本未留在产物里。
+
+
+## 二十、文章表格线条与页面横向溢出（2026-11-21）
+
+### 问题定位
+
+访客反馈浅色模式下文章表格的线条不明显。用无头 Chrome 读计算样式（颜色经 canvas 规范成 sRGB 后算相对亮度对比度），确认表格线条由 `@tailwindcss/typography` 的默认变量提供，页面自己的两个 utility 又叠了一层，两套主题都不成体系：
+
+| 位置 | 来源 | 浅色 | 深色 |
+| --- | --- | --- | --- |
+| 行线 | `--tw-prose-td-borders`（`tbody tr`） | `#e5e7eb`，与白底 **1.18:1** | 仍是 `#e5e7eb` 亮白线，与深底 **15.12:1**，刺眼 |
+| 表头线 | `prose-thead:border-b-slate-200` / `dark:…:slate-800` | `#e2e8f0`，**1.18:1** | `#1d293d`，**1.28:1**，等于没有 |
+| 外框 / 竖线 | typography 无 | 完全没有 | 完全没有 |
+
+根因是深色只由 `<html class="dark">` 驱动，prose 并未启用 `prose-invert`，因此 `--tw-prose-td-borders` 保持浅色值；浅色则是默认色本身就太淡。此外 th / td 只有 `padding-right / bottom`，左间距为 0，文字贴边。
+
+诊断时还发现上一节引入的一处回归：宽 Mermaid 图的 `min-width: 0.8 × viewBox` 把 grid 子项撑开，`knowledge` / `projects` 两个 layout 写的 `md:grid-cols-[280px,1fr]` 是**带逗号的无效声明**（编译产物里就是 `grid-template-columns:280px,1fr`），浏览器整条丢弃后退化成单列 auto 轨道，min-content 被宽图撑到 2367px，整页 `scrollWidth` 达 2759px，表格第一列被横向裁掉。
+
+### 改动
+
+- `src/app/globals.css` 新增 `--table-*` 变量组（`:root` / `:root.dark`）：表格底、外框、表头底 / 字 / 底线、行线、列线、hover 底、正文色，浅色对齐白卡片、深色对齐深蓝卡片。
+- 新增 `.prose table` 规则，把表格做成与代码块同语言的圆角卡片：`border-collapse: separate` + `border-spacing: 0` + 1px 外框 + 12px 圆角；线条改成四级层次「外框 > 表头 2px 底线 > 行线 > 列线」，表头带浅蓝底、行 hover 高亮、单元格 padding 改 `0.55~0.6rem 0.9rem`，四角单元格补圆角。typography 画在 `thead` / `tbody tr` 上的线显式归零（separate 模式下 tr 边框本就不渲染），改由单元格边框统一承担。
+- `src/app/knowledge/[category]/[slug]/page.tsx` 与 `src/app/projects/[project]/[slug]/page.tsx`：删掉 `prose-thead:border-b-*` / `prose-th:text-*` / `prose-td:text-*` 六个 utility，表格配色与文字色全部由 `globals.css` 单点维护，不再与全局规则打架（沿用第十七节代码配色的做法）。
+- 顺带修横向溢出：`knowledge/layout.tsx` 改 `md:grid-cols-[280px_minmax(0,1fr)]`、`projects/layout.tsx` 改 `md:grid-cols-[240px_minmax(0,1fr)]`（合法声明且主轨道 min 为 0），并给 `.sf-mermaid` 补 `min-width: 0; max-width: 100%`。首页 `ProgressDashboard.tsx` / `SystemStack.tsx` 里同样带逗号的旧写法**没有动**——它们本来就是单列布局，改有效会突然变两列、破坏既有设计。
+
+### 验证
+
+`tsc --noEmit` 0；静态导出 283 个 HTML / 1624 个文件、`out/` 133.4 MB；`verify-build.mjs` 通过（独立 title 280、重复 0，canonical 280/283、JSON-LD 259 页，站内链接 495 条与静态资源 842 条失效均为 0，sitemap 281 URL、RSS 40 条）。编译 CSS 里 `--table-*`、两个新的 `minmax(0,1fr)`、`border-collapse:separate` 均已写入，旧的 `prose-thead\:border-b-slate-200` 归零。
+
+CDP 实测 3 个含表格页面（18 / 9 / 2 张表，覆盖知识文章与课程章节）× 浅色深色，以及 390px 窄屏 × 两主题：
+
+| 指标 | 改前（浅 / 深） | 改后（浅 / 深） |
+| --- | --- | --- |
+| 行线对比度 | 1.18 / 15.12 | **1.69 / 1.96** |
+| 外框对比度 | 无 / 无 | **1.94 / 2.25** |
+| 表头底线对比度 | 1.18 / 1.28 | **2.44 / 3.61** |
+| 列线对比度 | 无 / 无 | **1.31 / 1.51** |
+| 表格文字对比度 | 9.9 / 12.6 | 10.35 / 11.51 |
+| 页面 `scrollWidth` | 2759px | 1280px（390px 窄屏为 390px） |
+| 表格宽度 | 2367px（第一列裁切） | 552 / 592 / 334px（完整） |
+
+浅色 / 深色 / 课程页 / 390px 窄屏截图已核对，线条清晰且不刺眼，表格无裁切。4 个页面 HTTP 200。临时测试脚本未留在产物里。

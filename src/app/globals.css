@@ -11,6 +11,7 @@
   --accent: #3b82f6;
   --font-gilroy: 'Gilroy', sans-serif;
   --font-code: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-chart: 'Gilroy', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 
   /* 代码配色与 Shiki 的 github-light / github-dark 主题对齐，两种模式都保证高对比度 */
   --code-bg: #f6f8fa;
@@ -22,6 +23,38 @@
   --code-copy-bg: #ffffff;
   --code-copy-fg: #475569;
   --code-copy-border: #cbd5e1;
+
+  /* 表格：与代码块同语言，浅色下线条必须能从白底上分辨出来 */
+  --table-bg: #ffffff;
+  --table-border: #a9bcd2;
+  --table-head-bg: #eef4fb;
+  --table-head-fg: #1c3c60;
+  --table-head-border: #8aa9cb;
+  --table-row-line: #b8c9dd;
+  --table-col-line: #d7e2ef;
+  --table-row-hover: #f4f8fe;
+  --table-fg: #334155;
+
+  /* Mermaid 图：分组只留细边框，节点是唯一带填充的元素，避免层层色块压住正文 */
+  --mm-surface: #ffffff;
+  --mm-border: #e5ebf3;
+  --mm-cluster-bg: #ffffff;
+  --mm-cluster-border: #b9cfe4;
+  --mm-cluster-fg: #3a6ea5;
+  --mm-node-bg: #e8f2fd;
+  --mm-node-border: #6b9fd8;
+  --mm-node-fg: #173a61;
+  --mm-line: #7f97b4;
+  --mm-fg: #445a75;
+  --mm-edge-bg: #ffffff;
+  --mm-note-bg: #fff8e6;
+  --mm-note-fg: #4a3a12;
+  --mm-note-border: #e3cd8f;
+  /* 字号（SVG 坐标）：节点 / 分组标题 / 边标签 / 图标题，缩放后仍可读 */
+  --mm-font-size: 17px;
+  --mm-font-title: 15px;
+  --mm-font-small: 14px;
+  --mm-font-heading: 20px;
 }
 
 @theme inline {
@@ -48,6 +81,31 @@
   --code-copy-bg: #1e293b;
   --code-copy-fg: #cbd5e1;
   --code-copy-border: #475569;
+
+  --table-bg: #101c2f;
+  --table-border: #3d5577;
+  --table-head-bg: #1b2c47;
+  --table-head-fg: #dce8f7;
+  --table-head-border: #5275a3;
+  --table-row-line: #354c6e;
+  --table-col-line: #283b57;
+  --table-row-hover: #1a2b45;
+  --table-fg: #cbd5e1;
+
+  --mm-surface: #0f1a2b;
+  --mm-border: #24344c;
+  --mm-cluster-bg: #0f1a2b;
+  --mm-cluster-border: #324a6b;
+  --mm-cluster-fg: #7fb2e5;
+  --mm-node-bg: #203a5e;
+  --mm-node-border: #5890cf;
+  --mm-node-fg: #e8f2fd;
+  --mm-line: #829cbe;
+  --mm-fg: #c4d5e9;
+  --mm-edge-bg: #0f1a2b;
+  --mm-note-bg: #332c18;
+  --mm-note-fg: #f0dfa9;
+  --mm-note-border: #8a7135;
 }
 
 body {
@@ -162,6 +220,210 @@ body {
 .prose :where(code):not(:where(pre code))::before,
 .prose :where(code):not(:where(pre code))::after {
   content: none;
+}
+
+/* 表格：typography 默认行线浅色下只有 1.18:1、深色下反而是亮白线，两套都不成体系。
+   这里统一成一张带外框的圆角卡片，线条分四级：外框 > 表头底线 > 行线 > 列线。 */
+.prose table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--table-border);
+  border-radius: 0.75rem;
+  background: var(--table-bg);
+  color: var(--table-fg);
+  margin-top: 1.6em;
+  margin-bottom: 1.6em;
+  font-size: 0.9375em;
+}
+/* typography 把线画在 tr / thead 上；改用单元格边框，separate 模式下 tr 边框不渲染 */
+.prose thead,
+.prose tbody tr {
+  border-bottom: 0;
+}
+.prose thead th {
+  background: var(--table-head-bg);
+  color: var(--table-head-fg);
+  border-bottom: 2px solid var(--table-head-border);
+  border-right: 1px solid var(--table-col-line);
+  padding: 0.6rem 0.9rem;
+  text-align: left;
+  vertical-align: bottom;
+  font-weight: 600;
+}
+.prose tbody td {
+  color: var(--table-fg);
+  border-bottom: 1px solid var(--table-row-line);
+  border-right: 1px solid var(--table-col-line);
+  padding: 0.55rem 0.9rem;
+  vertical-align: top;
+}
+.prose :is(thead th, tbody td):last-child {
+  border-right: 0;
+}
+.prose tbody tr:last-child td {
+  border-bottom: 0;
+}
+.prose tbody tr:hover td {
+  background: var(--table-row-hover);
+}
+/* 单元格自带背景，圆角由四角单元格补齐 */
+.prose thead th:first-child {
+  border-top-left-radius: 0.7rem;
+}
+.prose thead th:last-child {
+  border-top-right-radius: 0.7rem;
+}
+.prose tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 0.7rem;
+}
+.prose tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 0.7rem;
+}
+
+/* Mermaid 图：容器与代码块同色系；SVG 内嵌样式带 id 前缀，以下覆盖项统一用 !important */
+.sf-mermaid {
+  min-width: 0;
+  max-width: 100%;
+  background: var(--mm-surface);
+  border: 1px solid var(--mm-border);
+  border-radius: 0.75rem;
+  color: var(--mm-fg);
+  padding: 1.25rem;
+}
+.sf-mermaid svg {
+  background: transparent;
+  font-size: var(--mm-font-size) !important;
+  /* 宽图至少按 viewBox 的 80% 渲染，避免被压到容器宽度后文字缩成 10px */
+  min-width: var(--mm-render-min, 0px);
+}
+.sf-mermaid pre {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+
+/* 字体：Mermaid 部分图类型把字体写死成 trebuchet ms，统一到站点字体栈 */
+.sf-mermaid svg,
+.sf-mermaid svg text,
+.sf-mermaid svg .label,
+.sf-mermaid svg .nodeLabel,
+.sf-mermaid svg .edgeLabel,
+.sf-mermaid svg foreignObject,
+.sf-mermaid svg foreignObject * {
+  font-family: var(--font-chart) !important;
+}
+
+/* 字号层级：节点最大、分组标题次之并加粗、边标签最小、图标题最大 */
+.sf-mermaid svg text,
+.sf-mermaid svg .nodeLabel,
+.sf-mermaid svg .label,
+.sf-mermaid svg foreignObject,
+.sf-mermaid svg foreignObject * {
+  font-size: var(--mm-font-size) !important;
+  line-height: 1.5;
+}
+.sf-mermaid svg .cluster-label .nodeLabel,
+.sf-mermaid svg .cluster-label span,
+.sf-mermaid svg .cluster-label div,
+.sf-mermaid svg .cluster-label p {
+  font-size: var(--mm-font-title) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em;
+}
+.sf-mermaid svg .edgeLabel,
+.sf-mermaid svg .edgeLabel * {
+  font-size: var(--mm-font-small) !important;
+}
+.sf-mermaid svg .flowchartTitleText {
+  font-size: var(--mm-font-heading) !important;
+}
+
+/* 文字颜色：节点 / 分组 / 边标签各归其位，避免深浅两套都糊成一团 */
+.sf-mermaid svg .nodeLabel {
+  color: var(--mm-node-fg) !important;
+  fill: var(--mm-node-fg) !important;
+  font-weight: 500 !important;
+}
+.sf-mermaid svg .cluster-label .nodeLabel,
+.sf-mermaid svg .cluster-label span,
+.sf-mermaid svg .cluster-label p {
+  color: var(--mm-cluster-fg) !important;
+  fill: var(--mm-cluster-fg) !important;
+}
+.sf-mermaid svg .edgeLabel,
+.sf-mermaid svg .edgeLabel * {
+  color: var(--mm-fg) !important;
+}
+.sf-mermaid svg text {
+  fill: var(--mm-fg) !important;
+}
+.sf-mermaid svg .flowchartTitleText {
+  fill: var(--mm-fg) !important;
+}
+
+/* 箭头与边标签底：跟随主题变量，深色下不再出现刺眼亮青 */
+.sf-mermaid svg .arrowheadPath,
+.sf-mermaid svg .marker {
+  fill: var(--mm-line) !important;
+  stroke: var(--mm-line) !important;
+}
+.sf-mermaid svg .edgeLabel,
+.sf-mermaid svg .edgeLabel p,
+.sf-mermaid svg .labelBkg {
+  background-color: var(--mm-edge-bg) !important;
+}
+.sf-mermaid svg .edgeLabel rect {
+  fill: var(--mm-edge-bg) !important;
+}
+
+/* 连线与节点描边略加粗，抵消 SVG 缩放到容器宽度后的变细；分组框改细虚线减重 */
+:is(#sf-mermaid-scope, .sf-mermaid) svg .edgePath path,
+:is(#sf-mermaid-scope, .sf-mermaid) svg .flowchart-link {
+  stroke-width: 2px !important;
+}
+:is(#sf-mermaid-scope, .sf-mermaid) svg .node .label-container {
+  stroke-width: 1.5px !important;
+  rx: 7px !important;
+  ry: 7px !important;
+}
+:is(#sf-mermaid-scope, .sf-mermaid) svg .cluster rect {
+  stroke-width: 1.2px !important;
+  stroke-dasharray: 6 5 !important;
+}
+
+/* 内容里用 style 显式指定的语义色带 inline !important，改不了 fill，只能用滤镜柔化：
+   浅色轻微降饱和保留色彩区分，深色压低饱和与亮度，避免糖果色块刺眼 */
+.sf-mermaid svg [style*="fill"] {
+  filter: saturate(0.88);
+}
+:root.dark .sf-mermaid svg [style*="fill"] {
+  filter: saturate(0.6) brightness(0.78);
+}
+
+/* mindmap：base 主题在深色下会把 cScale 压成纯黑，节点与连线统一拉回站点蓝色系 */
+.sf-mermaid svg.mindmapDiagram .mindmap-node rect,
+.sf-mermaid svg.mindmapDiagram .mindmap-node circle,
+.sf-mermaid svg.mindmapDiagram .mindmap-node ellipse,
+.sf-mermaid svg.mindmapDiagram .mindmap-node polygon,
+.sf-mermaid svg.mindmapDiagram .mindmap-node path {
+  fill: var(--mm-node-bg) !important;
+  stroke: var(--mm-node-border) !important;
+}
+.sf-mermaid svg.mindmapDiagram [class*="section-edge"] {
+  stroke: var(--mm-line) !important;
+}
+.sf-mermaid svg.mindmapDiagram .mindmap-node text,
+.sf-mermaid svg.mindmapDiagram .mindmap-node span,
+.sf-mermaid svg.mindmapDiagram .nodeLabel {
+  fill: var(--mm-node-fg) !important;
+  color: var(--mm-node-fg) !important;
+}
+/* mindmap 层级多，字号比流程图收一档，避免整张图被撑得过大 */
+.sf-mermaid svg.mindmapDiagram .nodeLabel,
+.sf-mermaid svg.mindmapDiagram foreignObject * {
+  font-size: var(--mm-font-small) !important;
 }
 
 .prose :where(h2, h3, h4) {

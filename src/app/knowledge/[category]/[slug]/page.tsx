@@ -131,7 +131,7 @@ export default async function KnowledgePostPage({
 
         <HandsOnCallout articleKey={`${catSlug}/${post.slug}`} />
 
-        <div className="prose max-w-none prose-headings:text-slate-900 dark:prose-headings:text-slate-100 prose-p:text-slate-700 dark:prose-p:text-slate-300 prose-strong:text-slate-900 dark:prose-strong:text-slate-100 prose-a:text-blue-600 dark:prose-a:text-sky-400 prose-li:text-slate-700 dark:prose-li:text-slate-300 prose-blockquote:text-slate-600 dark:prose-blockquote:text-slate-400 prose-hr:border-slate-200 dark:prose-hr:border-slate-800 prose-thead:border-b-slate-200 dark:prose-thead:border-b-slate-800 prose-th:text-slate-900 dark:prose-th:text-slate-100 prose-td:text-slate-700 dark:prose-td:text-slate-300">
+        <div className="prose max-w-none prose-headings:text-slate-900 dark:prose-headings:text-slate-100 prose-p:text-slate-700 dark:prose-p:text-slate-300 prose-strong:text-slate-900 dark:prose-strong:text-slate-100 prose-a:text-blue-600 dark:prose-a:text-sky-400 prose-li:text-slate-700 dark:prose-li:text-slate-300 prose-blockquote:text-slate-600 dark:prose-blockquote:text-slate-400 prose-hr:border-slate-200 dark:prose-hr:border-slate-800">
           <KnowledgeMdx source={mdxSource} />
         </div>
 

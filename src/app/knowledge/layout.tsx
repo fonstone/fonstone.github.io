@@ -37,7 +37,7 @@ export default async function KnowledgeLayout({
       }
     >
       <div className="min-h-screen bg-transparent">
-        <div className="flex flex-col md:grid md:grid-cols-[280px,1fr] gap-0">
+        <div className="flex flex-col md:grid md:grid-cols-[280px_minmax(0,1fr)] gap-0">
           <aside className="border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 backdrop-blur-sm rounded-2xl md:rounded-r-none md:rounded-l-2xl">
             <div className="p-4 md:p-6 md:sticky md:top-[88px]">
               <div className="mb-6 flex items-center justify-between gap-2">

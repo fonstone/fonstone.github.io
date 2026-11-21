@@ -1,12 +1,13 @@
 # AGENTS.md
 
-本仓库是 StoneFon 的个人知识博客（Next.js + MDX）。写 content/ 下的知识文章时，遵循 docs/writing-guide.md 的完整写作规范。核心规则如下。
+本仓库是 StoneFon 的个人知识博客（Next.js + MDX）。写 content/ 下的知识文章时，先用 docs/article-template.md 搭结构和语感，再按 docs/writing-guide.md 过证据、禁令和终审。核心规则如下。
 
-- 写 content/ 下的技术知识文章时，先调用 tech-blog-writing 技能。该技能把写作指南变成六阶段门禁流程，材料关、成稿、终审都在流程内执行。该技能未安装时，按 docs/writing-guide.md 的完整流程执行。
+- 写 content/ 下的技术知识文章时，先调用 tech-blog-writing 技能。该技能把写作指南变成六阶段门禁流程，材料关、成稿、终审都在流程内执行。该技能未安装时，按 docs/article-template.md 和 docs/writing-guide.md 的完整流程执行。
+- 长文先走六段式。开场、换算、主角与难题、逐条解法、数字怎么读、收口。第四段每个解法写钩子、原理、类比、收益、代价，收益和代价都要有。结构细则见 `docs/article-template.md`。
 - 按文章类型选一到两个讲解手法，规则见 `docs/explanation-patterns.md`。手法只负责讲解，不产生材料，不替代证据。
 - 材料关。技术长文动笔前至少五件可指认来源的具体材料，包括论文、官方文档、源码、config.json、实验数字、亲历调试。不够就先查、再问、最后缩短，禁止重复解释灌水。
 - 真实性。数字、版本号、许可证写作前重新确认。一手材料优先。来源冲突说明取舍。数据写完说明影响谁。标题只写到事实允许的位置。
 - 细节。细节必须有工作。一条参数、一次报错、一个数字都要改变理解。无来源的装饰性细节全部删除。
 - 说话位置。AI 知识空间文章以 AI 大模型工程师身份说话。OS、嵌入式、自动驾驶文章以对应领域工程师身份说话。
 - 硬禁令。正文不用冒号（仅引原话可用）、破折号、翻案句、三项以上排比、黑话、借喻包装、洞察路标。结尾不升华。
-- 交稿前运行 `python scripts/check_prose.py <稿件路径>`，硬禁令清零才能提交。
+- 交稿前运行 `python scripts/check_prose.py <稿件路径>`，硬禁令清零才能提交。再跑 `npm run build`，确认 MDX 能编译、页面能生成、搜索索引正常。

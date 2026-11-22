@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="470" viewBox="0 0 880 470" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <rect width="880" height="470" rx="12" fill="#ffffff"/>
+  <text x="440" y="38" text-anchor="middle" font-size="19" font-weight="600" fill="#111827">零值要按固定节奏排，硬件才真的能跳过</text>
+  <text x="440" y="62" text-anchor="middle" font-size="13" fill="#6b7280">2 比 4 结构化稀疏，每四个连续权重里两个为零</text>
+
+  <text x="90" y="100" font-size="14" font-weight="600" fill="#1f2937">剪枝后的权重矩阵</text>
+  <g>
+    <rect x="90" y="112" width="34" height="28" fill="#2563eb"/><rect x="126" y="112" width="34" height="28" fill="#2563eb"/><rect x="162" y="112" width="34" height="28" fill="#e2e8f0"/><rect x="198" y="112" width="34" height="28" fill="#e2e8f0"/>
+    <rect x="234" y="112" width="34" height="28" fill="#2563eb"/><rect x="270" y="112" width="34" height="28" fill="#2563eb"/><rect x="306" y="112" width="34" height="28" fill="#e2e8f0"/><rect x="342" y="112" width="34" height="28" fill="#e2e8f0"/>
+    <rect x="90" y="142" width="34" height="28" fill="#2563eb"/><rect x="126" y="142" width="34" height="28" fill="#e2e8f0"/><rect x="162" y="142" width="34" height="28" fill="#2563eb"/><rect x="198" y="142" width="34" height="28" fill="#e2e8f0"/>
+    <rect x="234" y="142" width="34" height="28" fill="#2563eb"/><rect x="270" y="142" width="34" height="28" fill="#e2e8f0"/><rect x="306" y="142" width="34" height="28" fill="#2563eb"/><rect x="342" y="142" width="34" height="28" fill="#e2e8f0"/>
+    <rect x="90" y="172" width="34" height="28" fill="#e2e8f0"/><rect x="126" y="172" width="34" height="28" fill="#2563eb"/><rect x="162" y="172" width="34" height="28" fill="#e2e8f0"/><rect x="198" y="172" width="34" height="28" fill="#2563eb"/>
+    <rect x="234" y="172" width="34" height="28" fill="#e2e8f0"/><rect x="270" y="172" width="34" height="28" fill="#2563eb"/><rect x="306" y="172" width="34" height="28" fill="#e2e8f0"/><rect x="342" y="172" width="34" height="28" fill="#2563eb"/>
+    <rect x="90" y="202" width="34" height="28" fill="#2563eb"/><rect x="126" y="202" width="34" height="28" fill="#2563eb"/><rect x="162" y="202" width="34" height="28" fill="#e2e8f0"/><rect x="198" y="202" width="34" height="28" fill="#e2e8f0"/>
+    <rect x="234" y="202" width="34" height="28" fill="#2563eb"/><rect x="270" y="202" width="34" height="28" fill="#2563eb"/><rect x="306" y="202" width="34" height="28" fill="#e2e8f0"/><rect x="342" y="202" width="34" height="28" fill="#e2e8f0"/>
+  </g>
+  <g stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3">
+    <line x1="232" y1="108" x2="232" y2="234"/><line x1="90" y1="140" x2="376" y2="140"/>
+    <line x1="90" y1="170" x2="376" y2="170"/><line x1="90" y1="200" x2="376" y2="200"/>
+  </g>
+  <text x="90" y="252" font-size="12.5" fill="#6b7280">蓝色是非零值，灰色是零值，每四个一组固定两个非零</text>
+
+  <line x1="400" y1="176" x2="470" y2="176" stroke="#ea580c" stroke-width="2" marker-end="url(#arrow)"/>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#ea580c"/>
+    </marker>
+  </defs>
+  <text x="435" y="164" text-anchor="middle" font-size="12" fill="#ea580c">压缩</text>
+
+  <text x="500" y="100" font-size="14" font-weight="600" fill="#1f2937">压缩后的表示</text>
+  <g>
+    <rect x="500" y="112" width="34" height="28" fill="#2563eb"/><rect x="536" y="112" width="34" height="28" fill="#2563eb"/><rect x="572" y="112" width="34" height="28" fill="#2563eb"/><rect x="608" y="112" width="34" height="28" fill="#2563eb"/>
+    <rect x="500" y="142" width="34" height="28" fill="#2563eb"/><rect x="536" y="142" width="34" height="28" fill="#2563eb"/><rect x="572" y="142" width="34" height="28" fill="#2563eb"/><rect x="608" y="142" width="34" height="28" fill="#2563eb"/>
+    <rect x="500" y="172" width="34" height="28" fill="#2563eb"/><rect x="536" y="172" width="34" height="28" fill="#2563eb"/><rect x="572" y="172" width="34" height="28" fill="#2563eb"/><rect x="608" y="172" width="34" height="28" fill="#2563eb"/>
+    <rect x="500" y="202" width="34" height="28" fill="#2563eb"/><rect x="536" y="202" width="34" height="28" fill="#2563eb"/><rect x="572" y="202" width="34" height="28" fill="#2563eb"/><rect x="608" y="202" width="34" height="28" fill="#2563eb"/>
+  </g>
+  <g fill="#fbbf24" stroke="#d97706" stroke-width="1">
+    <rect x="660" y="112" width="18" height="28"/><rect x="680" y="112" width="18" height="28"/>
+    <rect x="660" y="142" width="18" height="28"/><rect x="680" y="142" width="18" height="28"/>
+    <rect x="660" y="172" width="18" height="28"/><rect x="680" y="172" width="18" height="28"/>
+    <rect x="660" y="202" width="18" height="28"/><rect x="680" y="202" width="18" height="28"/>
+  </g>
+  <text x="500" y="252" font-size="12.5" fill="#6b7280">只存非零值，每个非零值附 2bit 位置元数据</text>
+  <text x="712" y="168" font-size="12.5" fill="#b45309">硬件按</text>
+  <text x="712" y="188" font-size="12.5" fill="#b45309">元数据</text>
+  <text x="712" y="208" font-size="12.5" fill="#b45309">取数</text>
+
+  <rect x="90" y="278" width="700" height="66" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="108" y="302" font-size="13" fill="#334155">对照，非结构化稀疏的零值位置随机，硬件得逐格判断有没有值，查询开销把省下的计算吃回去。</text>
+  <text x="108" y="326" font-size="13" fill="#334155">2 比 4 的节奏固定，稀疏张量核只对非零值做乘加，峰值吞吐翻倍，官方报告超过 30% 性能每瓦提升。</text>
+
+  <rect x="90" y="360" width="700" height="66" rx="8" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="108" y="384" font-size="12.5" fill="#9a3412">代价，权重必须先按 2 比 4 剪枝再重训恢复精度，稀疏模式随模型固定。</text>
+  <text x="108" y="408" font-size="12.5" fill="#9a3412">换一种稀疏结构，或者换成不认这个模式的硬件，加速比就不成立。</text>
+  <text x="440" y="452" text-anchor="middle" font-size="12" fill="#94a3b8">来源，NVIDIA Ampere 架构与 TensorRT 8.0 官方技术博客，ResNeXt 上实测 36% 性能每瓦提升</text>
+</svg>

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="470" viewBox="0 0 880 470" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <rect width="880" height="470" rx="12" fill="#ffffff"/>
+  <text x="440" y="38" text-anchor="middle" font-size="19" font-weight="600" fill="#111827">权重压到四分之一，一步解码的时间不会跟着压到四分之一</text>
+  <text x="440" y="62" text-anchor="middle" font-size="13" fill="#6b7280">Decode 阶段示意，条形长度只表示相对关系，不是实测 profiling 占比</text>
+
+  <text x="90" y="108" font-size="14" font-weight="600" fill="#1f2937">FP16 权重，70B 参数约 140GB</text>
+  <g>
+    <rect x="90" y="122" width="280" height="44" fill="#2563eb"/>
+    <rect x="370" y="122" width="170" height="44" fill="#0891b2"/>
+    <rect x="540" y="122" width="150" height="44" fill="#ea580c"/>
+    <rect x="690" y="122" width="100" height="44" fill="#64748b"/>
+  </g>
+  <g font-size="12.5" fill="#ffffff" text-anchor="middle">
+    <text x="230" y="149">读权重</text>
+    <text x="455" y="149">KV 与跨卡数据</text>
+    <text x="615" y="149">下发排队同步</text>
+    <text x="740" y="149">矩阵乘</text>
+  </g>
+  <line x1="90" y1="180" x2="790" y2="180" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="790" y="198" text-anchor="end" font-size="12.5" fill="#6b7280">一步解码的墙钟时间</text>
+
+  <text x="90" y="242" font-size="14" font-weight="600" fill="#1f2937">4bit 权重，同为 70B 参数约 35GB</text>
+  <g>
+    <rect x="90" y="256" width="70" height="44" fill="#2563eb"/>
+    <rect x="160" y="256" width="170" height="44" fill="#0891b2"/>
+    <rect x="330" y="256" width="150" height="44" fill="#ea580c"/>
+    <rect x="480" y="256" width="100" height="44" fill="#64748b"/>
+  </g>
+  <g font-size="12.5" fill="#ffffff" text-anchor="middle">
+    <text x="125" y="283">读权重</text>
+    <text x="245" y="283">KV 与跨卡数据</text>
+    <text x="405" y="283">下发排队同步</text>
+    <text x="530" y="283">矩阵乘</text>
+  </g>
+  <line x1="90" y1="314" x2="580" y2="314" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="580" y="332" text-anchor="end" font-size="12.5" fill="#2563eb">总时间明显变短，但不是原来的四分之一</text>
+
+  <g font-size="12.5" fill="#374151">
+    <rect x="90" y="358" width="14" height="14" rx="2" fill="#2563eb"/>
+    <text x="112" y="370">随位宽缩小</text>
+    <rect x="230" y="358" width="14" height="14" rx="2" fill="#0891b2"/>
+    <text x="252" y="370">KV 访存</text>
+    <rect x="360" y="358" width="14" height="14" rx="2" fill="#ea580c"/>
+    <text x="382" y="370">调度与同步</text>
+    <rect x="510" y="358" width="14" height="14" rx="2" fill="#64748b"/>
+    <text x="532" y="370">计算</text>
+    <text x="640" y="370" fill="#2563eb">后三段不随位宽缩小</text>
+  </g>
+
+  <rect x="90" y="392" width="700" height="56" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="108" y="416" font-size="13" fill="#1e3a8a">位宽压缩只改第一段。剩下的三段是搬运、排队和同步，位宽不变时它们不跟着缩短。</text>
+  <text x="108" y="437" font-size="12.5" fill="#1e40af">这就是把模型装进单卡之后，端到端时延没有同比下降的原因。</text>
+</svg>

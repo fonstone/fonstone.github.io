@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import KnowledgeMdx from "@/components/knowledge/KnowledgeMdx";
-import TableOfContents from "@/components/knowledge/TableOfContents";
+import TocRail from "@/components/reading/TocRail";
 import PostBreadcrumb from "@/components/knowledge/PostBreadcrumb";
 import { ArticleFooterLinks } from "@/components/RelatedContent";
 import ArticleEnhancements from "@/components/reading/ArticleEnhancements";
@@ -140,11 +140,7 @@ export default async function KnowledgePostPage({
         <ArticleEnhancements />
       </article>
 
-      {headings.length > 0 && (
-        <aside className="hidden xl:block w-56 shrink-0">
-          <TableOfContents headings={headings} />
-        </aside>
-      )}
+      {headings.length > 0 && <TocRail headings={headings} />}
       </div>
     </>
   );

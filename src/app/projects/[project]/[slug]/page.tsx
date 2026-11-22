@@ -5,6 +5,7 @@ import ProjectMdx from "@/components/projects/ProjectMdx";
 import MarkCompleteButton from "@/components/course/MarkCompleteButton";
 import { ChapterFooterLinks } from "@/components/RelatedContent";
 import ArticleEnhancements from "@/components/reading/ArticleEnhancements";
+import TocRail from "@/components/reading/TocRail";
 import { getCourseMeta } from "@/lib/constants/courses";
 import {
   getProjectPost,
@@ -205,29 +206,7 @@ export default async function ProjectPostPage({
         <ArticleEnhancements />
       </article>
 
-      {headings.length > 0 && (
-        <aside className="hidden xl:block w-56 shrink-0">
-          <div className="sticky top-8">
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 backdrop-blur-sm p-4">
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
-                目录
-              </h3>
-              <nav className="flex flex-col gap-1.5 max-h-[70vh] overflow-y-auto">
-                {headings.map((h) => (
-                  <a
-                    key={h.id}
-                    href={`#${h.id}`}
-                    className="text-xs text-slate-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors line-clamp-1"
-                    style={{ paddingLeft: `${(h.level - 1) * 12}px` }}
-                  >
-                    {h.text}
-                  </a>
-                ))}
-              </nav>
-            </div>
-          </div>
-        </aside>
-      )}
+      {headings.length > 0 && <TocRail headings={headings} />}
       </div>
     </>
   );

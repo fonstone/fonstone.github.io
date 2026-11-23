@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1420" height="812" viewBox="0 0 1420 812" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+<defs><clipPath id="tableClip"><rect x="30" y="30" width="1360" height="752" rx="12"/></clipPath></defs>
+<rect width="1420" height="812" fill="#ffffff"/>
+<g clip-path="url(#tableClip)">
+<rect x="30" y="30" width="1360" height="752" fill="#ffffff"/>
+<rect x="30" y="30" width="160" height="56" fill="#eef4fb"/>
+<line x1="30" y1="30" x2="30" y2="782" stroke="#d7e2ef" stroke-width="1"/>
+<text x="44" y="64.0" font-size="16" font-weight="600" fill="#1c3c60">技术层级</text>
+<rect x="190" y="30" width="170" height="56" fill="#eef4fb"/>
+<line x1="190" y1="30" x2="190" y2="782" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="64.0" font-size="16" font-weight="600" fill="#1c3c60">技术子维度</text>
+<rect x="360" y="30" width="310" height="56" fill="#eef4fb"/>
+<line x1="360" y1="30" x2="360" y2="782" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="64.0" font-size="16" font-weight="600" fill="#1c3c60">语言大模型</text>
+<rect x="670" y="30" width="220" height="56" fill="#eef4fb"/>
+<line x1="670" y1="30" x2="670" y2="782" stroke="#d7e2ef" stroke-width="1"/>
+<text x="684" y="64.0" font-size="16" font-weight="600" fill="#1c3c60">Agent 场景</text>
+<rect x="890" y="30" width="280" height="56" fill="#eef4fb"/>
+<line x1="890" y1="30" x2="890" y2="782" stroke="#d7e2ef" stroke-width="1"/>
+<text x="904" y="64.0" font-size="16" font-weight="600" fill="#1c3c60">多模态大模型</text>
+<rect x="1170" y="30" width="220" height="56" fill="#eef4fb"/>
+<line x1="1170" y1="30" x2="1170" y2="782" stroke="#d7e2ef" stroke-width="1"/>
+<text x="1184" y="64.0" font-size="16" font-weight="600" fill="#1c3c60">物理 AI</text>
+<line x1="30" y1="86" x2="1390" y2="86" stroke="#8aa9cb" stroke-width="2"/>
+<rect x="30" y="86" width="160" height="180" fill="#f8fafc"/>
+<line x1="190" y1="86" x2="190" y2="266" stroke="#d7e2ef" stroke-width="1"/>
+<text x="110.0" y="169.0" font-size="16" font-weight="600" fill="#1c3c60" text-anchor="middle">模型算法</text>
+<text x="110.0" y="193.0" font-size="16" font-weight="600" fill="#1c3c60" text-anchor="middle">（核心层）</text>
+<rect x="30" y="266" width="160" height="324" fill="#f8fafc"/>
+<line x1="190" y1="266" x2="190" y2="590" stroke="#d7e2ef" stroke-width="1"/>
+<text x="110.0" y="421.0" font-size="16" font-weight="600" fill="#1c3c60" text-anchor="middle">算法-系统协同</text>
+<text x="110.0" y="445.0" font-size="16" font-weight="600" fill="#1c3c60" text-anchor="middle">（中间层）</text>
+<rect x="30" y="590" width="160" height="192" fill="#f8fafc"/>
+<line x1="190" y1="590" x2="190" y2="782" stroke="#d7e2ef" stroke-width="1"/>
+<text x="110.0" y="679.0" font-size="16" font-weight="600" fill="#1c3c60" text-anchor="middle">算法-芯片协同</text>
+<text x="110.0" y="703.0" font-size="16" font-weight="600" fill="#1c3c60" text-anchor="middle">（硬件层）</text>
+<rect x="190" y="86" width="170" height="60" fill="#ffffff"/>
+<line x1="360" y1="86" x2="360" y2="146" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="114" font-size="16" font-weight="600" fill="#1f2937">模型结构</text>
+<rect x="360" y="86" width="310" height="60" fill="#ffffff"/>
+<line x1="360" y1="86" x2="360" y2="146" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="114" font-size="16" fill="#334155">CSA/HCA/SWA、GDN、MTP、DLLM</text>
+<rect x="670" y="86" width="220" height="60" fill="#ffffff"/>
+<line x1="670" y1="86" x2="670" y2="146" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="890" y="86" width="280" height="60" fill="#ffffff"/>
+<line x1="890" y1="86" x2="890" y2="146" stroke="#d7e2ef" stroke-width="1"/>
+<text x="904" y="114" font-size="16" fill="#334155">DiT-MoE、AR+DiT、SLA</text>
+<rect x="1170" y="86" width="220" height="60" fill="#ffffff"/>
+<line x1="1170" y1="86" x2="1170" y2="146" stroke="#d7e2ef" stroke-width="1"/>
+<text x="1184" y="114" font-size="16" fill="#334155">世界模型、VLA</text>
+<line x1="190" y1="146" x2="1390" y2="146" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="190" y="146" width="170" height="60" fill="#ffffff"/>
+<line x1="360" y1="146" x2="360" y2="206" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="174" font-size="16" font-weight="600" fill="#1f2937">强化学习</text>
+<rect x="360" y="146" width="1030" height="60" fill="#ffffff"/>
+<line x1="360" y1="146" x2="360" y2="206" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="174" font-size="16" fill="#334155">PPO/GRPO/DPO、VeRL、QeRL 等</text>
+<line x1="190" y1="206" x2="1390" y2="206" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="190" y="206" width="170" height="60" fill="#ffffff"/>
+<line x1="360" y1="206" x2="360" y2="266" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="234" font-size="16" font-weight="600" fill="#1f2937">以训助推</text>
+<rect x="360" y="206" width="310" height="60" fill="#ffffff"/>
+<line x1="360" y1="206" x2="360" y2="266" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="234" font-size="16" fill="#334155">QAT、投机推理、FA 稀疏</text>
+<rect x="670" y="206" width="220" height="60" fill="#ffffff"/>
+<line x1="670" y1="206" x2="670" y2="266" stroke="#d7e2ef" stroke-width="1"/>
+<text x="684" y="234" font-size="16" fill="#334155">KV 预取、FFN 预取</text>
+<rect x="890" y="206" width="280" height="60" fill="#ffffff"/>
+<line x1="890" y1="206" x2="890" y2="266" stroke="#d7e2ef" stroke-width="1"/>
+<text x="904" y="234" font-size="16" fill="#334155">QAT+Sparse+步数蒸馏</text>
+<rect x="1170" y="206" width="220" height="60" fill="#ffffff"/>
+<line x1="1170" y1="206" x2="1170" y2="266" stroke="#d7e2ef" stroke-width="1"/>
+<text x="1184" y="234" font-size="16" fill="#334155">DMD、Self-Forcing</text>
+<line x1="190" y1="266" x2="1390" y2="266" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="190" y="266" width="170" height="72" fill="#ffffff"/>
+<line x1="360" y1="266" x2="360" y2="338" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="294" font-size="16" font-weight="600" fill="#1f2937">量化稀疏</text>
+<rect x="360" y="266" width="1030" height="72" fill="#ffffff"/>
+<line x1="360" y1="266" x2="360" y2="338" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="294" font-size="16" fill="#334155">低精训练（W4A4/C8V16）、MXFP4/HiF4 全量化（W4A4C4|F4）、FA 量化稀疏、格式转换（NVFP4 转 HiF4）、</text>
+<text x="374" y="318" font-size="16" fill="#334155">极低比特量化（WxAyCz）</text>
+<line x1="190" y1="338" x2="1390" y2="338" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="190" y="338" width="170" height="60" fill="#ffffff"/>
+<line x1="360" y1="338" x2="360" y2="398" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="366" font-size="16" font-weight="600" fill="#1f2937">调优优化</text>
+<rect x="360" y="338" width="530" height="60" fill="#ffffff"/>
+<line x1="360" y1="338" x2="360" y2="398" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="366" font-size="16" fill="#334155">混合并行寻优、PD 分离、AFD 分离、Agent 多任务调度</text>
+<rect x="890" y="338" width="500" height="60" fill="#ffffff"/>
+<line x1="890" y1="338" x2="890" y2="398" stroke="#d7e2ef" stroke-width="1"/>
+<text x="904" y="366" font-size="16" fill="#334155">SP/CPP 并行、EPDD 分离</text>
+<line x1="190" y1="398" x2="1390" y2="398" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="190" y="398" width="170" height="60" fill="#ffffff"/>
+<line x1="360" y1="398" x2="360" y2="458" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="426" font-size="16" font-weight="600" fill="#1f2937">通信优化</text>
+<rect x="360" y="398" width="1030" height="60" fill="#ffffff"/>
+<line x1="360" y1="398" x2="360" y2="458" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="426" font-size="16" fill="#334155">集合通信优化、低精/稀疏通信、计算通信并行</text>
+<line x1="190" y1="458" x2="1390" y2="458" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="190" y="458" width="170" height="72" fill="#ffffff"/>
+<line x1="360" y1="458" x2="360" y2="530" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="486" font-size="16" font-weight="600" fill="#1f2937">预取算法</text>
+<rect x="360" y="458" width="310" height="72" fill="#ffffff"/>
+<line x1="360" y1="458" x2="360" y2="530" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="486" font-size="16" fill="#334155">KV 预取、FFN 权重预取、</text>
+<text x="374" y="510" font-size="16" fill="#334155">复用/淘汰、KV 聚合访存</text>
+<rect x="670" y="458" width="220" height="72" fill="#ffffff"/>
+<line x1="670" y1="458" x2="670" y2="530" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="890" y="458" width="280" height="72" fill="#ffffff"/>
+<line x1="890" y1="458" x2="890" y2="530" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="1170" y="458" width="220" height="72" fill="#ffffff"/>
+<line x1="1170" y1="458" x2="1170" y2="530" stroke="#d7e2ef" stroke-width="1"/>
+<line x1="190" y1="530" x2="1390" y2="530" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="190" y="530" width="170" height="60" fill="#ffffff"/>
+<line x1="360" y1="530" x2="360" y2="590" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="558" font-size="16" font-weight="600" fill="#1f2937">投机推理</text>
+<rect x="360" y="530" width="310" height="60" fill="#ffffff"/>
+<line x1="360" y1="530" x2="360" y2="590" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="558" font-size="16" fill="#334155">MTP、Eagle3、Dflash、DSPark 等</text>
+<rect x="670" y="530" width="220" height="60" fill="#ffffff"/>
+<line x1="670" y1="530" x2="670" y2="590" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="890" y="530" width="280" height="60" fill="#ffffff"/>
+<line x1="890" y1="530" x2="890" y2="590" stroke="#d7e2ef" stroke-width="1"/>
+<text x="904" y="558" font-size="16" fill="#334155">多模态理解投机</text>
+<rect x="1170" y="530" width="220" height="60" fill="#ffffff"/>
+<line x1="1170" y1="530" x2="1170" y2="590" stroke="#d7e2ef" stroke-width="1"/>
+<line x1="190" y1="590" x2="1390" y2="590" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="190" y="590" width="170" height="72" fill="#ffffff"/>
+<line x1="360" y1="590" x2="360" y2="662" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="618" font-size="16" font-weight="600" fill="#1f2937">低精计算</text>
+<rect x="360" y="590" width="1030" height="72" fill="#ffffff"/>
+<line x1="360" y1="590" x2="360" y2="662" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="618" font-size="16" fill="#334155">A6/A7：低精数值格式（HiF4）、MM/FA 低精计算（W4A4/C8V16/C4V16 等）、Softmax 近似（低精/查表等）；</text>
+<text x="374" y="642" font-size="16" fill="#334155">A8：低精数值格式（P_HiF4）、极低比特量化（WxAyCz）</text>
+<line x1="190" y1="662" x2="1390" y2="662" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="190" y="662" width="170" height="60" fill="#ffffff"/>
+<line x1="360" y1="662" x2="360" y2="722" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="690" font-size="16" font-weight="600" fill="#1f2937">稀疏计算</text>
+<rect x="360" y="662" width="1030" height="60" fill="#ffffff"/>
+<line x1="360" y1="662" x2="360" y2="722" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="690" font-size="16" fill="#334155">A6/A7：Block 稀疏；A8：结构化稀疏（4:2/8:4 等）</text>
+<line x1="190" y1="722" x2="1390" y2="722" stroke="#d7e2ef" stroke-width="1"/>
+<rect x="190" y="722" width="170" height="60" fill="#ffffff"/>
+<line x1="360" y1="722" x2="360" y2="782" stroke="#d7e2ef" stroke-width="1"/>
+<text x="204" y="750" font-size="16" font-weight="600" fill="#1f2937">近存与存内计算</text>
+<rect x="360" y="722" width="1030" height="60" fill="#ffffff"/>
+<line x1="360" y1="722" x2="360" y2="782" stroke="#d7e2ef" stroke-width="1"/>
+<text x="374" y="750" font-size="16" fill="#334155">A7/A8：Attention 近存/存内计算、FFN 近存/存内计算</text>
+<line x1="190" y1="782" x2="1390" y2="782" stroke="#d7e2ef" stroke-width="1"/>
+</g>
+<rect x="30" y="30" width="1360" height="752" rx="12" fill="none" stroke="#a9bcd2" stroke-width="1.5"/>
+</svg>

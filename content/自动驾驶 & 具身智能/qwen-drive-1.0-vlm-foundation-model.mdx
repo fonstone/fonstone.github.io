@@ -7,7 +7,7 @@ tags: ["自动驾驶", "VLA", "Qwen-Drive", "BEV", "视觉语言模型", "运动
 
 # Qwen-Drive-1.0 拆解，感知问答规划共用一个 VLM 的自动驾驶基础模型
 
-8 月 31 日 arXiv 挂出一篇 Qwen 团队和华中科技大学合写的稿子，编号 2609.00111，标题 Qwen-Drive-1.0。权重当天放到 HuggingFace 和 ModelScope，仓库落在 QwenLM 名下，Qwen/Qwen-Drive-1.0-4B。我把 arXiv 的 HTML 全文和 alphaXiv 的注释页对着读了一遍，表里的数字逐个核对过。核心做法一句话能讲完，一个预训练好的视觉语言模型架构完全不动，外挂两个模块，就同时输出 3D 检测框、语义占用、地图分割、场景问答和未来 5 秒的自车轨迹。
+8 月 31 日 arXiv 挂出一篇 Qwen 团队和华中科技大学合写的稿子，编号 2609.00111，标题 Qwen-Drive-1.0。权重当天放到 HuggingFace 和 ModelScope，仓库落在 QwenLM 名下，Qwen/Qwen-Drive-1.0-4B。把 arXiv 的 HTML 全文和 alphaXiv 的注释页对着读了一遍，表里的数字逐个核对过。核心做法一句话能讲完，一个预训练好的视觉语言模型架构完全不动，外挂两个模块，就同时输出 3D 检测框、语义占用、地图分割、场景问答和未来 5 秒的自车轨迹。
 
 ![性能总览](/images/qwen-drive/intro.webp)
 

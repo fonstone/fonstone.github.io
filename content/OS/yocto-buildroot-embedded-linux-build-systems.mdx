@@ -59,7 +59,7 @@ BitBake 执行一个构建目标时，流程分五个阶段，官方文档按这
     S7 --> S8["生成定制 SDK"]
 `} />
 
-recipe 是 Yocto 最核心的元数据形式，一份 recipe 描述源码从哪来、打哪些 patch、依赖哪些库、怎么配置编译。下面这份是 openembedded-core 仓库里 busybox 1.38.0 的真实 recipe，我按原样截取关键部分。`SRC_URI` 列出源码地址和所有 patch，`sha256sum` 校验下载完整性，条件追加语法按 libc 类型和架构加不同配置。
+recipe 是 Yocto 最核心的元数据形式，一份 recipe 描述源码从哪来、打哪些 patch、依赖哪些库、怎么配置编译。下面这份是 openembedded-core 仓库里 busybox 1.38.0 的真实 recipe，按原样截取关键部分。`SRC_URI` 列出源码地址和所有 patch，`sha256sum` 校验下载完整性，条件追加语法按 libc 类型和架构加不同配置。
 
 ```
 require busybox.inc

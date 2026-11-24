@@ -9,7 +9,7 @@ tags: ["操作系统", "Linux", "内核", "AI Agent", "LLM", "开发流程", "Sy
 
 ## 一、先看内核特殊在哪
 
-Syzbot 是 Google 维护的内核自动模糊测试服务。RGym 论文引用它的数据，Linux 内核这边已修复的 bug 超过 6500 个，待处理的超过 1500 个。fuzz 发现 bug 的速度早就超过人修 bug 的速度。2026 年，一批 agent 系统把目标对准这个 backlog，从修崩溃、给 syzkaller 生成规格、定位故障，到直接在 LKML 上做补丁评审。写这篇之前，我把内核 Agent 的论文、LKML 邮件和内核文档逐条对过一遍，论文和社区里自报的数字会单独标注。
+Syzbot 是 Google 维护的内核自动模糊测试服务。RGym 论文引用它的数据，Linux 内核这边已修复的 bug 超过 6500 个，待处理的超过 1500 个。fuzz 发现 bug 的速度早就超过人修 bug 的速度。2026 年，一批 agent 系统把目标对准这个 backlog，从修崩溃、给 syzkaller 生成规格、定位故障，到直接在 LKML 上做补丁评审。写这篇之前，内核 Agent 的论文、LKML 邮件和内核文档逐条核对过一遍，论文和社区里自报的数字单独标注。
 
 仓库里已有一篇讲 LLM 辅助内核开发一般情况的文章，这篇聚焦 agent 化之后的系统、基准和社区政策，两篇可以对着读。
 
@@ -61,7 +61,7 @@ RGym 用两个 agent 配合。Function Exploration Agent 自主看代码，形�
 
 内核 Agent 的评测基准这几年立了一批。kBenchSyz 来自 kGym 平台，LinuxFLBench 有 250 个真实故障定位任务，RGym 从 6088 个 syzbot bug 里筛出 143 个可复现的 KASAN bug，Live-kBench 首批 534 个内核 bug。
 
-| 基准 | 构成 | 我核到的数字 |
+| 基准 | 构成 | 核对到的数字 |
 | --- | --- | --- |
 | kBenchSyz | 真实 syzbot 崩溃，构建加复现平台 | kAgent 无定位修复率 54.5% |
 | LinuxFLBench | 250 个真实内核故障定位任务 | 最好 agent 文件级 top-1 41.6% |

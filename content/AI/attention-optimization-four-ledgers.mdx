@@ -1,0 +1,244 @@
+---
+title: "注意力优化到底在优化什么：从 KV Cache 到长上下文的四笔账"
+description: "从一张 80GB 卡跑 70B 模型的部署现场出发，讲清 decode 为什么慢，MHA/MQA/GQA/MLA、FlashAttention、PagedAttention 和 NSA 各自补了哪个缺口，最后给一段能算自己模型 KV 占用的代码、一张选型表和一份验收指标。"
+date: "2026-11-27"
+tags: ["AI", "注意力机制", "KV Cache", "MHA", "MQA", "GQA", "MLA", "FlashAttention", "PagedAttention", "NSA", "Cross Attention", "长上下文", "推理优化"]
+---
+
+你拿到一张 80GB 卡，想把 Llama 2 70B 塞进去。FP16 权重 140GB，先得切两张。用 4bit 把权重压到 35GB，看起来一张卡能放下。128K 上下文一开，KV Cache（键值缓存）按 8 个 KV 头、80 层、每头 128 维算，每个 token 320KB，128K 就是 40GB。权重、KV、激活和临时缓冲加在一起，batch 基本只能停在 1。上线后，单请求的每 token 延迟被 KV 读取拖到几十毫秒，加卡也只能缓解一时。
+
+第一反应通常是换更快的卡，或者把 batch 调小。换卡能缓解，但 KV 的字节数一个没少；调 batch 能躲开峰值，但吞吐又上不去。**注意力优化先要找到这笔账记在谁头上。换 kernel 只解决其中一笔。**
+
+这个场景里，算力并没有用满，时间花在数据搬运上。可以把 decode 想成一个人在图书馆里写长文。每写一句，都要把前面借出来的参考书重新翻一遍。书越借越多，桌子放不下，跑书库的次数也越来越多。注意力的优化，基本都在处理这三件事，书占多少地方，翻书要跑多少趟，哪些书可以只看摘要。
+
+全文按四笔账走。
+
+- 容量，128K 的 KV 能不能装下。
+- 带宽，一步 decode 要读多少。
+- 碎片，多个请求怎么分显存。
+- 长上下文，每个 query 要看多少历史。
+
+最后把这些账算到你的模型上。
+
+## 一、一步 decode，时间花在哪
+
+先看 decode 在做什么。自回归生成一次只出一个 token。当前 token 的 query 要和前面所有 token 的 key 做点积，算出权重，再对所有 value 加权求和。如果没有缓存，每生成一个 token 都要把前面的 key 和 value 重新算一遍。KV Cache 就是把它们存下来，下一步直接读。
+
+放到推理栈里看，注意力夹在模型的线性层和 serving 调度之间。它的输入是上一层 hidden state 和 KV Cache，输出给下一层；上游是 prefill 和 decode 的调度，下游是残差和 FFN。
+
+所以 decode 的每一步，模型都要把整个 KV Cache 从 HBM 读到计算单元附近。HBM 是显存，容量大，带宽有限。SRAM 是片上缓存，容量小，速度快。注意力 kernel 就是 GPU 上跑的那段注意力算子代码。它的工作，是尽量在 SRAM 里把数据用够，少跑几趟 HBM。**decode 里有一笔时间下限，由 KV 从 HBM 搬到计算单元的次数决定。**
+
+Prefill 和 decode 是两种负载。Prefill 一次处理整段提示词，N 个 token 的矩阵乘可以并行，算术强度高，瓶颈在算力。Decode 一次只处理一个 token，权重和 KV 都要重新读，算术强度低，瓶颈在带宽。训练又不一样，batch 和序列长度都大，注意力是计算密集的。优化注意力之前，先分清自己在哪个阶段。
+
+| 阶段 | 一次处理多少 token | 主要瓶颈 | 先看什么 |
+|---|---|---|---|
+| Prefill | N 个 | 算力 | 注意力 FLOPs |
+| Decode | 1 个 | HBM 带宽 | 每步读取字节数 |
+| 训练 | batch × N | 算力 | 注意力 FLOPs 和显存 |
+
+KV Cache 的大小有一个直接公式。一个 decoder 层里，每个 token 的缓存元素数是 `2 × H_kv × d_head`。乘 2 是因为 K 和 V 各存一份，乘层数才是整个模型的量。Llama 2 70B 的 config.json 写着 80 层、64 个注意力头、8 个 KV 头，hidden size 8192，每个头的维度是 128。按 FP16 存，每个 token 每层 4KB，80 层是 320KB，128K 个 token 就是 40GB。
+
+把图书馆的比方摊开，书库是 HBM，书桌是 SRAM，借出来的参考书是 KV Cache，翻书是 HBM 读取，写长文是 decode。一次借一摞书写 prefill，写一句翻一次书是 decode。合订本和摘要是 KV 压缩，按页借阅和共享副本是 PagedAttention，先看目录再精读是稀疏注意力。这个比方只解释容量和搬运，不解释 Tensor Core 怎么并行、softmax 怎么算、kernel 怎么调度。它也不能帮你决定用哪个框架。
+
+## 二、四笔账，128K 到底贵在哪
+
+第一笔账是容量。**128K 的 KV 按 8 个 KV 头算是 40GB，如果 64 个头各存一套 K/V，就是 320GB。** 一张 80GB 卡，4bit 权重 35GB，加上 40GB KV，剩下不到 5GB 给激活和临时缓冲，batch 只能停在 1。想开大 batch，先得把 KV 压下来。
+
+第二笔账是带宽。Decode 每生成一个 token，都要把整个 KV Cache 读一遍。40GB 的数据从 HBM 搬到计算单元，按 2TB/s 的带宽算，光 KV 就要 20ms 出头。70B 的 4bit 权重还有 35GB，再读一遍是 17.5ms。加起来接近 40ms，这还没算激活、kernel 启动和通信。单请求 decode 慢，先看这笔账。
+
+第三笔账是碎片。传统 serving 系统给每个请求预留一段连续显存，长度按最大可能值算。请求实际只生成 200 个 token，剩下的位置也不能给别人用，这是内部碎片。不同请求的最大长度不一样，连续分配还会留下外部碎片。vLLM 的论文做了 profiling，现有系统里只有 20.4% 到 38.2% 的 KV 显存实际存了 token 状态，其余是预留、碎片和重复。
+
+第四笔账是长上下文。Prefill 和训练要算 `O(N²)` 个 query-key 对，序列翻倍，计算量接近四倍。Decode 虽然一次只算一个 query，但要把整个 KV Cache 读一遍，序列越长，读得越多。原生稀疏注意力（Native Sparse Attention，NSA）的论文给了一个量级，解码 64K 上下文时，softmax 注意力可以占到总延迟的 70% 到 80%。这个数字是理论估算，但它说明长上下文下注意力已经不是配角。
+
+| 卡点 | 具体症状 | 先量什么 |
+|---|---|---|
+| 容量 | 128K KV 40GB，batch 1 | 每 token KV 字节数 |
+| 带宽 | 一步 decode 读 40GB | 每步 HBM 读取量 |
+| 碎片 | 只有 20.4%-38.2% 的 KV 显存存了 token | 预留和实际使用比 |
+| 长上下文 | 64K 注意力占 70%-80% 延迟 | 注意力 FLOPs 和 KV 读取量 |
+
+四笔账不是独立的。压 KV 会改变带宽，分页会改变并发，稀疏会改变长上下文的算法。后面的四类技术按这四笔账排，每一类只回答一笔账里的一个具体问题。
+
+## 三、四类技术，各管一笔账
+
+### 容量，少存几份 K/V
+
+先看容量。这一节只回答一个问题，KV 能不能少存一点。
+
+最直接的一招，是少存几份 K/V。多头注意力（MHA）里，每个注意力头都有自己的 K 和 V。Llama 2 70B 按 MHA 算，64 个 KV 头，128K 的缓存是 320GB。多查询注意力（MQA）把所有 query 头压到一套 K/V，缓存降到六十四分之一，论文报告的质量退化轻微，但不是所有任务都能接受。分组查询注意力（GQA）折中一下，把 query 头分组，每组共享一套 K/V，Llama 2 70B 用 8 个 KV 头，缓存是 MHA 的八分之一，128K 约 40GB。
+
+GQA 论文还给了一个很实用的迁移配方。已有 MHA checkpoint 可以用原预训练 5% 的算力继续训练成 MQA 或 GQA，论文报告的质量接近 MHA，速度接近 MQA。这个结论有边界，它是在论文的模型和评测集上得到的，不是任何模型照做都能复现。KV 头数减到多少，仍要在自己的任务上验。
+
+多头潜注意力（MLA）换了一条路。它不再按头存 K/V，而是把所有头共享的 K/V 压成一个低维潜向量。DeepSeek-V2 的设置是压缩维度 `d_c = 512`，再加一个 64 维的解耦旋转位置编码（RoPE）key，每个 token 每层只存 576 个元素。它自己的 MHA 每层是 `2 × 128 × 128 = 32,768` 个元素，576 是它的 1.8% 左右。按缓存大小算，576 个元素相当于 GQA 只留 2.25 个 KV 组，但论文的 ablation 里它的表现好于 MHA。
+
+这里的类比是合订本。MQA 把 64 本参考书合成 1 本，GQA 合成 8 本，MLA 把书压成一份索引加几页摘要。合订本省地方，但查细节不如原书方便。MLA 在推理时可以把 K 的上投影吸收进 query 投影，把 V 的上投影吸收进 output 投影，不需要显式解压每个头的 K/V。省下的是计算，换来的是权重布局和 kernel 要按吸收后的形式重写。缓存布局也不是标准的 `[层, 头, token, 维度]`，分页和 kernel 都要为它改。
+
+收益在论文里有明确口径。DeepSeek-V2 对比 DeepSeek 67B，KV Cache 减少 93.3%，最大生成吞吐提到 5.76 倍。大 MoE 那一组 ablation 里，MLA 的 KV 缓存只有 MHA 的 4%。这两个百分比的基线不同，一个是 DeepSeek 67B，一个是同规模 MHA，不能拼在一起说。
+
+代价也清楚。MQA 有质量退化风险，GQA 的头数要在任务上验，MLA 的潜向量布局和吸收后的权重不是所有框架都支持。**容量账压下来了，但 decode 还是要读这 40GB。** 下一步是少跑几趟书库。
+
+### 带宽，少跑几趟书库
+
+容量压下来了，下一步看搬运。这一节只回答一个问题，同样的 KV 能不能少读几趟。
+
+标准注意力会把 `N × N` 的分数矩阵写回 HBM。128K 的序列，`N²` 是 171 亿个元素，FP16 下约 32GB，还只是一个头。这个矩阵大部分用完就丢，搬运它却要花真实时间。
+
+FlashAttention 的做法是把 Q、K、V 切成能放进 SRAM 的小块，在片上算完一块输出再写回 HBM。Softmax 用在线更新的最大值和指数和，分块算完还能精确合并。反向传播不保存 `N × N` 的中间矩阵，需要时重新算一遍。它的结果和标准注意力在数学上等价，没有近似。FlashAttention-2 通过改线程块和 warp 的工作划分，比第一代再快约 2 倍，在 A100 上达到理论峰值的 50% 到 73%。FlashAttention-3 针对 Hopper 的张量内存加速器（TMA）和 Tensor Core 异步，比第二代快 1.5 到 2 倍，FP16 下最高 740 TFLOPs/s。
+
+这里对应图书馆的动作，是把一摞书搬到书桌上一次读完，而不是每翻一页跑一趟书库。FlashAttention 的主要收益在 prefill 和训练。decode 阶段 query 长度是 1，FlashAttention 按 query 分块的并行度用不上，batch 为 1 时 GPU 的大部分 SM 在闲着。
+
+FlashDecoding 补的就是这个缺口。它把 KV 序列切成多段，每段并行算一部分注意力，记下每段的 log-sum-exp，也就是可以合并的 softmax 统计量，最后把各段的结果按这个统计量合并。PyTorch 的官方博客给的数据是，长序列下生成最多快 8 倍，注意力本身最多快 50 倍，测试是 CodeLlama 34B、A100、batch 1。这是博客里的端到端数据和注意力微基准，不是论文里的通用结论。
+
+代价在工程侧。论文里的 FlashAttention-3 针对 Hopper，FP8 路径还要看 GPU 和框架的支持。不同的 head_dim、dtype、是否分页、序列长度，往往要选不同的 kernel。xFormers 的调度器会根据问题大小在 FlashAttention 和 FlashDecoding 之间切换，这种调度逻辑本身就是一层复杂度。换模型 shape 或换卡，kernel 可能要重新选。
+
+**带宽账压下来了，但请求的 KV 还在长，长度事先不知道。** 显存怎么分给谁，是第三笔账。
+
+### 碎片，把书架管好
+
+显存够不够是一回事，怎么分是另一回事。这一节只回答一个问题，怎么让更多请求住进来。
+
+vLLM 的论文把这块浪费量化了，现有系统里只有 20.4% 到 38.2% 的 KV 显存实际存了 token 状态。PagedAttention 要解决的就是分配问题。
+
+PagedAttention 借的是操作系统虚拟内存的做法。它把 KV Cache 切成固定大小的块，每个请求的逻辑块通过一张块表映射到不连续的物理块。块用完了再分配，不需要提前占住最大长度。并行采样和 beam search 里，多个输出共享前缀的物理块，写的时候才复制，也就是 copy-on-write。前缀相同的请求也可以共享块。
+
+这就是图书馆按页借书，而不是按整本书预留。逻辑块是读者看到的连续页码，物理块是书库里实际存放的页，块表是借阅记录。相同章节可以共享副本，写的时候才复制。它管的是书放在哪、能不能共用，不减少书的页数。
+
+收益在论文里是 2 到 4 倍。同样的延迟下，vLLM 的吞吐是 FasterTransformer 和 Orca 的 2 到 4 倍，序列越长、模型越大、解码算法越复杂，提升越明显。论文说 KV 显存的浪费压到接近零，模型精度不受影响。
+
+代价在块大小和 kernel。块太小，GPU 读 KV 的并行度不够。块太大，内部碎片增加，前缀共享的概率下降。vLLM 的论文专门做了块大小的 ablation。PagedAttention 还需要一个能读块表的 attention kernel，它不是把普通 FlashAttention 原样接上来就能跑。分页带来的间接寻址、块表查询和跨块拼接，都要在 kernel 里处理。
+
+**碎片账压下来了，但上下文到了 64K、128K，注意力本身的计算量和 KV 读取量还在涨。** 第四笔账是长上下文。
+
+### 长上下文，只读该读的部分
+
+前三笔账管的是单序列。这一节只回答一个问题，长上下文下能不能少看一点历史。
+
+全量注意力的问题是每个 query 都要看全部历史。序列翻倍，query-key 对接近四倍；decode 还要把整个 KV Cache 读一遍。要让长上下文算得起，就得让每个 query 只看一部分历史。
+
+NSA 把历史分成三条路。压缩分支把连续的 KV 块压成一个摘要向量，query 和所有摘要算注意力，用很低的代价拿到全局轮廓。选择分支复用压缩分支的分数，挑出 top-n 个块，只对这些块做完整的注意力。滑动窗口分支保留最近一段 token，保证局部细节。三个分支的输出用可学习的门控加权合并。
+
+这就是读长文的三步。先看每段的摘要，知道全文在讲什么。再挑几段重要的精读。最后把最近几行看仔细。这个比方只解释三条分支的分工，不解释门控怎么学、块怎么选。NSA 的选择是块级的、可学习的，不是人眼扫读。块之间还要按 GQA 组共享索引，否则同一个组里的 query 头各挑各的，KV 读取会被打散。
+
+收益的数字要带基线。NSA 论文用 27B 总参、3B 激活的混合专家（MoE）模型，在 8 卡 A100 上和全注意力比，后端都用 Triton 实现的 FlashAttention-2。64K 序列下，训练前向快 9.0 倍，反向快 6.0 倍，解码快 11.6 倍。LongBench 平均分 0.469，全注意力是 0.437。论文还报告 64K needle-in-a-haystack 全命中。
+
+这些数字不能直接搬到 70B dense 模型上。NSA 的稀疏模式是在预训练阶段学的，模型从训练开始就按三条分支组织注意力，不是拿一个训好的全注意力模型剪一剪。换模型、换数据分布、换序列长度，收益和效果都要重测。
+
+代价在训练和 kernel。你得有预训练或继续训练的预算，让模型学会怎么选块。选择是离散的，NSA 用压缩分支的分数来近似块的重要性，绕开了不可微的 top-n。kernel 要支持块索引、GQA 组内共享、变长序列，不能只用现成的 FlashAttention。短序列下，三条分支的额外开销未必收得回来。
+
+2025 年底，这条路线进了 DeepSeek-V3.2 和 vLLM 的支持列表。DeepSeek Sparse Attention（DSA）用一个轻量索引器（lightning indexer）给每个 query 的历史 token 打分，再选 top-k 个 KV 条目做 MLA 注意力，论文的稀疏训练阶段每个 query 选 2048 个 token。indexer 头数少、可以用 FP8，但它仍要扫一遍历史。vLLM 的部署博客提到，indexer 有自己的一份 K cache，和 MLA 的 KV cache 分开存，连续 batching 和分页都要为它多处理一层。
+
+cuDNN Frontend 也把 NSA 的 Selection、Compression、Top-K 做成了可调用的 kernel。官方文档标注这是 experimental API，Selection 要求 SM90 以上，Compression 和 Top-K 要求 SM100 以上，输入支持 FP16 和 BF16，支持 GQA 和 MQA，变长序列用 T,H,D 布局。这说明稀疏注意力不再只是论文里的 Triton 实现，也说明它的硬件门槛和 API 稳定性还在早期。
+
+**四笔账到这里都过了一遍。还有一类问题不在这些账里，Q 和 KV 来自不同序列。**
+
+### Q 和 KV 不同源
+
+前面都是自注意力。这一节只回答一个问题，Q 和 KV 不同源时，账怎么变。
+
+标准自注意力的 Q、K、V 来自同一段序列。交叉注意力（Cross Attention）的 Q 来自目标序列，K 和 V 来自另一段源序列。原版 Transformer 的 encoder-decoder attention 就是这么做的，解码器上一层的输出出 Q，编码器的输出出 K 和 V，两段长度可以不同。
+
+Flamingo 把这种结构用到了多模态。视觉编码器先算出图像或视频特征，Perceiver Resampler 把它们压成固定数量的视觉 token，再在语言模型的层之间插 cross-attention，让文本 token 去注意这些视觉 token。视觉特征算一次，解码每一步复用，不需要每生成一个 token 都重新编码图像。
+
+这像两个人在图书馆里合作写报告。一个人负责写，另一个人负责从另一排书架找资料。写的人提问，找资料的人提供参考书。参考书是固定的，可以反复用。写的人自己的笔记还在增长。
+
+这改变了前面几笔账的算法。源侧的 KV 在编码完成后就固定了，不随解码增长，容量是一笔固定成本。如果同一张图、同一份文档会被多个请求复用，它的 KV 块可以共享，PagedAttention 的块表正好能派上用场。源序列很长时，FlashAttention 仍然能减少 HBM 搬运。GQA 改的是 KV 头的数量，MLA 改的是 KV 的表示。Cross Attention 有自己的 K/V 投影和头数，不能把自注意力的 GQA 配置直接搬过来。它带来的能力是跨序列交互，源侧 KV 还能跨请求复用。
+
+这里有一个常见的混淆。检索增强生成在 decoder-only 模型里通常把检索到的文档拼进 prompt，让模型自己注意上下文，这仍然是 self-attention。把这种做法说成 cross-attention，会和编码器-解码器结构混在一起。多模态模型也有两种做法，Flamingo 这类在语言层之间插 cross-attention，另一类把视觉特征投影成 token 拼进输入，走 self-attention。两种都常见，不能拿一个名字概括所有多模态模型。
+
+Cross Attention 的代价在训练和延迟。它要多一套投影和注意力层，参数和计算都增加。源编码器本身有延迟，图像分辨率高、文档长的时候，源侧 KV 也会很大。源和目标要建立对应关系，这个关系靠训练学，不是接上就能用。它不解决 KV Cache 随解码增长的问题，因为源侧本来就不增长，目标侧的自注意力还在。
+
+## 四、你的模型到底要多少 KV
+
+这一节不讲课，只算账。前面所有的数，都可以用自己的模型配置重算一遍。下面这段代码只依赖 `transformers`，读 Hugging Face config。
+
+```python
+from transformers import AutoConfig
+
+cfg = AutoConfig.from_pretrained("你的模型路径")
+
+def kv_bytes_per_token(cfg, dtype_bytes=2):
+    head_dim = getattr(cfg, "head_dim", cfg.hidden_size // cfg.num_attention_heads)
+    kv_heads = getattr(cfg, "num_key_value_heads", None) or cfg.num_attention_heads
+    return 2 * cfg.num_hidden_layers * kv_heads * head_dim * dtype_bytes
+
+per_token = kv_bytes_per_token(cfg)
+print(f"每 token KV 字节数: {per_token}")
+print(f"128K 序列 KV 总量: {per_token * 131072 / 1024**3:.1f} GB")
+```
+
+以 Llama 2 70B 为例，`num_hidden_layers=80`、`num_attention_heads=64`、`num_key_value_heads=8`、`hidden_size=8192`，算出来每 token 320KB，128K 是 40GB。把 `num_key_value_heads` 改成 64，就是 MHA，结果是 320GB。把 `dtype_bytes` 改成 1，就是 FP8 KV，结果是 20GB。代码算的就是前面那笔容量账。
+
+再算一步 decode 的读取下界。
+
+```python
+def decode_lower_bound_ms(cfg, seq_len, bandwidth_gbps=2000, dtype_bytes=2):
+    traffic = kv_bytes_per_token(cfg, dtype_bytes) * seq_len
+    return traffic / (bandwidth_gbps * 1e9) * 1000
+
+print(decode_lower_bound_ms(cfg, 131072))  # 约 21.5ms，只算 KV
+```
+
+这是只算 KV 的下界，不含权重、激活和 kernel 开销。A100 80GB 的 HBM 带宽约 2TB/s，把 `bandwidth_gbps` 换成你的卡再算。这个数告诉你，为什么 decode 阶段压 KV 比换更大的算力更直接。
+
+算完账，再做三件事。
+
+1. 量。模型、精度、batch 和序列长度分布保持一致，先 warm up，再测 TTFT、TPOT、tokens/s、峰值显存和 KV 利用率。TTFT 是首 token 延迟，TPOT 是每 token 延迟，tokens/s 是吞吐。
+2. 对照。改一个变量，只改一个。换 GQA 头数、换 KV 精度、换 block size、换 attention kernel，每次只动一个，否则不知道收益从哪来。
+3. 看基线。论文的 9 倍、11.6 倍、2 到 4 倍，各有各的基线。单算子加速比不等于端到端加速比，离线吞吐不等于线上延迟。
+
+改完一轮，至少看五个指标。
+
+| 指标 | 怎么量 | 看什么 |
+|---|---|---|
+| TTFT | 首 token 时间 | 长上下文 prefill 有没有变慢 |
+| TPOT | 每 token 时间 | decode 有没有更稳 |
+| tokens/s | 吞吐 | batch 放大后有没有线性涨 |
+| 峰值显存 | `nvidia-smi` 或框架指标 | KV 有没有把卡吃满 |
+| KV 利用率 | 实际 token 状态 / 预留 | 分页和前缀共享有没有生效 |
+
+把常见症状和第一动作对成一张表，选型时先看这张表。
+
+| 症状 | 先量什么 | 先试什么 | 不要先做什么 |
+|---|---|---|---|
+| 模型装不下，batch 开不大 | 每 token KV 字节数 | GQA/MLA，KV 量化 | 换更大的卡 |
+| 单请求 decode 慢，带宽打满 | 一步 decode 读多少字节 | KV 结构，FlashDecoding | PagedAttention |
+| 显存够，并发上不去 | 预留和碎片 | PagedAttention，前缀共享 | 加 batch |
+| 长上下文 prefill 算不完 | 注意力 FLOPs | FlashAttention，稀疏注意力 | 只调 batch |
+| 多模态或编码器-解码器 | 源侧 KV 大小 | Cross Attention，FlashAttention，块共享 | 直接套 GQA |
+
+几个常见的坑。
+
+| 常见坑 | 症状 | 正确做法 |
+|---|---|---|
+| 只看 `num_attention_heads` | KV 账算大 | 用 `num_key_value_heads` 算 |
+| 把 MLA 当普通 GQA 套 | kernel 跑不通，或者结果不对 | 用认识潜向量布局和解耦 RoPE 的 kernel |
+| 以为 PagedAttention 会降单请求延迟 | 单请求 TPOT 没变 | 先看 KV 字节数和 HBM 带宽 |
+| 以为 FlashAttention 会减 KV Cache | 显存还是不够 | 先做 KV 结构或 KV 量化 |
+| 拿 NSA 的 11.6 倍套 70B | 复现不出来 | 先看模型结构、序列长度、硬件 |
+
+## 五、回到图书馆，带走一把尺子
+
+回到图书馆。容量问题是在少借书，带宽问题是在少跑书库，碎片问题是在把书架和借阅记录管好，长上下文问题是在只读该读的部分。四类技术各管一笔账，Cross Attention 换的是 Q 和 KV 的来源，没有一种能把所有问题同时做完。
+
+选型时先算三笔数。每个 token 的 KV 字节数，一步 decode 要读多少字节，prefill 的注意力要算多少个 query-key 对。三笔数出来，再看某项技术改的是不是那一笔。论文的加速比，只在你复现了它的基线时才算数。
+
+落地前拿自己的模型配置、序列长度分布、batch、精度和 GPU 重跑一遍。**代码不长，账算清楚，比记十个倍数有用。**
+
+## 资料来源
+
+- NousResearch/Llama-2-70b-hf 的 config.json，Hugging Face
+- Noam Shazeer，Fast Transformer Decoding，arXiv 1911.02150
+- Joshua Ainslie 等，GQA，EMNLP 2023，arXiv 2305.13245
+- DeepSeek-AI，DeepSeek-V2，arXiv 2405.04434
+- Tri Dao 等，FlashAttention，NeurIPS 2022，arXiv 2205.14135
+- Tri Dao，FlashAttention-2，arXiv 2307.08691
+- Jay Shah 等，FlashAttention-3，arXiv 2407.08608
+- Woosuk Kwon 等，PagedAttention，SOSP 2023，arXiv 2309.06180
+- Jingyang Yuan 等，Native Sparse Attention，ACL 2025，arXiv 2502.11089
+- PyTorch Blog，Flash-Decoding for long-context inference，2023
+- Ashish Vaswani 等，Attention Is All You Need，NeurIPS 2017，arXiv 1706.03762
+- Jean-Baptiste Alayrac 等，Flamingo，NeurIPS 2022，arXiv 2204.14198
+- DeepSeek-AI，DeepSeek-V3.2，arXiv 2512.02556
+- vLLM Blog，DeepSeek-V3.2-Exp in vLLM，2025
+- NVIDIA cuDNN Documentation，Native Sparse Attention，2026
+- NVIDIA A100 Tensor Core GPU datasheet，HBM 带宽
